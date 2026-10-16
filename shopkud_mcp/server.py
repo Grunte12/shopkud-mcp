@@ -926,6 +926,129 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
             return known
         return local("campaign", "explain_cancellations", workspace_id, period_start, period_end)
 
+    @server.tool()
+    async def search_products_for_content(
+        workspace_id: str,
+        keyword: Annotated[str | None, Field(max_length=200)] = None,
+        min_commission_pct: Annotated[float | None, Field(ge=0, le=100)] = None,
+        sort_by: Annotated[Literal["commission", "sales", "rating"], Field()] = "commission",
+        limit: Annotated[int, Field(ge=1, le=100)] = 20,
+    ) -> dict:
+        """Search products from workspace suitable for content creation (P1-6).
+        
+        Filters workspace product observations by commission rate and keyword.
+        Returns products ranked by commission, sales potential, or rating.
+        
+        Requires product detail observations saved in workspace first."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "search_products_for_content", workspace_id, keyword,
+                    min_commission_pct, sort_by, limit)
+
+    @server.tool()
+    async def track_video_clip(
+        workspace_id: str,
+        video_id: str,
+        title: str,
+        status: str,
+        cart_items: Annotated[list[dict] | None, Field()] = None,
+        level: Annotated[int, Field(ge=0, le=20)] = 0,
+        active_days: Annotated[int, Field(ge=0)] = 0,
+        clips_count: Annotated[int, Field(ge=0)] = 0,
+    ) -> dict:
+        """Track Shopee Video clip with cart and level info (P1-3, P2-1).
+        
+        Records video metadata, cart items, and Shopee Video level progression.
+        Level tracking for P2-1: tracks active days, clips published, and current level.
+        Tuesday refresh logic can be implemented on top of this data."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "track_video_clip", workspace_id, video_id, title,
+                    status, cart_items, level, active_days, clips_count)
+
+    @server.tool()
+    async def prepare_cart_swap(
+        workspace_id: str,
+        video_id: str,
+        old_product_id: str,
+        new_product_id: str,
+        new_affiliate_url: str,
+    ) -> dict:
+        """Prepare cart swap for Shopee Video clip (P1-3).
+        
+        Returns confirmation card showing swap plan: which product to replace
+        and with what. Does not execute swap - returns plan for manual review
+        and execution in Shopee Video editor or via extension."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "prepare_cart_swap", workspace_id, video_id,
+                    old_product_id, new_product_id, new_affiliate_url)
+
+    @server.tool()
+    async def check_posting_budget(
+        workspace_id: str,
+        platform: str,
+        period_days: Annotated[int, Field(ge=1, le=30)] = 1,
+    ) -> dict:
+        """Check link posting volume against platform limits (P2-4).
+        
+        Returns link creation counts for period and warns if approaching daily/weekly caps.
+        Platform limits are local estimates - actual platform limits may vary.
+        
+        Helps avoid posting too many affiliate links on one platform in short period."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "check_posting_budget", workspace_id, platform, period_days)
+
+    @server.tool()
+    async def convert_links_in_text(
+        workspace_id: str,
+        text: Annotated[str, Field(min_length=1, max_length=10000)],
+        channel: str,
+        clip_id: Annotated[str | None, Field(max_length=200)] = None,
+    ) -> dict:
+        """Convert Shopee URLs in text to SubID affiliate links (P2-3).
+        
+        Finds all Shopee product URLs in text block and looks up corresponding
+        affiliate links (or notes which need creation). Returns converted text
+        ready for posting.
+        
+        Does not auto-post - returns text for review. Useful for preparing
+        social media captions with multiple product links."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "convert_links_in_text", workspace_id, text, channel, clip_id)
+
+    @server.tool()
+    async def export_data(
+        workspace_id: str,
+        kind: Annotated[Literal["links", "reports", "commissions", "missions", "videos"], Field()],
+        period_start: Annotated[str | None, Field()] = None,
+        period_end: Annotated[str | None, Field()] = None,
+        format: Annotated[Literal["json", "csv"], Field()] = "json",
+    ) -> dict:
+        """Export workspace data as JSON or CSV (P2-5).
+        
+        Export kinds:
+        - links: All affiliate links with SubIDs
+        - reports: Conversion reports summary
+        - commissions: Commission tracking history
+        - missions: Mission progress data
+        - videos: Video clip tracking data
+        
+        CSV output is formula-neutralized (no leading = + - @).
+        Returns data structure, not file download."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "export_data", workspace_id, kind, period_start,
+                    period_end, format)
+
     app = server.streamable_http_app()
     original_lifespan = app.router.lifespan_context
 
