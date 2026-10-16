@@ -136,6 +136,33 @@
       try{return await Detail.openLink(document,location.href,Core,()=>!command.cancelled && active && Detail.route(location.href)?.url===activeUrl && Detail.route(location.href)?.product_id===args.expected_product_id);}
       finally{busy=false;}
     }
+    if(operation==="create_link_with_subids") {
+      if(!window.ShopKudSubId)return fail("subid_module_not_loaded");
+      busy=true;
+      try{
+        return await window.ShopKudSubId.createLinkWithSubIds(document,args.sub_ids,{dry_run:args.dry_run || false});
+      }finally{busy=false;}
+    }
+    if(operation==="verify_link") {
+      if(!window.ShopKudVerify)return fail("verify_module_not_loaded");
+      return await window.ShopKudVerify.verifyLink(document,args.affiliate_url,{
+        expected_product_id:args.expected_product_id,
+        link_receipt:args.link_receipt,
+        check_ownership:args.check_ownership !== false,
+        check_target:args.check_target !== false,
+        try_my_links:args.try_my_links !== false
+      });
+    }
+    if(operation==="batch_create_links") {
+      if(!window.ShopKudSubId)return fail("subid_module_not_loaded");
+      busy=true;
+      try{
+        return await window.ShopKudSubId.createBatchLinks(document,args.items,{
+          on_progress:null,
+          stop_on_error:args.stop_on_error !== false
+        });
+      }finally{busy=false;}
+    }
     if(!isOfferPage())return fail("product_list_page_required");
     if(operation==="search_scan") {
       busy=true;
