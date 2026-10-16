@@ -262,6 +262,17 @@ class CampaignStore:
                         product_id TEXT NOT NULL,
                         affiliate_url TEXT NOT NULL,
                         sub_id TEXT NOT NULL,
+                        sub_id_1 TEXT,
+                        sub_id_2 TEXT,
+                        sub_id_3 TEXT,
+                        sub_id_4 TEXT,
+                        sub_id_5 TEXT,
+                        clip_id TEXT,
+                        link_source TEXT NOT NULL DEFAULT 'manual',
+                        link_receipt_json TEXT,
+                        target_verified_at TEXT,
+                        ownership_verified_at TEXT,
+                        verification_status TEXT,
                         version INTEGER NOT NULL CHECK (version >= 1),
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL,
@@ -316,8 +327,99 @@ class CampaignStore:
                         status_counts TEXT,
                         PRIMARY KEY (report_id, channel, content_id, destination_marketplace, unmapped)
                     );
+                    CREATE TABLE IF NOT EXISTS batch_jobs (
+                        batch_id TEXT PRIMARY KEY,
+                        workspace_id TEXT NOT NULL,
+                        channel TEXT NOT NULL,
+                        marketplace TEXT NOT NULL,
+                        clip_id TEXT,
+                        status TEXT NOT NULL,
+                        total_items INTEGER NOT NULL,
+                        completed_items INTEGER NOT NULL DEFAULT 0,
+                        failed_items INTEGER NOT NULL DEFAULT 0,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        checkpoint_json TEXT
+                    );
+                    CREATE TABLE IF NOT EXISTS batch_items (
+                        batch_id TEXT NOT NULL REFERENCES batch_jobs(batch_id) ON DELETE CASCADE,
+                        item_index INTEGER NOT NULL,
+                        product_id TEXT NOT NULL,
+                        status TEXT NOT NULL,
+                        affiliate_url TEXT,
+                        link_receipt_json TEXT,
+                        error TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (batch_id, item_index)
+                    );
+                    CREATE TABLE IF NOT EXISTS link_verifications (
+                        affiliate_url TEXT PRIMARY KEY,
+                        workspace_id TEXT NOT NULL,
+                        verified_at TEXT NOT NULL,
+                        target_verified INTEGER NOT NULL,
+                        ownership_verified INTEGER NOT NULL,
+                        resolved_item_id TEXT,
+                        resolved_shop_id TEXT,
+                        resolved_title TEXT,
+                        verification_method TEXT NOT NULL,
+                        verification_evidence_json TEXT
+                    );
+                    CREATE TABLE IF NOT EXISTS commission_health (
+                        product_id TEXT PRIMARY KEY,
+                        workspace_id TEXT,
+                        clip_id TEXT,
+                        last_check_at TEXT NOT NULL,
+                        last_commission_pct REAL NOT NULL,
+                        last_extra_comm INTEGER NOT NULL,
+                        previous_commission_pct REAL,
+                        previous_extra_comm INTEGER,
+                        status TEXT NOT NULL,
+                        alert_created_at TEXT
+                    );
+                    CREATE TABLE IF NOT EXISTS missions (
+                        mission_id TEXT PRIMARY KEY,
+                        workspace_id TEXT,
+                        name TEXT NOT NULL,
+                        reward TEXT,
+                        requirements_json TEXT NOT NULL,
+                        deadline TEXT,
+                        enrolled INTEGER NOT NULL DEFAULT 0,
+                        progress_json TEXT,
+                        status TEXT NOT NULL,
+                        observed_at TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS video_clips (
+                        video_id TEXT PRIMARY KEY,
+                        workspace_id TEXT,
+                        title TEXT,
+                        status TEXT NOT NULL,
+                        cart_items_json TEXT,
+                        commission_flag INTEGER,
+                        observed_at TEXT NOT NULL
+                    );
                     """
                 )
+                # Add migration logic for new columns in existing databases
+                existing_columns = {
+                    row[1] for row in connection.execute("PRAGMA table_info(links)").fetchall()
+                }
+                new_link_columns = {
+                    "sub_id_1": "TEXT",
+                    "sub_id_2": "TEXT", 
+                    "sub_id_3": "TEXT",
+                    "sub_id_4": "TEXT",
+                    "sub_id_5": "TEXT",
+                    "clip_id": "TEXT",
+                    "link_source": "TEXT NOT NULL DEFAULT 'manual'",
+                    "link_receipt_json": "TEXT",
+                    "target_verified_at": "TEXT",
+                    "ownership_verified_at": "TEXT",
+                    "verification_status": "TEXT"
+                }
+                for col_name, col_type in new_link_columns.items():
+                    if col_name not in existing_columns:
+                        connection.execute(f"ALTER TABLE links ADD COLUMN {col_name} {col_type}")
                 connection.commit()
         except CampaignError:
             raise
@@ -525,6 +627,14 @@ class CampaignStore:
         affiliate_url: str,
         sub_id: str,
         expected_version: int | None = None,
+        sub_id_1: str | None = None,
+        sub_id_2: str | None = None,
+        sub_id_3: str | None = None,
+        sub_id_4: str | None = None,
+        sub_id_5: str | None = None,
+        clip_id: str | None = None,
+        link_source: str = 'manual',
+        link_receipt: dict | None = None,
     ) -> dict[str, Any]:
         workspace_id = _workspace_id(workspace_id)
         channel = _channel(channel)
@@ -535,25 +645,54 @@ class CampaignStore:
         sub_id = _identifier(sub_id, maximum=128)
         if expected_version is not None and (not _is_int(expected_version) or expected_version < 0):
             _fail("invalid_request")
+        
+        # Validate optional SubIDs
+        sub_ids_list = [sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5]
+        for i, sid in enumerate(sub_ids_list, 1):
+            if sid is not None and (type(sid) is not str or len(sid) > 128):
+                _fail("invalid_request")
+        
+        # Validate clip_id and link_source
+        if clip_id is not None:
+            clip_id = _identifier(clip_id, maximum=200)
+        if link_source not in {'manual', 'extension', 'extension_subid_creation', 'api'}:
+            _fail("invalid_request")
+        
+        # Validate link_receipt
+        link_receipt_json = None
+        if link_receipt is not None:
+            if not isinstance(link_receipt, dict):
+                _fail("invalid_request")
+            try:
+                link_receipt_json = json.dumps(link_receipt, ensure_ascii=False, separators=(',', ':'))
+                if len(link_receipt_json) > 8192:
+                    _fail("invalid_request")
+            except (TypeError, ValueError):
+                _fail("invalid_request")
+        
         key = (workspace_id, marketplace, content_id, channel, product_id)
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         try:
             with self._connection(write=True) as connection:
                 self._begin(connection)
                 row = connection.execute(
-                    """SELECT affiliate_url, sub_id, version, created_at, updated_at
+                    """SELECT affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5,
+                              clip_id, link_source, link_receipt_json, version, created_at, updated_at
                        FROM links WHERE workspace_id=? AND marketplace=? AND content_id=?
                        AND channel=? AND product_id=?""",
                     key,
                 ).fetchone()
-                current_version = int(row[2]) if row else 0
+                current_version = int(row[10]) if row else 0
                 if expected_version is not None and expected_version != current_version:
                     self._rollback(connection)
                     _fail("version_conflict")
-                if row and row[0] == affiliate_url and row[1] == sub_id:
+                if row and row[0] == affiliate_url and row[1] == sub_id and \
+                   row[2] == sub_id_1 and row[3] == sub_id_2 and row[4] == sub_id_3 and \
+                   row[5] == sub_id_4 and row[6] == sub_id_5 and row[7] == clip_id:
                     connection.commit()
                     return self._link_result(
-                        key, affiliate_url, sub_id, current_version, row[3], row[4], changed=False
+                        key, affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5,
+                        clip_id, link_source, link_receipt_json, current_version, row[11], row[12], changed=False
                     )
                 duplicate_url = connection.execute(
                     """SELECT 1 FROM links WHERE workspace_id=? AND affiliate_url=?
@@ -587,23 +726,30 @@ class CampaignStore:
                     connection.execute(
                         """INSERT INTO links
                            (workspace_id, channel, marketplace, content_id, product_id,
-                            affiliate_url, sub_id, version, created_at, updated_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5,
+                            clip_id, link_source, link_receipt_json, version, created_at, updated_at)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (workspace_id, channel, marketplace, content_id, product_id,
-                         affiliate_url, sub_id, version, now, now),
+                         affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5,
+                         clip_id, link_source, link_receipt_json, version, now, now),
                     )
                     created_at = now
                 else:
                     version = current_version + 1
                     connection.execute(
-                        """UPDATE links SET affiliate_url=?, sub_id=?, version=?, updated_at=?
+                        """UPDATE links SET affiliate_url=?, sub_id=?, sub_id_1=?, sub_id_2=?, 
+                           sub_id_3=?, sub_id_4=?, sub_id_5=?, clip_id=?, link_source=?, 
+                           link_receipt_json=?, version=?, updated_at=?
                            WHERE workspace_id=? AND marketplace=? AND content_id=? AND channel=? AND product_id=?""",
-                        (affiliate_url, sub_id, version, now, *key),
+                        (affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5, 
+                         clip_id, link_source, link_receipt_json, version, now, *key),
                     )
-                    created_at = row[3]
+                    created_at = row[11]
                 self._check_database_capacity(connection)
                 connection.commit()
-                return self._link_result(key, affiliate_url, sub_id, version, created_at, now, changed=True)
+                return self._link_result(key, affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, 
+                                        sub_id_4, sub_id_5, clip_id, link_source, link_receipt_json, 
+                                        version, created_at, now, changed=True)
         except CampaignError:
             raise
         except sqlite3.IntegrityError:
@@ -616,6 +762,14 @@ class CampaignStore:
         key: tuple[str, str, str, str, str],
         affiliate_url: str,
         sub_id: str,
+        sub_id_1: str | None,
+        sub_id_2: str | None,
+        sub_id_3: str | None,
+        sub_id_4: str | None,
+        sub_id_5: str | None,
+        clip_id: str | None,
+        link_source: str,
+        link_receipt_json: str | None,
         version: int,
         created_at: str,
         updated_at: str,
@@ -623,7 +777,7 @@ class CampaignStore:
         changed: bool,
     ) -> dict[str, Any]:
         workspace_id, marketplace, content_id, channel, product_id = key
-        return {
+        result = {
             "ok": True,
             "link": {
                 "workspace_id": workspace_id,
@@ -639,8 +793,30 @@ class CampaignStore:
                 "changed": changed,
                 "url_validation": "format_only",
                 "provenance": _PROVENANCE,
+                "link_source": link_source,
             },
         }
+        
+        # Add optional fields only if they exist
+        if sub_id_1 is not None:
+            result["link"]["sub_id_1"] = sub_id_1
+        if sub_id_2 is not None:
+            result["link"]["sub_id_2"] = sub_id_2
+        if sub_id_3 is not None:
+            result["link"]["sub_id_3"] = sub_id_3
+        if sub_id_4 is not None:
+            result["link"]["sub_id_4"] = sub_id_4
+        if sub_id_5 is not None:
+            result["link"]["sub_id_5"] = sub_id_5
+        if clip_id is not None:
+            result["link"]["clip_id"] = clip_id
+        if link_receipt_json is not None:
+            try:
+                result["link"]["link_receipt"] = json.loads(link_receipt_json)
+            except json.JSONDecodeError:
+                pass
+        
+        return result
 
     def get_links(self, workspace_id: str, limit: int = 20, offset: int = 0) -> dict[str, Any]:
         workspace_id = _workspace_id(workspace_id)
@@ -651,7 +827,8 @@ class CampaignStore:
             ).fetchone()[0]
             rows = connection.execute(
                 """SELECT workspace_id, channel, marketplace, content_id, product_id,
-                          affiliate_url, sub_id, version, created_at, updated_at
+                          affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5,
+                          clip_id, link_source, link_receipt_json, version, created_at, updated_at
                    FROM links WHERE workspace_id=?
                    ORDER BY channel COLLATE NOCASE, content_id, marketplace, product_id
                    LIMIT ? OFFSET ?""",
@@ -659,7 +836,7 @@ class CampaignStore:
             ).fetchall()
         links = []
         for row in rows:
-            links.append({
+            link = {
                 "workspace_id": row[0],
                 "channel": row[1],
                 "marketplace": row[2],
@@ -667,13 +844,118 @@ class CampaignStore:
                 "product_id": row[4],
                 "affiliate_url": row[5],
                 "sub_id": row[6],
-                "version": row[7],
-                "created_at": row[8],
-                "updated_at": row[9],
+                "version": row[15],
+                "created_at": row[16],
+                "updated_at": row[17],
                 "url_validation": "format_only",
                 "provenance": _PROVENANCE,
-            })
+                "link_source": row[13] or "manual",
+            }
+            # Add optional fields
+            if row[7]: link["sub_id_1"] = row[7]
+            if row[8]: link["sub_id_2"] = row[8]
+            if row[9]: link["sub_id_3"] = row[9]
+            if row[10]: link["sub_id_4"] = row[10]
+            if row[11]: link["sub_id_5"] = row[11]
+            if row[12]: link["clip_id"] = row[12]
+            if row[14]:
+                try:
+                    link["link_receipt"] = json.loads(row[14])
+                except json.JSONDecodeError:
+                    pass
+            links.append(link)
         return {"ok": True, "links": links, "total": int(total), "limit": limit, "offset": offset}
+    
+    def find_links(
+        self,
+        workspace_id: str,
+        product_id: str | None = None,
+        channel: str | None = None,
+        clip_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Find links by product, channel, or clip_id"""
+        workspace_id = _workspace_id(workspace_id)
+        limit, offset = self._page_args(limit, offset)
+        
+        conditions = ["workspace_id=?"]
+        params: list[Any] = [workspace_id]
+        
+        if product_id is not None:
+            product_id = _identifier(product_id)
+            conditions.append("product_id=?")
+            params.append(product_id)
+        
+        if channel is not None:
+            channel = _channel(channel)
+            conditions.append("channel=?")
+            params.append(channel)
+        
+        if clip_id is not None:
+            clip_id = _identifier(clip_id)
+            conditions.append("clip_id=?")
+            params.append(clip_id)
+        
+        where_clause = " AND ".join(conditions)
+        
+        with self._connection() as connection:
+            total = connection.execute(
+                f"SELECT count(*) FROM links WHERE {where_clause}", params
+            ).fetchone()[0]
+            
+            rows = connection.execute(
+                f"""SELECT workspace_id, channel, marketplace, content_id, product_id,
+                           affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5,
+                           clip_id, link_source, link_receipt_json, version, created_at, updated_at
+                    FROM links WHERE {where_clause}
+                    ORDER BY created_at DESC
+                    LIMIT ? OFFSET ?""",
+                (*params, limit, offset),
+            ).fetchall()
+        
+        links = []
+        for row in rows:
+            link = {
+                "workspace_id": row[0],
+                "channel": row[1],
+                "marketplace": row[2],
+                "content_id": row[3],
+                "product_id": row[4],
+                "affiliate_url": row[5],
+                "sub_id": row[6],
+                "version": row[15],
+                "created_at": row[16],
+                "updated_at": row[17],
+                "url_validation": "format_only",
+                "provenance": _PROVENANCE,
+                "link_source": row[13] or "manual",
+            }
+            if row[7]: link["sub_id_1"] = row[7]
+            if row[8]: link["sub_id_2"] = row[8]
+            if row[9]: link["sub_id_3"] = row[9]
+            if row[10]: link["sub_id_4"] = row[10]
+            if row[11]: link["sub_id_5"] = row[11]
+            if row[12]: link["clip_id"] = row[12]
+            if row[14]:
+                try:
+                    link["link_receipt"] = json.loads(row[14])
+                except json.JSONDecodeError:
+                    pass
+            links.append(link)
+        
+        return {
+            "ok": True,
+            "links": links,
+            "total": int(total),
+            "limit": limit,
+            "offset": offset,
+            "filters": {
+                "product_id": product_id,
+                "channel": channel,
+                "clip_id": clip_id
+            }
+        }
 
     def import_csv(
         self,

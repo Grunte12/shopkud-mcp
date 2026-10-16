@@ -10,7 +10,7 @@
   "background": {"service_worker": "background.js"},
   "content_scripts": [{
     "matches": ["https://affiliate.shopee.co.th/*"],
-    "js": ["core.js", "detail.js", "pagination.js", "search.js", "review-data.js", "review.js", "content.js"],
+    "js": ["core.js", "detail.js", "pagination.js", "search.js", "review-data.js", "review.js", "subid.js", "verify.js", "content.js"],
     "run_at": "document_idle"
   }]
 }
