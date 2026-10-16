@@ -115,6 +115,15 @@
     return false;
   }
   async function execute(operation,args,command) {
+    if(operation==="read_earnings" || operation==="read_video_level" || operation==="plan_video_draft" || operation==="plan_cart_swap") {
+      if(!args || typeof args!=="object" || Array.isArray(args))return fail("invalid_input");
+      if(!window.ShopKudSurfaces)return fail("surfaces_module_not_loaded");
+      const text=document.body?document.body.innerText:"";
+      if(operation==="read_earnings")return window.ShopKudSurfaces.readEarnings(text, args.labels);
+      if(operation==="read_video_level")return window.ShopKudSurfaces.readVideoLevel(text, args.labels);
+      if(operation==="plan_video_draft")return window.ShopKudSurfaces.planVideoDraft(document, args);
+      return window.ShopKudSurfaces.planCartSwap(document);
+    }
     if(!active || Detail.route(location.href)?.url!==activeUrl)return fail("page_changed");
     if(!args || typeof args!=="object" || Array.isArray(args))return fail("invalid_input");
     if(busy)return fail("page_busy");

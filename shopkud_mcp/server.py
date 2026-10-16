@@ -521,15 +521,17 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         product_id: Annotated[str | None, Field(strict=True, max_length=200)] = None,
         channel: Annotated[str | None, Field(strict=True, max_length=80)] = None,
         clip_id: Annotated[str | None, Field(strict=True, max_length=200)] = None,
+        product: Annotated[str | None, Field(strict=True, max_length=200)] = None,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
         limit: Annotated[int, Field(strict=True, ge=1, le=50)] = 20,
         offset: Annotated[int, Field(strict=True, ge=0, le=999)] = 0,
     ) -> dict:
-        """ค้นลิงก์ที่บันทึกไว้ด้วย product_id, channel หรือ clip_id ไม่ต้องเปิด Chrome คืนลิงก์ที่ตรงเงื่อนไข 
-        ไม่ใช่ราคา/เรตปัจจุบัน และไม่ได้บันทึกทุกครั้งที่ผู้ใช้กดเอาลิงก์"""
+        """ค้นลิงก์ที่บันทึกไว้ด้วย product_id, รหัสสินค้า SubID (product เช่น P1), channel หรือ clip_id
+        ไม่ต้องเปิด Chrome ไม่เปิดลิงก์ และไม่ใช่ราคา/เรตปัจจุบัน"""
         known=local("workspace","get_workspace",workspace_id,"brief")
         if known.get("ok") is False:return known
         return local("campaign","find_links",workspace_id,product_id=product_id,channel=channel,
-                    clip_id=clip_id,limit=limit,offset=offset)
+                    clip_id=clip_id,limit=limit,offset=offset,product=product,account=account)
 
     @server.tool()
     async def create_link(
@@ -701,6 +703,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
     
     @server.tool()
     async def import_report_csv(
+        workspace_id: str, csv_text: str | None, mapping: dict, marketplace: str,
         period_start: str, period_end: str, amount_state: Literal["estimated","confirmed","paid"] = "estimated",
         commit: Annotated[bool,Field(strict=True)] = False, expected_digest: str | None = None, status_map: dict | None = None,
         csv_file: str | None = None,
@@ -733,7 +736,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
     @server.tool()
     async def sales_by(
         workspace_id: str,
-        dimension: Literal["platform", "product", "clip", "variant", "month"],
+        dimension: Literal["platform", "product", "clip", "variant", "month", "sub_id"],
         period_start: Annotated[str | None, Field(strict=True)] = None,
         period_end: Annotated[str | None, Field(strict=True)] = None,
     ) -> dict:
@@ -758,50 +761,46 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         page_id: _PageId | None = None,
         product_id: Annotated[str | None, Field(strict=True, pattern=r"^[1-9][0-9]{0,19}$")] = None,
         offer_url: Annotated[str | None, Field(strict=True, max_length=2048)] = None,
+        workspace_id: Annotated[str | None, Field(strict=True, pattern=r"^[0-9a-f]{32}$")] = None,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
-        """Get product offer details including per-channel commission rates. Reads from
-        extension detail reader (same as get_product_detail but returns focused offer data).
-        
-        Provide either page_id (to read current page), product_id (to search history), or
-        offer_url (to open and read specific offer). Returns product info, commission rates
-        by channel (CPS/CPA), price, stock status, and category.
-        
-        Does NOT create affiliate links. Use create_link separately to generate SubID links."""
-        if not page_id and not product_id and not offer_url:
-            return {"ok": False, "error": "provide_page_id_product_id_or_offer_url"}
-        
-        # Reuse get_product_detail but return focused offer data
-        detail = await get_product_detail(
-            page_id=page_id,
-            save=False,
-            offer_url=offer_url,
-            open_if_missing=bool(offer_url),
-            product_id=product_id,
-        )
-        
-        if not detail.get("ok"):
-            return detail
-        
-        # Extract offer-focused fields
-        product = detail.get("product", {})
-        return {
-            "ok": True,
-            "product_id": product.get("product_id"),
-            "title": product.get("title"),
-            "price": product.get("price"),
-            "stock_status": product.get("stock_status"),
-            "category": product.get("category"),
-            "commissions": product.get("commissions", {}),
-            "offer_url": detail.get("offer_url"),
-            "observed_at": detail.get("observed_at"),
-            "source": "extension_detail_reader",
-        }
+        """Current offer: price, social vs video commission, Extra Com, and excluded-category flag.
+        A page read comes from the extension. An item id without a page reads the latest local snapshot.
+        Does not create or open an affiliate link."""
+        from .spec_ops import project_offer
+        if page_id or offer_url:
+            detail = await get_product_detail(page_id=page_id, save=False, offer_url=offer_url, open_if_missing=False)
+            if not detail.get("ok"):
+                return detail
+            offer = project_offer(detail)
+            if workspace_id and offer.get("item_id") and offer.get("title"):
+                images = [image.get("url") for image in offer.get("images") or [] if type(image) is dict and image.get("url")]
+                saved = local(
+                    "campaign", "record_offer", workspace_id, offer["item_id"], offer["title"],
+                    account=account, shop_id=offer.get("shop_id"), category=offer.get("category"),
+                    official=bool(offer.get("shop", {}).get("official")), price=offer.get("price"),
+                    rate_social=offer["per_channel"].get("social"), rate_video=offer["per_channel"].get("video"),
+                    extra_comm=offer.get("extra_comm"), stock=offer.get("stock") or "unknown",
+                    image_urls=images, as_of=offer.get("as_of"),
+                )
+                if saved.get("ok"):
+                    offer = {**offer, **{key: saved[key] for key in ("warnings", "excluded_category", "commission_eligible", "excluded_match") if key in saved}}
+                    offer["snapshot_saved"] = True
+            return offer
+        if product_id and workspace_id:
+            known = local("workspace", "get_workspace", workspace_id, "brief")
+            if known.get("ok") is False:
+                return known
+            return local("campaign", "get_offer_snapshot", workspace_id, product_id, account)
+        return {"ok": False, "error": "provide_page_offer_or_workspace_item"}
 
     @server.tool()
     async def check_commission_health(
         workspace_id: str,
         product_ids: Annotated[list[str] | None, Field(max_length=100)] = None,
         channel: Annotated[str | None, Field(max_length=100)] = None,
+        scope: Annotated[str | list[str] | None, Field()] = None,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
         """Check commission health for tracked products and detect rate changes.
         
@@ -816,7 +815,12 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         known = local("workspace", "get_workspace", workspace_id, "brief")
         if known.get("ok") is False:
             return known
-        return local("campaign", "check_commission_health", workspace_id, product_ids, channel)
+        table = local("campaign", "check_commission_health", workspace_id, product_ids, channel)
+        snaps = local("campaign", "commission_health_from_snapshots", workspace_id, scope if scope is not None else "all", account)
+        if snaps.get("ok") and snaps.get("checked_count"):
+            snaps["manual_tracker"] = table
+            return snaps
+        return table
 
     @server.tool()
     async def update_commission_health(
@@ -870,19 +874,28 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         reward: Annotated[str | None, Field(max_length=500)] = None,
         requirements: Annotated[dict | None, Field()] = None,
         deadline: Annotated[str | None, Field()] = None,
+        dry_run: Annotated[bool, Field(strict=True)] = True,
     ) -> dict:
-        """Enroll in a mission/campaign and start tracking progress.
-        
-        Creates mission tracking record with requirements and deadline.
-        Requirements dict should contain mission criteria (e.g., {"posts": 3, "sales": 1000}).
-        
-        Use after observing mission details from extension. Track progress with
-        update_mission_progress."""
+        """Enroll in a mission. dry_run=true (default) returns a confirm card and does not enroll.
+        Pass dry_run=false only after the owner confirms. This does not click Shopee."""
         known = local("workspace", "get_workspace", workspace_id, "brief")
         if known.get("ok") is False:
             return known
-        return local("campaign", "enroll_mission", workspace_id, mission_id, name,
-                    reward, requirements, deadline)
+        if type(dry_run) is not bool:
+            return {"ok": False, "error": "invalid_input"}
+        if dry_run:
+            return {
+                "ok": True, "mission_id": mission_id, "name": name, "reward": reward,
+                "requirements": requirements or {}, "deadline": deadline,
+                "enrolled": False, "confirm_required": True, "dry_run": True, "submits": False,
+                "source": "cache",
+            }
+        result = local("campaign", "enroll_mission", workspace_id, mission_id, name,
+                      reward, requirements, deadline)
+        if type(result) is dict:
+            result["submits"] = False
+            result["dry_run"] = False
+        return result
 
     @server.tool()
     async def update_mission_progress(
@@ -1027,27 +1040,256 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
     @server.tool()
     async def export_data(
         workspace_id: str,
-        kind: Annotated[Literal["links", "reports", "commissions", "missions", "videos"], Field()],
+        kind: Annotated[Literal["links", "reports", "commissions", "missions", "videos", "offers", "earnings"], Field()],
         period_start: Annotated[str | None, Field()] = None,
         period_end: Annotated[str | None, Field()] = None,
         format: Annotated[Literal["json", "csv"], Field()] = "json",
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
-        """Export workspace data as JSON or CSV (P2-5).
-        
-        Export kinds:
-        - links: All affiliate links with SubIDs
-        - reports: Conversion reports summary
-        - commissions: Commission tracking history
-        - missions: Mission progress data
-        - videos: Video clip tracking data
-        
-        CSV output is formula-neutralized (no leading = + - @).
-        Returns data structure, not file download."""
+        """Export workspace aggregates as JSON or formula-neutralized CSV. No buyer or order rows."""
         known = local("workspace", "get_workspace", workspace_id, "brief")
         if known.get("ok") is False:
             return known
         return local("campaign", "export_data", workspace_id, kind, period_start,
-                    period_end, format)
+                    period_end, format, account)
+
+    @server.tool()
+    async def export(
+        workspace_id: str,
+        kind: Annotated[Literal["links", "reports", "commissions", "missions", "videos", "offers", "earnings"], Field()],
+        period_start: Annotated[str | None, Field()] = None,
+        period_end: Annotated[str | None, Field()] = None,
+        format: Annotated[Literal["json", "csv"], Field()] = "csv",
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """Spec name for export_data. CSV cells that start with a formula character are prefixed."""
+        return await export_data(workspace_id, kind, period_start, period_end, format, account)
+
+    @server.tool()
+    async def find_link(
+        workspace_id: str,
+        product: Annotated[str | None, Field(strict=True, max_length=200)] = None,
+        item_id: Annotated[str | None, Field(strict=True, max_length=200)] = None,
+        channel: Annotated[str | None, Field(strict=True, max_length=80)] = None,
+        clip_id: Annotated[str | None, Field(strict=True, max_length=200)] = None,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """Registry lookup. product is the SubID product code (P1), item_id is the Shopee item id."""
+        return await find_campaign_links(workspace_id, product_id=item_id, channel=channel, clip_id=clip_id,
+                                        product=product, account=account, limit=20, offset=0)
+
+    @server.tool()
+    async def get_conversions(
+        workspace_id: str,
+        period_start: str,
+        period_end: str,
+        status: Annotated[str | None, Field(max_length=40)] = None,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """Aggregate conversion buckets from an imported report. Order and buyer identifiers are omitted."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "get_conversions", workspace_id, period_start, period_end, status, account)
+
+    @server.tool()
+    async def record_offer_observation(
+        workspace_id: str,
+        item_id: str,
+        title: str,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+        shop_id: Annotated[str | None, Field(strict=True, max_length=20)] = None,
+        category: Annotated[str | None, Field(max_length=80)] = None,
+        official: Annotated[bool, Field(strict=True)] = False,
+        price: Annotated[float | None, Field(ge=0, le=1000000000)] = None,
+        rate_social: Annotated[float | None, Field(ge=0, le=100)] = None,
+        rate_video: Annotated[float | None, Field(ge=0, le=100)] = None,
+        extra_comm: Annotated[float | None, Field(ge=0, le=100)] = None,
+        stock: Annotated[Literal["in_stock", "out_of_stock", "unknown"], Field()] = "unknown",
+        sales: Annotated[int | None, Field(ge=0, le=1000000000)] = None,
+        rating: Annotated[float | None, Field(ge=0, le=5)] = None,
+        image_urls: Annotated[list[str] | None, Field(max_length=30)] = None,
+    ) -> dict:
+        """Store one extension offer observation. This does not call Shopee."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "record_offer", workspace_id, item_id, title, account=account, shop_id=shop_id,
+                    category=category, official=official, price=price, rate_social=rate_social, rate_video=rate_video,
+                    extra_comm=extra_comm, stock=stock, sales=sales, rating=rating, image_urls=image_urls)
+
+    @server.tool()
+    async def search_offers(
+        workspace_id: str,
+        keyword: Annotated[str | None, Field(max_length=200)] = None,
+        sort: Annotated[Literal["commission", "sales", "price", "rating"], Field()] = "commission",
+        official: Annotated[bool | None, Field(strict=True)] = None,
+        extra_comm: Annotated[bool | None, Field(strict=True)] = None,
+        min_rate: Annotated[float | None, Field(ge=0, le=100)] = None,
+        limit: Annotated[int, Field(ge=1, le=100)] = 20,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """Search locally snapshotted offers. Not a live catalog scrape."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "search_offers", workspace_id, keyword, sort, official=official,
+                    extra_comm=extra_comm, min_rate=min_rate, limit=limit, account=account)
+
+    @server.tool()
+    async def get_price_history(
+        workspace_id: str,
+        item_id: str,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """Price points from our own offer snapshots only."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "get_price_history", workspace_id, item_id, account)
+
+    @server.tool()
+    async def get_product_media(
+        workspace_id: str,
+        item_id: str,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """Image URLs previously observed on an offer page. No new download is performed."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "get_product_media", workspace_id, item_id, account)
+
+    @server.tool()
+    async def suggest_replacement(
+        workspace_id: str,
+        item_id: str,
+        k: Annotated[int, Field(ge=1, le=20)] = 5,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """Suggest a replacement from snapshotted offers: similar title or category, preferring official, Extra Com, and in-stock items."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "suggest_replacement", workspace_id, item_id, k, account)
+
+    @server.tool()
+    async def list_video_clips(
+        workspace_id: str,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """List observed Shopee Video clips and cart items. Does not open the creator page."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "list_video_clips", workspace_id, account)
+
+    @server.tool()
+    async def check_post_compliance(
+        workspace_id: str,
+        mission_id: str,
+        caption: Annotated[str, Field(max_length=5000)],
+        link: Annotated[str | None, Field(max_length=2048)] = None,
+    ) -> dict:
+        """Check a caption and registry link against mission keywords. Does not post or enroll."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "check_post_compliance", workspace_id, mission_id, caption, link)
+
+    @server.tool()
+    async def record_earnings_observation(
+        workspace_id: str,
+        pending: Annotated[str | None, Field(max_length=40)] = None,
+        validated: Annotated[str | None, Field(max_length=40)] = None,
+        paid: Annotated[str | None, Field(max_length=40)] = None,
+        next_payout: Annotated[str | None, Field(max_length=40)] = None,
+        kyc_status: Annotated[Literal["unknown", "unverified", "pending", "verified"], Field()] = "unknown",
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """Store an earnings snapshot read by the extension. Amounts are aggregates, not orders."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "record_earnings", workspace_id, pending=pending, validated=validated, paid=paid,
+                    next_payout=next_payout, kyc_status=kyc_status, account=account)
+
+    @server.tool()
+    async def get_earnings_summary(
+        workspace_id: str,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """Latest earnings snapshot plus a local 180-day expiry warning. The expiry window is an owner-verifiable assumption."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "get_earnings_summary", workspace_id, account)
+
+    @server.tool()
+    async def record_video_level_observation(
+        workspace_id: str,
+        level: Annotated[int | None, Field(ge=0, le=50)] = None,
+        active_days: Annotated[int, Field(ge=0, le=10000)] = 0,
+        qualifying_clips: Annotated[int, Field(ge=0, le=100000)] = 0,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """Store a Shopee Video level observation from the extension."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "record_video_level", workspace_id, level=level, active_days=active_days,
+                    qualifying_clips=qualifying_clips, account=account)
+
+    @server.tool()
+    async def get_video_level(
+        workspace_id: str,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """Video level, active days, qualifying clips, and the next local threshold. Tuesday refresh and level numbers above the spec's 15/15 rule are assumptions."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "get_video_level", workspace_id, account)
+
+    @server.tool()
+    async def create_video_draft(
+        workspace_id: str,
+        file_name: str,
+        caption: Annotated[str, Field(min_length=1, max_length=2000)],
+        hashtags: Annotated[list[str] | None, Field(max_length=30)] = None,
+        item_ids: Annotated[list[str] | None, Field(max_length=10)] = None,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """Prepare a Video draft plan. The file is not uploaded and publish is never clicked."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "create_video_draft", workspace_id, file_name, caption, hashtags, item_ids, account)
+
+    @server.tool()
+    async def posting_budget(
+        workspace_id: str,
+        platform: str,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """Today's link count against the local per-platform cap. Does not ask the platform."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "posting_budget", workspace_id, platform, account)
+
+    @server.tool()
+    async def set_posting_cap(
+        workspace_id: str,
+        platform: str,
+        daily_cap: Annotated[int, Field(ge=1, le=10000)],
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
+    ) -> dict:
+        """Set the local daily link cap for one platform and account."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "set_posting_cap", workspace_id, platform, daily_cap, account)
 
     app = server.streamable_http_app()
     original_lifespan = app.router.lifespan_context

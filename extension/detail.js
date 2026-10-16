@@ -74,10 +74,15 @@
       labels:[...main.querySelectorAll('h2,h3,h4,h5,h6,[class*="comm"],[class*="Commission"]')].filter(node=>eligible(node) && node.children.length<5 && /ค่าคอม/u.test(clip(node)) && (node.textContent || "").length<=240).slice(0,8).map(clip)
     };
     const dialogs=[...doc.querySelectorAll('[role="dialog"]')].filter(d=>d.querySelector('h4')?.textContent.trim()==="ลิงก์ข้อเสนอสินค้า" && d.getClientRects().length);
-    const candidates=dialogs.flatMap(d=>[...d.querySelectorAll("textarea,input[type=text]")].filter(e=>e.disabled && e.getClientRects().length).map(e=>shortLink(e.value)).filter(Boolean));
+    const captured=window.ShopKudLinkCapture?window.ShopKudLinkCapture.choose(dialogs,shortLink):{
+      values:dialogs.flatMap(d=>[...d.querySelectorAll("textarea,input[type=text]")].filter(e=>e.disabled && e.getClientRects().length).map(e=>shortLink(e.value)).filter(Boolean)),
+      source:null
+    };
+    const candidates=captured.values;
+    const linkSource=candidates.length===1?(captured.source || "visible_link_dialog"):null;
     return {ok:true,kind:"product_detail",product_id:context.product_id,item_id:context.product_id,shop_id,name,offer_url:context.url,product_url:links[0],price_min_thb:price.min,price_max_thb:price.max,
       images,variant_info:{model_id:null,model_name:null,color:null,source:null},gallery_complete:false,
-      channels,commission_layout_evidence,affiliate_url:candidates.length===1?candidates[0]:null,link_source:candidates.length===1?"visible_link_dialog":null,
+      channels,commission_layout_evidence,affiliate_url:candidates.length===1?candidates[0]:null,link_source:linkSource,
       observed_at:new Date().toISOString(),observations_only:true,link_attribution_verified:false,
       missing_fields:[...(!channels.length?["channels"]:[]),...(!images.length?["images"]:[]),...(!images.some(i=>i.role==="gallery")?["gallery"]:[]),"variant_model","variant_color","commission_caps"]};
   }

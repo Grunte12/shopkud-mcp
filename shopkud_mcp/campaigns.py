@@ -60,7 +60,10 @@ _MARKETPLACE_RE = re.compile(r"[a-z][a-z0-9_-]{0,39}\Z")
 _SAFE_INTEGER_RE = re.compile(r"[0-9]{1,12}\Z")
 _MONEY_RE = re.compile(r"[+-]?[0-9]{1,13}(?:\.[0-9]{1,4})?\Z")
 _REPORT_ID_RE = re.compile(r"[0-9a-f]{32}\Z")
-_ROLES = frozenset({"sub_id", "commission", "clicks", "orders", "status"})
+_ROLES = frozenset({
+    "sub_id", "commission", "clicks", "orders", "status",
+    "reason", "category", "buyer_class",
+})
 _STATUSES = frozenset({"pending", "completed", "cancelled", "unknown"})
 _AMOUNT_STATES = frozenset({"estimated", "confirmed", "paid"})
 _STATUS_KEYS = ("pending", "completed", "cancelled", "unknown")
@@ -94,6 +97,9 @@ class CampaignError(Exception):
         "stale_preview",
         "report_limit",
         "report_not_found",
+        "mission_not_enrolled",
+        "video_not_found",
+        "offer_not_found",
     })
 
     def __init__(self, code: str):
@@ -430,6 +436,16 @@ class CampaignStore:
         except (OSError, sqlite3.Error):
             _fail("storage_error")
         self._verify_database_file()
+        from .spec_ops import ensure_schema
+        try:
+            with self._connection(write=True) as connection:
+                self._begin(connection)
+                ensure_schema(connection)
+                connection.commit()
+        except CampaignError:
+            raise
+        except sqlite3.Error:
+            _fail("storage_error")
 
     def _ensure_database_file(self) -> None:
         self._verify_root()
@@ -572,7 +588,7 @@ class CampaignStore:
         affiliate_url = detail.get("affiliate_url")
         if affiliate_url is not None:
             affiliate_url = _validate_affiliate_url(affiliate_url, "shopee")
-            if detail.get("link_source") != "visible_link_dialog":
+            if detail.get("link_source") not in {"visible_link_dialog", "hidden_link_field"}:
                 _fail("invalid_request")
         key = (product_id, affiliate_url or "")
         prices = (detail.get("price_min_thb"), detail.get("price_max_thb"))
@@ -878,8 +894,10 @@ class CampaignStore:
         clip_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        product: str | None = None,
+        account: str | None = None,
     ) -> dict[str, Any]:
-        """Find links by product, channel, or clip_id"""
+        """Find links by item id, SubID product code, channel, or clip_id."""
         workspace_id = _workspace_id(workspace_id)
         limit, offset = self._page_args(limit, offset)
         
@@ -890,6 +908,16 @@ class CampaignStore:
             product_id = _identifier(product_id)
             conditions.append("product_id=?")
             params.append(product_id)
+
+        if product is not None:
+            product = _identifier(product)
+            conditions.append("sub_id_2=?")
+            params.append(product)
+
+        if account is not None:
+            from .spec_ops import account_id
+            conditions.append("account_id=?")
+            params.append(account_id(account))
         
         if channel is not None:
             channel = _channel(channel)
@@ -1090,6 +1118,10 @@ class CampaignStore:
                          json.dumps(group["status_counts"], separators=(",", ":"))
                          if group["status_counts"] is not None else None),
                     )
+                from .spec_ops import store_conversion_buckets
+                store_conversion_buckets(
+                    connection, workspace_id, period_start, period_end, parsed["records"],
+                )
                 self._check_database_capacity(connection)
                 connection.commit()
                 report = self._load_report(connection, workspace_id, report_id)
@@ -1194,6 +1226,9 @@ class CampaignStore:
                     "clicks": _count_value(clicks_raw if clicks_raw is not None else ""),
                     "orders": _count_value(orders_raw if orders_raw is not None else ""),
                     "status": status,
+                    "reason": cell("reason"),
+                    "category": cell("category"),
+                    "buyer_class": cell("buyer_class"),
                 })
             return {
                 "records": records,
@@ -1584,10 +1619,11 @@ class CampaignStore:
         # Map dimension names to SubID fields
         dimension_map = {
             "platform": "sub_id_1",
-            "product": "sub_id_2", 
+            "product": "sub_id_2",
             "clip": "sub_id_3",
             "variant": "sub_id_4",
             "month": "sub_id_5",
+            "sub_id": "sub_id",
         }
         
         if dimension not in dimension_map:
@@ -2167,112 +2203,106 @@ class CampaignStore:
         workspace_id: str,
         period_start: str,
         period_end: str,
+        account: str | None = None,
     ) -> dict[str, Any]:
-        """Analyze cancelled orders from reports and classify by likely reason.
-        
-        Args:
-            workspace_id: The workspace
-            period_start: Start date (YYYY-MM-DD)
-            period_end: End date (YYYY-MM-DD)
-            
-        Returns:
-            Dict with cancellation breakdown by classification
-        """
-        workspace_id = _workspace_id(workspace_id)
-        
-        # Validate dates
-        try:
-            datetime.fromisoformat(period_start)
-            datetime.fromisoformat(period_end)
-        except ValueError:
-            _fail("invalid_request")
-        
-        with self._connection() as connection:
-            # Query reports in date range with status data
-            query = """
-                SELECT r.report_id, rg.status_counts
-                FROM reports r
-                JOIN report_groups rg ON r.report_id = rg.report_id
-                WHERE r.workspace_id = ?
-                  AND r.period_start >= ?
-                  AND r.period_end <= ?
-                  AND r.status_present = 1
-            """
-            rows = connection.execute(query, (workspace_id, period_start, period_end)).fetchall()
-            
-            # Aggregate cancellations
-            classifications = {
-                "buyer_cancelled": 0,
-                "seller_cancelled": 0,
-                "invalid_order": 0,
-                "payment_failed": 0,
-                "unknown": 0,
-            }
-            
-            total_cancelled = 0
-            reports_analyzed = 0
-            
-            for row in rows:
-                reports_analyzed += 1
-                try:
-                    status_counts = json.loads(row[1]) if row[1] else {}
-                    cancelled = status_counts.get("cancelled", 0)
-                    total_cancelled += cancelled
-                    classifications["unknown"] += cancelled
-                except json.JSONDecodeError:
-                    pass
-            
-            return {
-                "ok": True,
-                "workspace_id": workspace_id,
-                "period_start": period_start,
-                "period_end": period_end,
-                "reports_analyzed": reports_analyzed,
-                "total_cancelled": total_cancelled,
-                "classifications": classifications,
-                "note": "Detailed classification requires order-level cancellation reasons. Current implementation aggregates all cancellations as 'unknown'.",
-                "provenance": _PROVENANCE,
-            }
+        """Classify cancelled and zero-commission aggregate rows. No order ids are stored."""
+        from .spec_ops import SpecOps
+        return SpecOps(self).explain_cancellations(workspace_id, period_start, period_end, account)
 
-    # P1-6: Product research for content
-    def search_products_for_content(
-        self,
-        workspace_id: str,
-        keyword: str | None = None,
-        min_commission_pct: float | None = None,
-        sort_by: str = "commission",
-        limit: int = 20,
-    ) -> dict[str, Any]:
-        """Search products from workspace history suitable for content creation.
-        
-        Filters by commission rate, keyword matching. Returns products ranked
-        by commission, sales potential, or rating.
-        
-        Note: Requires product detail observations in workspace. Does not query live Shopee.
-        """
-        workspace_id = _workspace_id(workspace_id)
-        
-        if sort_by not in ("commission", "sales", "rating"):
-            _fail("invalid_request")
-        
-        if limit < 1 or limit > 100:
-            _fail("invalid_request")
-        
-        # This would query from workspace product observations
-        # For now, return structure showing what would be available
-        return {
-            "ok": True,
-            "workspace_id": workspace_id,
-            "keyword": keyword,
-            "min_commission_pct": min_commission_pct,
-            "sort_by": sort_by,
-            "products": [],  # Would be populated from product_history table
-            "count": 0,
-            "note": "Requires product detail observations in workspace. Implement by querying product_history with filters.",
-            "provenance": _PROVENANCE,
-        }
+    def get_conversions(self, workspace_id: str, period_start: str, period_end: str,
+                        status: str | None = None, account: str | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).get_conversions(workspace_id, period_start, period_end, status, account)
 
-    # P1-3 and P2-1: Video clip cart management and level tracking
+    def record_offer(self, workspace_id: str, item_id: str, title: str, **kwargs) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).record_offer(workspace_id, item_id, title, **kwargs)
+
+    def get_offer_snapshot(self, workspace_id: str, item_id: str, account: str | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).get_offer(workspace_id, item_id, account)
+
+    def search_offers(self, workspace_id: str, keyword: str | None = None, sort: str = "commission", **kwargs) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).search_offers(workspace_id, keyword, sort, **kwargs)
+
+    def search_products_for_content(self, workspace_id: str, keyword: str | None = None,
+                                    min_commission_pct: float | None = None, sort_by: str = "commission",
+                                    limit: int = 20, account: str | None = None) -> dict[str, Any]:
+        sort = {"commission": "commission", "sales": "sales", "rating": "rating"}.get(sort_by)
+        if sort is None:
+            _fail("invalid_request")
+        result = self.search_offers(
+            workspace_id, keyword, sort, min_rate=min_commission_pct, limit=limit, account=account,
+        )
+        result["products"] = result["items"]
+        result["sort_by"] = sort_by
+        return result
+
+    def get_price_history(self, workspace_id: str, item_id: str, account: str | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).get_price_history(workspace_id, item_id, account)
+
+    def get_product_media(self, workspace_id: str, item_id: str, account: str | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).get_product_media(workspace_id, item_id, account)
+
+    def suggest_replacement(self, workspace_id: str, item_id: str, k: int = 5, account: str | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).suggest_replacement(workspace_id, item_id, k, account)
+
+    def commission_health_from_snapshots(self, workspace_id: str, scope: Any = "all", account: str | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).commission_health_from_snapshots(workspace_id, scope=scope, account=account)
+
+    def check_post_compliance(self, workspace_id: str, mission_id: str, caption: str, link: str | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).check_post_compliance(workspace_id, mission_id, caption, link)
+
+    def list_video_clips(self, workspace_id: str, account: str | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).list_video_clips(workspace_id, account)
+
+    def record_earnings(self, workspace_id: str, **kwargs) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).record_earnings(workspace_id, **kwargs)
+
+    def get_earnings_summary(self, workspace_id: str, account: str | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).get_earnings_summary(workspace_id, account)
+
+    def record_video_level(self, workspace_id: str, **kwargs) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).record_video_level(workspace_id, **kwargs)
+
+    def get_video_level(self, workspace_id: str, account: str | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).get_video_level(workspace_id, account)
+
+    def create_video_draft(self, workspace_id: str, file_name: str, caption: str,
+                           hashtags: list[str] | None = None, item_ids: list[str] | None = None,
+                           account: str | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).create_video_draft(workspace_id, file_name, caption, hashtags, item_ids, account)
+
+    def posting_budget(self, workspace_id: str, platform: str, account: str | None = None, cap: int | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).posting_budget(workspace_id, platform, account, cap)
+
+    def set_posting_cap(self, workspace_id: str, platform: str, daily_cap: int, account: str | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).set_posting_cap(workspace_id, platform, daily_cap, account)
+
+    def convert_links_in_text(self, workspace_id: str, text: str, channel: str,
+                              clip_id: str | None = None, account: str | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).convert_links_in_text(workspace_id, text, channel, clip_id, account)
+
+    def export_data(self, workspace_id: str, kind: str, period_start: str | None = None,
+                    period_end: str | None = None, format: str = "json", account: str | None = None) -> dict[str, Any]:
+        from .spec_ops import SpecOps
+        return SpecOps(self).export_data(workspace_id, kind, period_start, period_end, format, account)
+
     def track_video_clip(
         self,
         workspace_id: str,
@@ -2283,60 +2313,61 @@ class CampaignStore:
         level: int = 0,
         active_days: int = 0,
         clips_count: int = 0,
+        account: str | None = None,
     ) -> dict[str, Any]:
-        """Track Shopee Video clip with cart items and level info.
-        
-        Args:
-            workspace_id: The workspace
-            video_id: Video identifier
-            title: Video title
-            status: Video status (draft, published, etc.)
-            cart_items: List of product items in cart
-            level: Shopee Video level (0-10+, for P2-1)
-            active_days: Active posting days count
-            clips_count: Total clips published
-        """
+        """Record a Shopee Video clip observation. Does not publish or edit the live cart."""
         workspace_id = _workspace_id(workspace_id)
-        
-        if (not isinstance(video_id, str) or not video_id or len(video_id) > 200
-                or not isinstance(title, str) or not title or len(title) > 500
-                or not isinstance(status, str) or not status):
+        from .spec_ops import account_id
+        stored_account = account_id(account)
+        if (type(video_id) is not str or not video_id or len(video_id) > 200
+                or type(title) is not str or not title or len(title) > 500
+                or type(status) is not str or status not in {"draft", "published", "observed", "removed"}
+                or type(level) is not int or type(active_days) is not int or type(clips_count) is not int):
             _fail("invalid_request")
-        
-        cart_json = json.dumps(cart_items or [], separators=(",", ":"))
+        if cart_items is not None and (type(cart_items) is not list or len(cart_items) > 30):
+            _fail("invalid_request")
+        safe_items = []
+        for item in cart_items or []:
+            if type(item) is not dict:
+                _fail("invalid_request")
+            product = item.get("product_id")
+            if type(product) is not str or not product or len(product) > 200:
+                _fail("invalid_request")
+            url = item.get("affiliate_url")
+            if url is not None and (type(url) is not str or not url.startswith("https://s.shopee.co.th/") or len(url) > 2048):
+                _fail("invalid_request")
+            safe_items.append({"product_id": product, "affiliate_url": url})
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        
         try:
             with self._connection(write=True) as connection:
                 self._begin(connection)
-                
-                # Upsert video clip
                 connection.execute(
                     """INSERT OR REPLACE INTO video_clips
-                       (video_id, workspace_id, title, status, cart_items_json,
-                        level, active_days, clips_count, observed_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                    (video_id, workspace_id, title, status, cart_json,
-                     level, active_days, clips_count, now)
+                       (video_id, workspace_id, title, status, cart_items_json, level, active_days,
+                        clips_count, observed_at, account_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (video_id, workspace_id, title, status, json.dumps(safe_items, separators=(",", ":")),
+                     level, active_days, clips_count, now, stored_account),
                 )
-                
                 self._check_database_capacity(connection)
                 connection.commit()
-                
-                return {
-                    "ok": True,
-                    "video_id": video_id,
-                    "workspace_id": workspace_id,
-                    "level": level,
-                    "active_days": active_days,
-                    "clips_count": clips_count,
-                    "observed_at": now,
-                    "provenance": _PROVENANCE,
-                }
         except CampaignError:
             raise
         except sqlite3.Error:
             _fail("storage_error")
+        return {
+            "ok": True,
+            "video_id": video_id,
+            "workspace_id": workspace_id,
+            "account": stored_account or None,
+            "level": level,
+            "active_days": active_days,
+            "clips_count": clips_count,
+            "submitted_to_shopee": False,
+            "observed_at": now,
+            "source": "ext",
+            "provenance": _PROVENANCE,
+        }
 
     def prepare_cart_swap(
         self,
@@ -2345,211 +2376,70 @@ class CampaignStore:
         old_product_id: str,
         new_product_id: str,
         new_affiliate_url: str,
+        confirm: bool = False,
     ) -> dict[str, Any]:
-        """Prepare cart swap for video clip (P1-3).
-        
-        Returns confirmation card for operator to review before applying swap.
-        Does not execute swap - returns plan for manual confirmation.
-        """
+        """Return a confirm card. Local cart text changes only after confirm=True. Nothing is submitted to Shopee."""
         workspace_id = _workspace_id(workspace_id)
-        
-        # Validate inputs
+        if type(confirm) is not bool:
+            _fail("invalid_request")
         if (not isinstance(video_id, str) or not video_id or len(video_id) > 200
                 or not isinstance(old_product_id, str) or not old_product_id
-                or not isinstance(new_product_id, str) or not new_product_id):
+                or not isinstance(new_product_id, str) or not new_product_id
+                or not isinstance(new_affiliate_url, str) or not new_affiliate_url.startswith("https://s.shopee.co.th/")):
             _fail("invalid_request")
-        
-        # Get video info
-        with self._connection() as connection:
+        with self._connection(write=True) as connection:
+            self._begin(connection)
             video = connection.execute(
                 """SELECT title, cart_items_json FROM video_clips
                    WHERE video_id = ? AND workspace_id = ?""",
-                (video_id, workspace_id)
+                (video_id, workspace_id),
             ).fetchone()
-            
             if video is None:
+                self._rollback(connection)
                 _fail("video_not_found")
-            
             title, cart_json = video
             try:
                 cart_items = json.loads(cart_json) if cart_json else []
             except json.JSONDecodeError:
                 cart_items = []
-            
-            # Find old product in cart
-            old_item = None
-            for item in cart_items:
-                if item.get("product_id") == old_product_id:
-                    old_item = item
-                    break
-            
-            return {
-                "ok": True,
-                "workspace_id": workspace_id,
-                "video_id": video_id,
-                "video_title": title,
-                "swap_plan": {
-                    "old_product_id": old_product_id,
-                    "old_product_found": old_item is not None,
-                    "new_product_id": new_product_id,
-                    "new_affiliate_url": new_affiliate_url,
-                },
-                "confirmation_required": True,
-                "note": "Review swap plan. Execute manually in Shopee Video editor or via extension automation.",
-                "provenance": _PROVENANCE,
-            }
-
-    # P2-4: Link volume guard
-    def check_posting_budget(
-        self,
-        workspace_id: str,
-        platform: str,
-        period_days: int = 1,
-    ) -> dict[str, Any]:
-        """Check link posting volume against platform limits.
-        
-        Returns daily/weekly counts and warns if approaching caps.
-        Local tracking only - does not query platform APIs.
-        """
-        workspace_id = _workspace_id(workspace_id)
-        
-        if not isinstance(platform, str) or not platform:
-            _fail("invalid_request")
-        
-        if period_days < 1 or period_days > 30:
-            _fail("invalid_request")
-        
-        # Calculate date threshold
-        now = datetime.now(timezone.utc)
-        threshold = (now - timedelta(days=period_days)).isoformat(timespec="seconds")
-        
-        with self._connection() as connection:
-            # Count links created in period
-            count = connection.execute(
-                """SELECT COUNT(*) FROM links
-                   WHERE workspace_id = ?
-                     AND sub_id_1 = ?
-                     AND created_at >= ?""",
-                (workspace_id, platform, threshold)
-            ).fetchone()[0]
-            
-            # Platform limits (configurable)
-            limits = {
-                "tiktok": {"daily": 50, "weekly": 200},
-                "ig": {"daily": 30, "weekly": 150},
-                "fb": {"daily": 40, "weekly": 180},
-                "x": {"daily": 100, "weekly": 500},
-                "yt": {"daily": 20, "weekly": 100},
-            }
-            
-            limit = limits.get(platform, {"daily": 50, "weekly": 200})
-            daily_limit = limit["daily"] if period_days == 1 else limit["weekly"]
-            
-            return {
-                "ok": True,
-                "workspace_id": workspace_id,
-                "platform": platform,
-                "period_days": period_days,
-                "links_created": count,
-                "limit": daily_limit,
-                "remaining": max(0, daily_limit - count),
-                "at_capacity": count >= daily_limit,
-                "warning": count >= daily_limit * 0.8,
-                "provenance": _PROVENANCE,
-            }
-
-    # P2-3: Text block link converter
-    def convert_links_in_text(
-        self,
-        workspace_id: str,
-        text: str,
-        channel: str,
-        clip_id: str | None = None,
-    ) -> dict[str, Any]:
-        """Convert Shopee product URLs in text to SubID affiliate links.
-        
-        Finds all Shopee URLs, looks up or creates affiliate links with SubIDs,
-        returns modified text. Does not post - returns converted text for review.
-        """
-        workspace_id = _workspace_id(workspace_id)
-        
-        if (not isinstance(text, str) or not text or len(text) > 10000
-                or not isinstance(channel, str) or not channel):
-            _fail("invalid_request")
-        
-        # Find Shopee URLs in text
-        import re
-        shopee_pattern = r'https?://(?:shopee\.co\.th|s\.shopee\.co\.th)/[^\s]+'
-        urls = re.findall(shopee_pattern, text)
-        
-        conversions = []
-        converted_text = text
-        
-        # For each URL, look up or note needed conversion
-        for url in urls:
-            # Would look up existing affiliate link or note creation needed
-            conversions.append({
-                "original_url": url,
-                "affiliate_url": url,  # Would be replaced with actual affiliate link
-                "needs_creation": True,
-                "product_id": None,  # Would extract from URL
-            })
-        
+            old_item = next((item for item in cart_items if type(item) is dict and item.get("product_id") == old_product_id), None)
+            applied = False
+            if confirm:
+                updated = []
+                replaced = False
+                for item in cart_items:
+                    if type(item) is dict and item.get("product_id") == old_product_id:
+                        updated.append({"product_id": new_product_id, "affiliate_url": new_affiliate_url, "replaced_from": old_product_id})
+                        replaced = True
+                    else:
+                        updated.append(item)
+                if not replaced:
+                    updated.append({"product_id": new_product_id, "affiliate_url": new_affiliate_url, "replaced_from": old_product_id})
+                connection.execute(
+                    "UPDATE video_clips SET cart_items_json=?, observed_at=? WHERE video_id=? AND workspace_id=?",
+                    (json.dumps(updated, separators=(",", ":")), datetime.now(timezone.utc).isoformat(timespec="seconds"), video_id, workspace_id),
+                )
+                connection.commit()
+                applied = True
+                cart_items = updated
+            else:
+                self._rollback(connection)
         return {
             "ok": True,
             "workspace_id": workspace_id,
-            "channel": channel,
-            "clip_id": clip_id,
-            "original_text": text,
-            "converted_text": converted_text,
-            "conversions": conversions,
-            "urls_found": len(urls),
-            "note": "Would replace URLs with affiliate links. Implement URL parsing and link lookup.",
-            "provenance": _PROVENANCE,
-        }
-
-    # P2-5: Export tools
-    def export_data(
-        self,
-        workspace_id: str,
-        kind: str,
-        period_start: str | None = None,
-        period_end: str | None = None,
-        format: str = "json",
-    ) -> dict[str, Any]:
-        """Export workspace data as CSV or JSON.
-        
-        Kinds: links, reports, commissions, missions, videos
-        Format: json or csv
-        
-        Returns data structure, not file download. Formula-neutralized for CSV.
-        """
-        workspace_id = _workspace_id(workspace_id)
-        
-        if kind not in ("links", "reports", "commissions", "missions", "videos"):
-            _fail("invalid_request")
-        
-        if format not in ("json", "csv"):
-            _fail("invalid_request")
-        
-        # Validate dates if provided
-        if period_start:
-            datetime.fromisoformat(period_start)
-        if period_end:
-            datetime.fromisoformat(period_end)
-        
-        data = []
-        
-        # Would query appropriate table based on kind
-        return {
-            "ok": True,
-            "workspace_id": workspace_id,
-            "kind": kind,
-            "format": format,
-            "period_start": period_start,
-            "period_end": period_end,
-            "data": data,
-            "count": len(data),
-            "note": f"Export {kind} as {format}. Implement data query and CSV formatting.",
+            "video_id": video_id,
+            "video_title": title,
+            "swap_plan": {
+                "old_product_id": old_product_id,
+                "old_product_found": old_item is not None,
+                "new_product_id": new_product_id,
+                "new_affiliate_url": new_affiliate_url,
+            },
+            "confirmation_required": True,
+            "confirmed": confirm,
+            "local_cart_updated": applied,
+            "submitted_to_shopee": False,
+            "source": "cache",
+            "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "provenance": _PROVENANCE,
         }

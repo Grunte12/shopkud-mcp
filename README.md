@@ -4,10 +4,10 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.9.0** - Now with 5 SubID support, batch link creation, and link verification.
+**Version 0.10.0** - Extension-only P0, P1, and P2 affiliate tools. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 This is a development candidate, not a published or stable release. The Python
-package declares **0.9.0** and the extension manifest declares **0.9.0**. Package
+package declares **0.10.0** and the extension manifest declares **0.10.0**. Package
 and extension versions are separate. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
@@ -32,7 +32,7 @@ This release implements an **extension-only** architecture (no Affiliate Open AP
 as required by the owner. All operations are performed through the Chrome extension
 interacting with the logged-in Shopee Affiliate pages.
 
-### What's New in 0.9.0
+### What's New in 0.10.0
 
 **SubID Management:**
 - Extended database schema to support 5 SubID fields (sub_id_1 through sub_id_5)
@@ -67,20 +67,10 @@ interacting with the logged-in Shopee Affiliate pages.
 - Backward compatible with single SubID links
 - No data loss on upgrade
 
-### Not Yet Implemented
-This candidate does **not** provide:
-- Automatic conversion-report download
-- Commission health monitoring (P1)
-- Mission/campaign tracking (P1)  
-- Video clip cart swap (P1)
-- Product research tools (P1)
-- Payout status tracking (P1)
-- Video level tracker (P2)
-- Text block link converter (P2)
-- Link-volume guard (P2)
-- Multi-account support (P2)
+### Still operator-verified
+Live Shopee selectors, the Video creator host, and the earnings/mission page labels are configurable assumptions. The service does not call the Affiliate Open API, open affiliate redirects, or store buyer or order identifiers. Automatic conversion-report download is not included; reports enter through an owner-supplied aggregate CSV.
 
-See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for complete P0/P1/P2 tracking.
+See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for the requirement checklist.
 
 ## Layout
 
