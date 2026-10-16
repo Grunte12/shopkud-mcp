@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "ShopKud MCP",
+  "version": "0.8.9",
+  "description": "ให้เอเจนต์ช่วยค้นคว้าและคัดสินค้าจากหน้า Shopee Affiliate ที่คุณเปิดอยู่ พร้อมแผนให้ตรวจสอบก่อนเลือก",
+  "permissions": ["nativeMessaging"],
+  "optional_permissions": ["scripting"],
+  "optional_host_permissions": ["https://shopee.co.th/*"],
+  "options_page": "listing-access.html",
+  "background": {"service_worker": "background.js"},
+  "content_scripts": [{
+    "matches": ["https://affiliate.shopee.co.th/*"],
+    "js": ["core.js", "detail.js", "pagination.js", "search.js", "review-data.js", "review.js", "content.js"],
+    "run_at": "document_idle"
+  }]
+}

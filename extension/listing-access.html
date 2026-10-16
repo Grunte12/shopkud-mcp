@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="th">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>สิทธิ์อ่านหน้าสินค้า — ShopKud</title>
+<body>
+<main>
+<h1>อ่านหน้าสินค้าสาธารณะ</h1>
+<p>Chrome จะให้สิทธิ์อ่านเว็บไซต์ shopee.co.th ทั้งโดเมน และใช้ scripting แต่ ShopKud จะทำงานเฉพาะหน้าสินค้า /product/ร้าน/สินค้า ที่ระบุผ่านเครื่องมือเท่านั้น</p>
+<p>ไม่อ่านบัญชี คุกกี้ ประวัติ หรือ API ลับ ไม่ซื้อสินค้า ไม่เลือกตัวเลือกสินค้า ไม่รับแท็บที่คุณเปิดเองมาเปลี่ยนหน้า</p>
+<button id="enable" type="button">อนุญาตอ่านหน้าสินค้า</button>
+<button id="disable" type="button">ปิดสิทธิ์อ่านหน้าสินค้า</button>
+<p id="status" role="status">กำลังตรวจสิทธิ์…</p>
+</main>
+<script src="listing-access.js"></script>
+</body>
+</html>
