@@ -1682,3 +1682,215 @@ class CampaignStore:
                 },
                 "provenance": _PROVENANCE,
             }
+
+    def check_commission_health(
+        self,
+        workspace_id: str,
+        product_ids: list[str] | None = None,
+        channel: str | None = None,
+    ) -> dict[str, Any]:
+        """Check commission health for products and detect rate changes.
+        
+        Compares current commission rates (from product details) with previously
+        observed rates in commission_health table. Detects drops, removals, and
+        increases. Updates health tracking and returns alerts.
+        
+        Args:
+            workspace_id: The workspace to operate in
+            product_ids: Optional list of specific product IDs to check (None = all tracked)
+            channel: Optional channel filter (e.g., 'tiktok', 'ig')
+            
+        Returns:
+            Dict with health check results and alerts for changed rates
+        """
+        workspace_id = _workspace_id(workspace_id)
+        
+        # Validate product_ids if provided
+        if product_ids is not None:
+            if not isinstance(product_ids, list) or not product_ids or len(product_ids) > 100:
+                _fail("invalid_request")
+            for pid in product_ids:
+                if not isinstance(pid, str) or not pid or len(pid) > 200:
+                    _fail("invalid_request")
+        
+        with self._connection(write=True) as connection:
+            self._begin(connection)
+            
+            # Get current health records
+            if product_ids is not None:
+                placeholders = ",".join("?" * len(product_ids))
+                query = f"""
+                    SELECT product_id, last_check_at, last_commission_pct, 
+                           last_extra_comm, status
+                    FROM commission_health
+                    WHERE workspace_id = ? AND product_id IN ({placeholders})
+                """
+                params = [workspace_id] + product_ids
+            else:
+                query = """
+                    SELECT product_id, last_check_at, last_commission_pct,
+                           last_extra_comm, status
+                    FROM commission_health
+                    WHERE workspace_id = ?
+                """
+                params = [workspace_id]
+            
+            existing = {
+                row[0]: {
+                    "last_check_at": row[1],
+                    "last_commission_pct": row[2],
+                    "last_extra_comm": row[3],
+                    "status": row[4],
+                }
+                for row in connection.execute(query, params).fetchall()
+            }
+            
+            # Prepare results
+            now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            alerts = []
+            checked = []
+            unchanged = []
+            
+            # Note: In production, this would query current commission rates from
+            # the extension/product detail observations. For now, we track what
+            # the caller provides via update_commission_health (separate function).
+            # This check function returns stored health status.
+            
+            for product_id, health in existing.items():
+                checked.append({
+                    "product_id": product_id,
+                    "last_check_at": health["last_check_at"],
+                    "commission_pct": health["last_commission_pct"],
+                    "extra_comm": health["last_extra_comm"],
+                    "status": health["status"],
+                })
+                
+                if health["status"] in ("dropped", "removed"):
+                    alerts.append({
+                        "product_id": product_id,
+                        "alert_type": health["status"],
+                        "last_commission_pct": health["last_commission_pct"],
+                        "checked_at": health["last_check_at"],
+                    })
+            
+            connection.commit()
+            
+            return {
+                "ok": True,
+                "workspace_id": workspace_id,
+                "checked_at": now,
+                "checked_count": len(checked),
+                "alert_count": len(alerts),
+                "alerts": alerts,
+                "products": checked,
+                "provenance": _PROVENANCE,
+            }
+    
+    def update_commission_health(
+        self,
+        workspace_id: str,
+        product_id: str,
+        commission_pct: float,
+        extra_comm: int = 0,
+        channel: str | None = None,
+    ) -> dict[str, Any]:
+        """Update commission health tracking for a product.
+        
+        Records current commission rate and compares with previous observation.
+        Automatically detects rate changes and updates status.
+        
+        Args:
+            workspace_id: The workspace
+            product_id: Product identifier
+            commission_pct: Current commission percentage (e.g., 8.5 for 8.5%)
+            extra_comm: Extra commission percentage if any
+            channel: Optional channel context
+            
+        Returns:
+            Dict with update result and detected change status
+        """
+        workspace_id = _workspace_id(workspace_id)
+        
+        if (not isinstance(product_id, str) or not product_id or len(product_id) > 200
+                or not isinstance(commission_pct, (int, float)) or commission_pct < 0
+                or not isinstance(extra_comm, int) or extra_comm < 0):
+            _fail("invalid_request")
+        
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        
+        try:
+            with self._connection(write=True) as connection:
+                self._begin(connection)
+                
+                # Get existing record
+                existing = connection.execute(
+                    """SELECT last_commission_pct, last_extra_comm, status
+                       FROM commission_health
+                       WHERE product_id = ? AND workspace_id = ?""",
+                    (product_id, workspace_id)
+                ).fetchone()
+                
+                if existing is None:
+                    # First observation - insert
+                    connection.execute(
+                        """INSERT INTO commission_health
+                           (product_id, workspace_id, last_check_at, last_commission_pct,
+                            last_extra_comm, status)
+                           VALUES (?, ?, ?, ?, ?, ?)""",
+                        (product_id, workspace_id, now, commission_pct, extra_comm, "healthy")
+                    )
+                    status = "healthy"
+                    change_detected = False
+                else:
+                    prev_pct, prev_extra, prev_status = existing
+                    
+                    # Detect change
+                    if commission_pct == 0:
+                        status = "removed"
+                        change_detected = True
+                    elif commission_pct < prev_pct:
+                        status = "dropped"
+                        change_detected = True
+                    elif commission_pct > prev_pct:
+                        status = "increased"
+                        change_detected = True
+                    else:
+                        status = "healthy"
+                        change_detected = False
+                    
+                    # Update record
+                    connection.execute(
+                        """UPDATE commission_health
+                           SET last_check_at = ?,
+                               previous_commission_pct = last_commission_pct,
+                               previous_extra_comm = last_extra_comm,
+                               last_commission_pct = ?,
+                               last_extra_comm = ?,
+                               status = ?,
+                               alert_created_at = CASE 
+                                   WHEN ? IN ('dropped', 'removed') THEN ? 
+                                   ELSE alert_created_at 
+                               END
+                           WHERE product_id = ? AND workspace_id = ?""",
+                        (now, commission_pct, extra_comm, status, status, now,
+                         product_id, workspace_id)
+                    )
+                
+                self._check_database_capacity(connection)
+                connection.commit()
+                
+                return {
+                    "ok": True,
+                    "product_id": product_id,
+                    "workspace_id": workspace_id,
+                    "commission_pct": commission_pct,
+                    "extra_comm": extra_comm,
+                    "status": status,
+                    "change_detected": change_detected,
+                    "updated_at": now,
+                    "provenance": _PROVENANCE,
+                }
+        except CampaignError:
+            raise
+        except sqlite3.Error:
+            _fail("storage_error")

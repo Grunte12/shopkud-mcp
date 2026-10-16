@@ -797,6 +797,53 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
             "source": "extension_detail_reader",
         }
 
+    @server.tool()
+    async def check_commission_health(
+        workspace_id: str,
+        product_ids: Annotated[list[str] | None, Field(max_length=100)] = None,
+        channel: Annotated[str | None, Field(max_length=100)] = None,
+    ) -> dict:
+        """Check commission health for tracked products and detect rate changes.
+        
+        Compares current commission rates with previously observed rates. Returns
+        alerts for products where commission has dropped or been removed.
+        
+        Provide product_ids list to check specific products, or omit to check all
+        tracked products in workspace. Returns health status and change alerts.
+        
+        Requires prior observations via update_commission_health or product detail
+        tracking. Does not automatically fetch current rates - use get_offer first."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "check_commission_health", workspace_id, product_ids, channel)
+
+    @server.tool()
+    async def update_commission_health(
+        workspace_id: str,
+        product_id: str,
+        commission_pct: Annotated[float, Field(ge=0, le=100)],
+        extra_comm: Annotated[int, Field(ge=0, le=100)] = 0,
+        channel: Annotated[str | None, Field(max_length=100)] = None,
+    ) -> dict:
+        """Update commission health tracking for a product with current rate.
+        
+        Records current commission percentage and compares with previous observation.
+        Automatically detects and flags rate changes (dropped, removed, increased).
+        
+        Use this after reading product details to track commission over time.
+        Typical workflow:
+        1. get_offer to read current commission
+        2. update_commission_health to record and detect changes
+        3. check_commission_health to review all alerts
+        
+        Returns change detection result with status: healthy, dropped, removed, or increased."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "update_commission_health", workspace_id, product_id,
+                    commission_pct, extra_comm, channel)
+
     app = server.streamable_http_app()
     original_lifespan = app.router.lifespan_context
 
