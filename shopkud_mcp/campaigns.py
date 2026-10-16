@@ -1552,3 +1552,133 @@ class CampaignStore:
                 or not _is_int(offset) or offset < 0 or offset > MAX_OFFSET):
             _fail("invalid_request")
         return limit, offset
+
+    def sales_by(
+        self,
+        workspace_id: str,
+        dimension: str,
+        period_start: str | None = None,
+        period_end: str | None = None,
+    ) -> dict[str, Any]:
+        """Query sales attribution by SubID dimension (platform, product, clip, variant, month).
+        
+        Aggregates commission, clicks, and orders from report_groups, joining with links
+        to extract SubID fields. Returns breakdown by the specified dimension.
+        
+        Args:
+            workspace_id: The workspace to query
+            dimension: One of 'platform', 'product', 'clip', 'variant', 'month' 
+                      (maps to sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5)
+            period_start: Optional YYYY-MM-DD filter
+            period_end: Optional YYYY-MM-DD filter
+            
+        Returns:
+            Dict with aggregated sales data grouped by dimension value
+        """
+        workspace_id = _workspace_id(workspace_id)
+        
+        # Map dimension names to SubID fields
+        dimension_map = {
+            "platform": "sub_id_1",
+            "product": "sub_id_2", 
+            "clip": "sub_id_3",
+            "variant": "sub_id_4",
+            "month": "sub_id_5",
+        }
+        
+        if dimension not in dimension_map:
+            _fail("invalid_request")
+        
+        subid_field = dimension_map[dimension]
+        
+        # Validate date filters if provided
+        if period_start is not None:
+            try:
+                datetime.fromisoformat(period_start)
+            except ValueError:
+                _fail("invalid_request")
+        if period_end is not None:
+            try:
+                datetime.fromisoformat(period_end)
+            except ValueError:
+                _fail("invalid_request")
+        
+        with self._connection() as connection:
+            # Build query to aggregate by SubID dimension
+            query = f"""
+                SELECT 
+                    l.{subid_field} as dimension_value,
+                    SUM(rg.commission_sum) as total_commission,
+                    SUM(rg.clicks_sum) as total_clicks,
+                    SUM(rg.orders_sum) as total_orders,
+                    SUM(rg.row_count) as total_rows,
+                    COUNT(DISTINCT rg.report_id) as report_count
+                FROM report_groups rg
+                JOIN reports r ON rg.report_id = r.report_id
+                JOIN links l ON (
+                    rg.channel = l.channel 
+                    AND rg.content_id = l.content_id
+                    AND r.workspace_id = l.workspace_id
+                )
+                WHERE r.workspace_id = ?
+                  AND rg.unmapped = 0
+            """
+            
+            params = [workspace_id]
+            
+            if period_start is not None:
+                query += " AND r.period_start >= ?"
+                params.append(period_start)
+            
+            if period_end is not None:
+                query += " AND r.period_end <= ?"
+                params.append(period_end)
+            
+            query += f"""
+                GROUP BY l.{subid_field}
+                HAVING l.{subid_field} IS NOT NULL
+                ORDER BY total_commission DESC
+            """
+            
+            rows = connection.execute(query, tuple(params)).fetchall()
+            
+            results = []
+            total_commission = Decimal(0)
+            total_clicks = 0
+            total_orders = 0
+            total_rows_count = 0
+            
+            for row in rows:
+                dim_value, commission, clicks, orders, rows_count, report_count = row
+                
+                commission_dec = Decimal(commission) if commission else Decimal(0)
+                total_commission += commission_dec
+                total_clicks += clicks or 0
+                total_orders += orders or 0
+                total_rows_count += rows_count or 0
+                
+                results.append({
+                    dimension: dim_value,
+                    "commission_thb": _decimal_text(commission_dec) if commission else None,
+                    "clicks": clicks,
+                    "orders": orders,
+                    "rows": rows_count,
+                    "reports": report_count,
+                })
+            
+            return {
+                "ok": True,
+                "workspace_id": workspace_id,
+                "dimension": dimension,
+                "period_start": period_start,
+                "period_end": period_end,
+                "results": results,
+                "summary": {
+                    "total_commission_thb": _decimal_text(total_commission),
+                    "total_clicks": total_clicks,
+                    "total_orders": total_orders,
+                    "total_rows": total_rows_count,
+                    "dimension_values_count": len(results),
+                },
+                "provenance": _PROVENANCE,
+            }

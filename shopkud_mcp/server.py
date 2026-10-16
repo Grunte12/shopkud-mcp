@@ -730,6 +730,73 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
             except (ValueError,UnicodeError,OSError):return {"ok":False,"error":"unsafe_or_unavailable_intake_file","outcome":"not_completed"}
         return local("campaign","import_csv",workspace_id,csv_text,mapping,marketplace,period_start,period_end,amount_state=amount_state,commit=commit,expected_digest=expected_digest,status_map=status_map)
 
+    @server.tool()
+    async def sales_by(
+        workspace_id: str,
+        dimension: Literal["platform", "product", "clip", "variant", "month"],
+        period_start: Annotated[str | None, Field(strict=True)] = None,
+        period_end: Annotated[str | None, Field(strict=True)] = None,
+    ) -> dict:
+        """Query sales attribution by SubID dimension. Aggregates commission, clicks, and orders
+        from imported reports, grouping by SubID field:
+        - platform: sub_id_1 (tiktok, ig, fb, x, yt, spv)
+        - product: sub_id_2 (e.g. P1, P2)
+        - clip: sub_id_3 (e.g. v6, v7)
+        - variant: sub_id_4 (e.g. a, b)
+        - month: sub_id_5 (e.g. 202610)
+        
+        Requires workspace with imported reports and links with SubIDs. Returns breakdown
+        sorted by total commission descending. Period filters are optional YYYY-MM-DD dates.
+        Only includes mapped (non-unmapped) data where SubID field is not null."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "sales_by", workspace_id, dimension, period_start, period_end)
+
+    @server.tool()
+    async def get_offer(
+        page_id: _PageId | None = None,
+        product_id: Annotated[str | None, Field(strict=True, pattern=r"^[1-9][0-9]{0,19}$")] = None,
+        offer_url: Annotated[str | None, Field(strict=True, max_length=2048)] = None,
+    ) -> dict:
+        """Get product offer details including per-channel commission rates. Reads from
+        extension detail reader (same as get_product_detail but returns focused offer data).
+        
+        Provide either page_id (to read current page), product_id (to search history), or
+        offer_url (to open and read specific offer). Returns product info, commission rates
+        by channel (CPS/CPA), price, stock status, and category.
+        
+        Does NOT create affiliate links. Use create_link separately to generate SubID links."""
+        if not page_id and not product_id and not offer_url:
+            return {"ok": False, "error": "provide_page_id_product_id_or_offer_url"}
+        
+        # Reuse get_product_detail but return focused offer data
+        detail = await get_product_detail(
+            page_id=page_id,
+            save=False,
+            offer_url=offer_url,
+            open_if_missing=bool(offer_url),
+            product_id=product_id,
+        )
+        
+        if not detail.get("ok"):
+            return detail
+        
+        # Extract offer-focused fields
+        product = detail.get("product", {})
+        return {
+            "ok": True,
+            "product_id": product.get("product_id"),
+            "title": product.get("title"),
+            "price": product.get("price"),
+            "stock_status": product.get("stock_status"),
+            "category": product.get("category"),
+            "commissions": product.get("commissions", {}),
+            "offer_url": detail.get("offer_url"),
+            "observed_at": detail.get("observed_at"),
+            "source": "extension_detail_reader",
+        }
+
     app = server.streamable_http_app()
     original_lifespan = app.router.lifespan_context
 
