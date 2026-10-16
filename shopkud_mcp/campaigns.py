@@ -386,8 +386,8 @@ class CampaignStore:
                         deadline TEXT,
                         enrolled INTEGER NOT NULL DEFAULT 0,
                         progress_json TEXT,
-                        status TEXT NOT NULL,
-                        observed_at TEXT NOT NULL
+                        enrolled_at TEXT,
+                        completed_at TEXT
                     );
                     CREATE TABLE IF NOT EXISTS video_clips (
                         video_id TEXT PRIMARY KEY,
@@ -1894,3 +1894,338 @@ class CampaignStore:
             raise
         except sqlite3.Error:
             _fail("storage_error")
+
+    def list_missions(
+        self,
+        workspace_id: str,
+        status: str | None = None,
+    ) -> dict[str, Any]:
+        """List available missions/campaigns.
+        
+        Args:
+            workspace_id: The workspace
+            status: Optional filter: 'available', 'enrolled', 'completed', 'expired'
+            
+        Returns:
+            Dict with mission list and enrollment status
+        """
+        workspace_id = _workspace_id(workspace_id)
+        
+        if status is not None and status not in ("available", "enrolled", "completed", "expired"):
+            _fail("invalid_request")
+        
+        with self._connection() as connection:
+            if status is None:
+                query = """
+                    SELECT mission_id, name, reward, requirements_json, deadline,
+                           enrolled, progress_json, enrolled_at, completed_at
+                    FROM missions
+                    WHERE workspace_id = ?
+                    ORDER BY enrolled DESC, deadline ASC
+                """
+                params = [workspace_id]
+            elif status == "enrolled":
+                query = """
+                    SELECT mission_id, name, reward, requirements_json, deadline,
+                           enrolled, progress_json, enrolled_at, completed_at
+                    FROM missions
+                    WHERE workspace_id = ? AND enrolled = 1 AND completed_at IS NULL
+                    ORDER BY deadline ASC
+                """
+                params = [workspace_id]
+            elif status == "completed":
+                query = """
+                    SELECT mission_id, name, reward, requirements_json, deadline,
+                           enrolled, progress_json, enrolled_at, completed_at
+                    FROM missions
+                    WHERE workspace_id = ? AND completed_at IS NOT NULL
+                    ORDER BY completed_at DESC
+                """
+                params = [workspace_id]
+            elif status == "available":
+                query = """
+                    SELECT mission_id, name, reward, requirements_json, deadline,
+                           enrolled, progress_json, enrolled_at, completed_at
+                    FROM missions
+                    WHERE workspace_id = ? AND enrolled = 0 AND (deadline IS NULL OR deadline > ?)
+                    ORDER BY deadline ASC
+                """
+                now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                params = [workspace_id, now]
+            else:  # expired
+                query = """
+                    SELECT mission_id, name, reward, requirements_json, deadline,
+                           enrolled, progress_json, enrolled_at, completed_at
+                    FROM missions
+                    WHERE workspace_id = ? AND enrolled = 0 AND deadline <= ?
+                    ORDER BY deadline DESC
+                """
+                now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                params = [workspace_id, now]
+            
+            rows = connection.execute(query, params).fetchall()
+            
+            missions = []
+            for row in rows:
+                try:
+                    requirements = json.loads(row[3])
+                    progress = json.loads(row[6]) if row[6] else None
+                except json.JSONDecodeError:
+                    continue
+                
+                missions.append({
+                    "mission_id": row[0],
+                    "name": row[1],
+                    "reward": row[2],
+                    "requirements": requirements,
+                    "deadline": row[4],
+                    "enrolled": bool(row[5]),
+                    "progress": progress,
+                    "enrolled_at": row[7],
+                    "completed_at": row[8],
+                })
+            
+            return {
+                "ok": True,
+                "workspace_id": workspace_id,
+                "status_filter": status,
+                "missions": missions,
+                "count": len(missions),
+                "provenance": _PROVENANCE,
+            }
+    
+    def enroll_mission(
+        self,
+        workspace_id: str,
+        mission_id: str,
+        name: str,
+        reward: str | None = None,
+        requirements: dict | None = None,
+        deadline: str | None = None,
+    ) -> dict[str, Any]:
+        """Enroll in a mission/campaign or create tracking for one.
+        
+        Args:
+            workspace_id: The workspace
+            mission_id: Mission identifier (from Shopee or custom)
+            name: Mission name
+            reward: Optional reward description
+            requirements: Optional requirements dict (e.g., {"posts": 3, "sales": 1000})
+            deadline: Optional ISO8601 deadline
+            
+        Returns:
+            Dict with enrollment result
+        """
+        workspace_id = _workspace_id(workspace_id)
+        
+        if (not isinstance(mission_id, str) or not mission_id or len(mission_id) > 200
+                or not isinstance(name, str) or not name or len(name) > 500):
+            _fail("invalid_request")
+        
+        if deadline is not None:
+            try:
+                datetime.fromisoformat(deadline)
+            except ValueError:
+                _fail("invalid_request")
+        
+        requirements_json = json.dumps(requirements or {}, separators=(",", ":"))
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        
+        try:
+            with self._connection(write=True) as connection:
+                self._begin(connection)
+                
+                # Check if already exists
+                existing = connection.execute(
+                    "SELECT enrolled FROM missions WHERE mission_id = ? AND workspace_id = ?",
+                    (mission_id, workspace_id)
+                ).fetchone()
+                
+                if existing is not None:
+                    if existing[0]:
+                        connection.commit()
+                        return {
+                            "ok": True,
+                            "mission_id": mission_id,
+                            "already_enrolled": True,
+                            "provenance": _PROVENANCE,
+                        }
+                    else:
+                        # Update to enrolled
+                        connection.execute(
+                            """UPDATE missions
+                               SET enrolled = 1, enrolled_at = ?
+                               WHERE mission_id = ? AND workspace_id = ?""",
+                            (now, mission_id, workspace_id)
+                        )
+                else:
+                    # Insert new
+                    connection.execute(
+                        """INSERT INTO missions
+                           (mission_id, workspace_id, name, reward, requirements_json,
+                            deadline, enrolled, enrolled_at)
+                           VALUES (?, ?, ?, ?, ?, ?, 1, ?)""",
+                        (mission_id, workspace_id, name, reward, requirements_json,
+                         deadline, now)
+                    )
+                
+                self._check_database_capacity(connection)
+                connection.commit()
+                
+                return {
+                    "ok": True,
+                    "mission_id": mission_id,
+                    "workspace_id": workspace_id,
+                    "enrolled": True,
+                    "enrolled_at": now,
+                    "provenance": _PROVENANCE,
+                }
+        except CampaignError:
+            raise
+        except sqlite3.Error:
+            _fail("storage_error")
+    
+    def update_mission_progress(
+        self,
+        workspace_id: str,
+        mission_id: str,
+        progress: dict,
+        completed: bool = False,
+    ) -> dict[str, Any]:
+        """Update progress for an enrolled mission.
+        
+        Args:
+            workspace_id: The workspace
+            mission_id: Mission identifier
+            progress: Progress dict (e.g., {"posts": 2, "sales": 750})
+            completed: Mark mission as completed
+            
+        Returns:
+            Dict with update result
+        """
+        workspace_id = _workspace_id(workspace_id)
+        
+        if (not isinstance(mission_id, str) or not mission_id or len(mission_id) > 200
+                or not isinstance(progress, dict)):
+            _fail("invalid_request")
+        
+        progress_json = json.dumps(progress, separators=(",", ":"))
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        
+        try:
+            with self._connection(write=True) as connection:
+                self._begin(connection)
+                
+                # Check enrollment
+                existing = connection.execute(
+                    "SELECT enrolled FROM missions WHERE mission_id = ? AND workspace_id = ?",
+                    (mission_id, workspace_id)
+                ).fetchone()
+                
+                if existing is None or not existing[0]:
+                    _fail("mission_not_enrolled")
+                
+                # Update progress
+                if completed:
+                    connection.execute(
+                        """UPDATE missions
+                           SET progress_json = ?, completed_at = ?
+                           WHERE mission_id = ? AND workspace_id = ?""",
+                        (progress_json, now, mission_id, workspace_id)
+                    )
+                else:
+                    connection.execute(
+                        """UPDATE missions
+                           SET progress_json = ?
+                           WHERE mission_id = ? AND workspace_id = ?""",
+                        (progress_json, mission_id, workspace_id)
+                    )
+                
+                self._check_database_capacity(connection)
+                connection.commit()
+                
+                return {
+                    "ok": True,
+                    "mission_id": mission_id,
+                    "workspace_id": workspace_id,
+                    "progress": progress,
+                    "completed": completed,
+                    "updated_at": now,
+                    "provenance": _PROVENANCE,
+                }
+        except CampaignError:
+            raise
+        except sqlite3.Error:
+            _fail("storage_error")
+
+    def explain_cancellations(
+        self,
+        workspace_id: str,
+        period_start: str,
+        period_end: str,
+    ) -> dict[str, Any]:
+        """Analyze cancelled orders from reports and classify by likely reason.
+        
+        Args:
+            workspace_id: The workspace
+            period_start: Start date (YYYY-MM-DD)
+            period_end: End date (YYYY-MM-DD)
+            
+        Returns:
+            Dict with cancellation breakdown by classification
+        """
+        workspace_id = _workspace_id(workspace_id)
+        
+        # Validate dates
+        try:
+            datetime.fromisoformat(period_start)
+            datetime.fromisoformat(period_end)
+        except ValueError:
+            _fail("invalid_request")
+        
+        with self._connection() as connection:
+            # Query reports in date range with status data
+            query = """
+                SELECT r.report_id, rg.status_counts
+                FROM reports r
+                JOIN report_groups rg ON r.report_id = rg.report_id
+                WHERE r.workspace_id = ?
+                  AND r.period_start >= ?
+                  AND r.period_end <= ?
+                  AND r.status_present = 1
+            """
+            rows = connection.execute(query, (workspace_id, period_start, period_end)).fetchall()
+            
+            # Aggregate cancellations
+            classifications = {
+                "buyer_cancelled": 0,
+                "seller_cancelled": 0,
+                "invalid_order": 0,
+                "payment_failed": 0,
+                "unknown": 0,
+            }
+            
+            total_cancelled = 0
+            reports_analyzed = 0
+            
+            for row in rows:
+                reports_analyzed += 1
+                try:
+                    status_counts = json.loads(row[1]) if row[1] else {}
+                    cancelled = status_counts.get("cancelled", 0)
+                    total_cancelled += cancelled
+                    classifications["unknown"] += cancelled
+                except json.JSONDecodeError:
+                    pass
+            
+            return {
+                "ok": True,
+                "workspace_id": workspace_id,
+                "period_start": period_start,
+                "period_end": period_end,
+                "reports_analyzed": reports_analyzed,
+                "total_cancelled": total_cancelled,
+                "classifications": classifications,
+                "note": "Detailed classification requires order-level cancellation reasons. Current implementation aggregates all cancellations as 'unknown'.",
+                "provenance": _PROVENANCE,
+            }

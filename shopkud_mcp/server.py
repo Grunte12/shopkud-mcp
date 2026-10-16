@@ -844,6 +844,88 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         return local("campaign", "update_commission_health", workspace_id, product_id,
                     commission_pct, extra_comm, channel)
 
+    @server.tool()
+    async def list_missions(
+        workspace_id: str,
+        status: Annotated[Literal["available", "enrolled", "completed", "expired"] | None, Field()] = None,
+    ) -> dict:
+        """List missions/campaigns tracked in workspace.
+        
+        Returns mission list with enrollment status, progress, and deadlines.
+        Filter by status: available (not enrolled, not expired), enrolled (active),
+        completed, or expired (deadline passed without enrollment).
+        
+        Missions must be tracked via enroll_mission first. Does not automatically
+        fetch from Shopee - use extension to observe available missions."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "list_missions", workspace_id, status)
+
+    @server.tool()
+    async def enroll_mission(
+        workspace_id: str,
+        mission_id: str,
+        name: str,
+        reward: Annotated[str | None, Field(max_length=500)] = None,
+        requirements: Annotated[dict | None, Field()] = None,
+        deadline: Annotated[str | None, Field()] = None,
+    ) -> dict:
+        """Enroll in a mission/campaign and start tracking progress.
+        
+        Creates mission tracking record with requirements and deadline.
+        Requirements dict should contain mission criteria (e.g., {"posts": 3, "sales": 1000}).
+        
+        Use after observing mission details from extension. Track progress with
+        update_mission_progress."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "enroll_mission", workspace_id, mission_id, name,
+                    reward, requirements, deadline)
+
+    @server.tool()
+    async def update_mission_progress(
+        workspace_id: str,
+        mission_id: str,
+        progress: dict,
+        completed: Annotated[bool, Field(strict=True)] = False,
+    ) -> dict:
+        """Update progress for an enrolled mission.
+        
+        Progress dict should match requirements structure (e.g., {"posts": 2, "sales": 750}).
+        Set completed=true when mission requirements are met.
+        
+        Requires prior enrollment via enroll_mission."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "update_mission_progress", workspace_id, mission_id,
+                    progress, completed)
+
+    @server.tool()
+    async def explain_cancellations(
+        workspace_id: str,
+        period_start: str,
+        period_end: str,
+    ) -> dict:
+        """Analyze cancelled or 0 THB orders from conversion reports.
+        
+        Examines imported reports within date range and classifies cancellations
+        by likely reason using heuristic rules:
+        - buyer_cancelled: Order status indicates buyer cancellation
+        - seller_cancelled: Seller/stock issue
+        - invalid_order: Suspicious or test order
+        - payment_failed: Payment processing failed
+        - unknown: Cannot determine reason
+        
+        Returns breakdown by classification with counts and commission impact.
+        Requires imported reports with status field."""
+        known = local("workspace", "get_workspace", workspace_id, "brief")
+        if known.get("ok") is False:
+            return known
+        return local("campaign", "explain_cancellations", workspace_id, period_start, period_end)
+
     app = server.streamable_http_app()
     original_lifespan = app.router.lifespan_context
 
