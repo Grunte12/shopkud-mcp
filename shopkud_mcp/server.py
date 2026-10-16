@@ -493,15 +493,214 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         workspace_id: str, channel: str, marketplace: str, content_id: str,
         product_id: str, affiliate_url: str, sub_id: str,
         expected_version: Annotated[int | None,Field(strict=True,ge=0)] = None,
+        sub_id_1: Annotated[str | None, Field(strict=True, max_length=128)] = None,
+        sub_id_2: Annotated[str | None, Field(strict=True, max_length=128)] = None,
+        sub_id_3: Annotated[str | None, Field(strict=True, max_length=128)] = None,
+        sub_id_4: Annotated[str | None, Field(strict=True, max_length=128)] = None,
+        sub_id_5: Annotated[str | None, Field(strict=True, max_length=128)] = None,
+        clip_id: Annotated[str | None, Field(strict=True, max_length=200)] = None,
+        link_source: Literal["manual", "extension", "extension_subid_creation"] = "manual",
+        link_receipt: Annotated[dict | None, Field(strict=True)] = None,
     ) -> dict:
-        """บันทึกลิงก์Affiliateที่ผู้ใช้/ระบบทางการให้มา คู่กับคอนเทนต์+ช่องทางต้นทาง+ตลาดปลายทาง+SubID ไม่สร้าง/แก้/คลิก/ตรวจredirectของลิงก์ ไม่รับรองว่าshortURLมีSubIDจริง ป้องกันURL/SubIDชนระหว่างช่องทาง; TikTokที่ส่งคนไปShopeeคือchannelTikTok marketplaceShopee ไม่ใช่รายได้TikTokShop ใช้expected_versionแก้รายการเดิม."""
+        """บันทึกลิงก์Affiliate พร้อม SubID สูงสุด 5 ช่อง (sub_id หลัก + sub_id_1 ถึง sub_id_5) คู่กับช่องทาง คอนเทนต์ คลิป และตลาด
+        
+        Convention: sub_id_1=platform (tiktok/ig/fb/x/yt/spv), sub_id_2=product (P1), sub_id_3=clip (v6), 
+        sub_id_4=variant/hook (a/b), sub_id_5=date (yyyymm). ไม่สร้าง/แก้/คลิกลิงก์ ไม่รับรองว่า URL มี SubID จริง 
+        ป้องกัน URL/SubID ชนระหว่างช่องทาง link_receipt เก็บหลักฐานจากการสร้าง (เช่น timestamp, product_id) 
+        link_source ระบุแหล่งที่มา: manual=ผู้ใช้ใส่, extension=ส่วนขยายจับ, extension_subid_creation=สร้างผ่าน SubID dialog"""
         known=local("workspace","get_workspace",workspace_id,"brief")
         if known.get("ok") is False:return known
-        return local("campaign","set_link",workspace_id,channel,marketplace,content_id,product_id,affiliate_url,sub_id,expected_version=expected_version)
+        return local("campaign","set_link",workspace_id,channel,marketplace,content_id,product_id,
+                    affiliate_url,sub_id,expected_version=expected_version,sub_id_1=sub_id_1,
+                    sub_id_2=sub_id_2,sub_id_3=sub_id_3,sub_id_4=sub_id_4,sub_id_5=sub_id_5,
+                    clip_id=clip_id,link_source=link_source,link_receipt=link_receipt)
+    
+    @server.tool()
+    async def find_campaign_links(
+        workspace_id: str,
+        product_id: Annotated[str | None, Field(strict=True, max_length=200)] = None,
+        channel: Annotated[str | None, Field(strict=True, max_length=80)] = None,
+        clip_id: Annotated[str | None, Field(strict=True, max_length=200)] = None,
+        limit: Annotated[int, Field(strict=True, ge=1, le=50)] = 20,
+        offset: Annotated[int, Field(strict=True, ge=0, le=999)] = 0,
+    ) -> dict:
+        """ค้นลิงก์ที่บันทึกไว้ด้วย product_id, channel หรือ clip_id ไม่ต้องเปิด Chrome คืนลิงก์ที่ตรงเงื่อนไข 
+        ไม่ใช่ราคา/เรตปัจจุบัน และไม่ได้บันทึกทุกครั้งที่ผู้ใช้กดเอาลิงก์"""
+        known=local("workspace","get_workspace",workspace_id,"brief")
+        if known.get("ok") is False:return known
+        return local("campaign","find_links",workspace_id,product_id=product_id,channel=channel,
+                    clip_id=clip_id,limit=limit,offset=offset)
 
     @server.tool()
+    async def create_link(
+        page_id: _PageId,
+        product_id: str,
+        sub_ids: Annotated[list[str | None], Field(min_length=1, max_length=5)],
+        channel: str,
+        clip_id: Annotated[str | None, Field(strict=True, max_length=200)] = None,
+        workspace_id: Annotated[str | None, Field(strict=True)] = None,
+        dry_run: Annotated[bool, Field(strict=True)] = False,
+        save_to_workspace: Annotated[bool, Field(strict=True)] = True,
+    ) -> dict:
+        """สร้างลิงก์ Affiliate พร้อม SubID สูงสุด 5 ช่องผ่าน Get Link dialog ตรวจหา dialog เติม SubID ตรวจสอบก่อนคลิก 
+        จับลิงก์และใบเสร็จ บันทึกในทะเบียน ไม่ replay คำสั่งที่ผลไม่แน่นอน sub_ids เป็น array สูงสุด 5 ตัว 
+        (เช่น ['tiktok', 'P1', 'v6', 'a', '202610']) ถ้า dry_run=true จะแสดงแผนโดยไม่คลิก 
+        ถ้า workspace_id ระบุและ save_to_workspace=true จะบันทึกลงทะเบียนอัตโนมัติ 
+        หยุดเมื่อ login/CAPTCHA/challenge ต้องเจ้าของแก้ไขในแท็บเดิม"""
+        
+        if type(sub_ids) is not list or not 1 <= len(sub_ids) <= 5:
+            return {"ok": False, "error": "invalid_input", "message": "sub_ids must be array of 1-5 items"}
+        if type(dry_run) is not bool or type(save_to_workspace) is not bool:
+            return {"ok": False, "error": "invalid_input"}
+        if workspace_id is not None and not re.fullmatch(r"[0-9a-f]{32}", workspace_id):
+            return {"ok": False, "error": "invalid_input"}
+        
+        # Prepare extension arguments
+        arguments = {
+            "operation": "create_link_with_subids",
+            "product_id": product_id,
+            "sub_ids": sub_ids,
+            "dry_run": dry_run
+        }
+        
+        result = await call(page_id, "detail", arguments, timeout=30)
+        
+        if result.get("ok") is True and save_to_workspace and workspace_id and not dry_run:
+            # Save to workspace/campaign registry
+            link_data = {
+                "workspace_id": workspace_id,
+                "channel": channel,
+                "marketplace": "shopee",
+                "content_id": clip_id or "default",
+                "product_id": product_id,
+                "affiliate_url": result.get("affiliate_url"),
+                "sub_id": result.get("sub_ids_used", {}).get("sub_id_1", ""),
+                "sub_id_1": result.get("sub_ids_used", {}).get("sub_id_1"),
+                "sub_id_2": result.get("sub_ids_used", {}).get("sub_id_2"),
+                "sub_id_3": result.get("sub_ids_used", {}).get("sub_id_3"),
+                "sub_id_4": result.get("sub_ids_used", {}).get("sub_id_4"),
+                "sub_id_5": result.get("sub_ids_used", {}).get("sub_id_5"),
+                "clip_id": clip_id,
+                "link_source": "extension_subid_creation",
+                "link_receipt": result.get("link_receipt")
+            }
+            save_result = local("campaign", "set_link", **link_data)
+            result["saved_to_workspace"] = save_result.get("ok") is True
+            if save_result.get("ok") is False:
+                result["save_error"] = save_result.get("error")
+        
+        return result
+    
+    @server.tool()
+    async def verify_link(
+        page_id: _PageId | None = None,
+        affiliate_url: Annotated[str, Field(strict=True, max_length=2048)] = None,
+        expected_product_id: Annotated[str | None, Field(strict=True, max_length=200)] = None,
+        link_receipt: Annotated[dict | None, Field(strict=True)] = None,
+        check_ownership: Annotated[bool, Field(strict=True)] = True,
+        check_target: Annotated[bool, Field(strict=True)] = True,
+        try_my_links: Annotated[bool, Field(strict=True)] = True,
+    ) -> dict:
+        """ตรวจสอบลิงก์ Affiliate โดยไม่เปิดลิงก์ (ไม่สร้าง tracking click) ตรวจสอบ target resolution และ ownership แยกกัน 
+        คืน target_verified และ ownership_verified แยก unknown เมื่อไม่มีหลักฐาน ใช้ link_receipt จากการสร้างเป็นหลักฐาน 
+        หรือจับคู่กับ My Links/dashboard ถ้ามี ไม่เปิด redirect ห้ามเปิดลิงก์"""
+        
+        if not affiliate_url or type(affiliate_url) is not str:
+            return {"ok": False, "error": "invalid_input", "message": "affiliate_url required"}
+        if type(check_ownership) is not bool or type(check_target) is not bool or type(try_my_links) is not bool:
+            return {"ok": False, "error": "invalid_input"}
+        
+        arguments = {
+            "operation": "verify_link",
+            "affiliate_url": affiliate_url,
+            "expected_product_id": expected_product_id,
+            "link_receipt": link_receipt,
+            "check_ownership": check_ownership,
+            "check_target": check_target,
+            "try_my_links": try_my_links
+        }
+        
+        if page_id:
+            return await call(page_id, "verify", arguments, timeout=20)
+        else:
+            # Pure receipt-based verification without page
+            if not link_receipt:
+                return {
+                    "ok": True,
+                    "affiliate_url": affiliate_url,
+                    "target_verified": "unknown",
+                    "ownership_verified": "unknown",
+                    "verification_method": "none",
+                    "warnings": ["No page_id and no link_receipt - cannot verify"]
+                }
+            
+            # Verify from receipt only
+            from extension.verify import verifyTargetFromReceipt
+            result = {
+                "ok": True,
+                "affiliate_url": affiliate_url,
+                "verified_at": datetime.now(timezone.utc).isoformat(),
+                "target_verified": "unknown",
+                "ownership_verified": "unknown",
+                "verification_method": "receipt_only"
+            }
+            
+            if check_target and link_receipt:
+                if link_receipt.get("product_id") == expected_product_id:
+                    result["target_verified"] = True
+                    result["resolved_item_id"] = link_receipt.get("product_id")
+                elif link_receipt.get("product_id"):
+                    result["target_verified"] = False
+                    result["resolved_item_id"] = link_receipt.get("product_id")
+            
+            if check_ownership:
+                # Receipt implies ownership if it has creation timestamp
+                if link_receipt.get("created_at"):
+                    result["ownership_verified"] = True
+                    result["ownership_verification_evidence"] = "creation_receipt_timestamp"
+            
+            return result
+    
+    @server.tool()
+    async def batch_create_links(
+        page_id: _PageId,
+        items: Annotated[list[dict], Field(min_length=1, max_length=50)],
+        channel: str,
+        workspace_id: str,
+        stop_on_error: Annotated[bool, Field(strict=True)] = True,
+    ) -> dict:
+        """สร้างลิงก์แบบ batch - ทีละรายการตามลำดับ ตรวจสอบ input ทั้งหมดก่อน บันทึก checkpoint และใบเสร็จต่อรายการ 
+        แสดงผลบางส่วน หยุดเมื่อ login/CAPTCHA/challenge/user interference และ resume เฉพาะรายการที่ยืนยันว่ายังไม่เริ่ม 
+        
+        items รูปแบบ: [{"product_id": "123", "sub_ids": ["tiktok", "P1", "v6"], "clip_id": "clip1"}, ...]
+        ไม่ replay create ที่ผลไม่แน่นอน หยุดเมื่อเจอ CAPTCHA หรือ login"""
+        
+        if type(items) is not list or not 1 <= len(items) <= 50:
+            return {"ok": False, "error": "invalid_input", "message": "items must be array of 1-50 items"}
+        if type(stop_on_error) is not bool:
+            return {"ok": False, "error": "invalid_input"}
+        
+        # Prevalidate all items
+        for i, item in enumerate(items):
+            if not isinstance(item, dict):
+                return {"ok": False, "error": "invalid_input", "item_index": i, "message": "Each item must be dict"}
+            if "product_id" not in item or "sub_ids" not in item:
+                return {"ok": False, "error": "invalid_input", "item_index": i, "message": "Each item needs product_id and sub_ids"}
+            if not isinstance(item["sub_ids"], list) or not 1 <= len(item["sub_ids"]) <= 5:
+                return {"ok": False, "error": "invalid_input", "item_index": i, "message": "sub_ids must be array of 1-5 items"}
+        
+        arguments = {
+            "operation": "batch_create_links",
+            "items": items,
+            "channel": channel,
+            "workspace_id": workspace_id,
+            "stop_on_error": stop_on_error
+        }
+        
+        return await call(page_id, "detail", arguments, timeout=300)
+    
+    @server.tool()
     async def import_report_csv(
-        workspace_id: str, csv_text: str | None, mapping: dict, marketplace: str,
         period_start: str, period_end: str, amount_state: Literal["estimated","confirmed","paid"] = "estimated",
         commit: Annotated[bool,Field(strict=True)] = False, expected_digest: str | None = None, status_map: dict | None = None,
         csv_file: str | None = None,
