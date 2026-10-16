@@ -4,27 +4,83 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
+**Version 0.9.0** - Now with 5 SubID support, batch link creation, and link verification.
+
 This is a development candidate, not a published or stable release. The Python
-package declares **0.8.11** and the extension manifest declares **0.8.9**. Package
+package declares **0.9.0** and the extension manifest declares **0.9.0**. Package
 and extension versions are separate. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
 ## Current capabilities
 
-- Bounded product search, pagination, snapshots and cached-result reads.
-- Product-detail observations, including displayed channel-specific commissions.
-- Optional public-product evidence and model matching; unsupported facts remain
-  unknown. Seller, shipping and product-metric extraction is experimental.
-- Agent-authored selection previews and once-only, snapshot-checked selection.
-- Explicitly requested official Get Link dialog capture and local history saves.
-- Opt-in local SQLite workspaces, supplied-link/SubID mappings, and CSV report
-  preview/commit with mapped and unmapped attribution kept separate.
-- A portable Thai affiliate workflow available through `get_workflow_guide`.
+### Core Features (P0)
+- ✅ **5 SubID support**: Create affiliate links with up to 5 SubID fields (platform, product, clip, variant, date)
+- ✅ **Batch link creation**: Sequential batch processing with checkpointing and error recovery
+- ✅ **Link verification**: Verify link ownership and target without opening links or creating tracking clicks
+- ✅ **Link registry**: Find/filter links by product, channel, or clip with flexible search
+- ✅ Bounded product search, pagination, snapshots and cached-result reads
+- ✅ Product-detail observations, including displayed channel-specific commissions
+- ✅ Optional public-product evidence and model matching
+- ✅ Agent-authored selection previews and once-only, snapshot-checked selection
+- ✅ Explicitly requested official Get Link dialog capture and local history saves
+- ✅ Opt-in local SQLite workspaces, supplied-link/SubID mappings, and CSV report
+  preview/commit with mapped and unmapped attribution kept separate
+- ✅ A portable Thai affiliate workflow available through `get_workflow_guide`
 
-This candidate does **not** provide official Affiliate Open API integration,
-automatic SubID entry, batch link creation, affiliate ownership verification,
-automatic conversion-report download, purchasing or publishing. Recording a
-SubID locally does not add it to the Shopee link.
+### Extension-Only Architecture
+This release implements an **extension-only** architecture (no Affiliate Open API integration)
+as required by the owner. All operations are performed through the Chrome extension
+interacting with the logged-in Shopee Affiliate pages.
+
+### What's New in 0.9.0
+
+**SubID Management:**
+- Extended database schema to support 5 SubID fields (sub_id_1 through sub_id_5)
+- Convention: sub_id_1=platform, sub_id_2=product, sub_id_3=clip, sub_id_4=variant, sub_id_5=date
+- Configurable SubID input detection for Get Link dialog
+- Automatic validation and filling of SubID fields
+- Link receipts with creation timestamps and metadata
+
+**Batch Operations:**
+- Sequential batch link creation with progress tracking
+- Automatic stop on CAPTCHA, login, or challenge detection
+- Checkpoint and resume support for interrupted batches
+- Per-item status tracking (completed/failed/not_attempted)
+
+**Link Verification:**
+- Receipt-based target verification (resolves product without opening link)
+- My Links page ownership verification
+- Dashboard data matching
+- Separate `target_verified` and `ownership_verified` flags
+- Returns `unknown` when verification evidence unavailable
+
+**Link Registry:**
+- Find links by product_id, channel, or clip_id
+- Combined filter support
+- Tracks link source (manual, extension, extension_subid_creation)
+- Stores creation receipts for verification
+- Timestamps: created_at, updated_at, with source metadata
+
+**Database Enhancements:**
+- New tables: batch_jobs, batch_items, link_verifications, commission_health, missions, video_clips
+- Automatic migration for existing databases
+- Backward compatible with single SubID links
+- No data loss on upgrade
+
+### Not Yet Implemented
+This candidate does **not** provide:
+- Automatic conversion-report download
+- Commission health monitoring (P1)
+- Mission/campaign tracking (P1)  
+- Video clip cart swap (P1)
+- Product research tools (P1)
+- Payout status tracking (P1)
+- Video level tracker (P2)
+- Text block link converter (P2)
+- Link-volume guard (P2)
+- Multi-account support (P2)
+
+See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for complete P0/P1/P2 tracking.
 
 ## Layout
 

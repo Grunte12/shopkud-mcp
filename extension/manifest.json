@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ShopKud MCP",
-  "version": "0.8.9",
+  "version": "0.9.0",
   "description": "ให้เอเจนต์ช่วยค้นคว้าและคัดสินค้าจากหน้า Shopee Affiliate ที่คุณเปิดอยู่ พร้อมแผนให้ตรวจสอบก่อนเลือก",
   "permissions": ["nativeMessaging"],
   "optional_permissions": ["scripting"],

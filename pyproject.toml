@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shopkud-mcp"
-version = "0.8.11"
+version = "0.9.0"
 description = "Agent-neutral MCP tools for an owner's open Shopee Affiliate Chrome page"
 readme = "README.md"
 license = "MIT"
@@ -23,4 +23,4 @@ namespaces = false
 shopkud_mcp = ["workflows/affiliate.json", "skills/shopkud-affiliate/SKILL.md", "skills/shopkud-affiliate/references/workflow.md"]
 
 [tool.setuptools.data-files]
-"share/shopkud-mcp/extension" = ["extension/manifest.json", "extension/core.js", "extension/detail.js", "extension/pagination.js", "extension/search.js", "extension/review-data.js", "extension/review.js", "extension/content.js", "extension/background.js", "extension/listing.js", "extension/listing-access.html", "extension/listing-access.js"]
+"share/shopkud-mcp/extension" = ["extension/manifest.json", "extension/core.js", "extension/detail.js", "extension/pagination.js", "extension/search.js", "extension/review-data.js", "extension/review.js", "extension/content.js", "extension/background.js", "extension/listing.js", "extension/listing-access.html", "extension/listing-access.js", "extension/subid.js", "extension/verify.js"]
