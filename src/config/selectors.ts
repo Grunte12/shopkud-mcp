@@ -57,7 +57,7 @@ export const SHOPEE_SELECTORS: SelectorConfig = {
     subId4Input: '#customLink_sub_id4, input[name="subId4"], #sub-id-4',
     subId5Input: '#customLink_sub_id5, input[name="subId5"], #sub-id-5',
     submitButton: 'button:has-text("เอา ลิงก์"), button:has-text("สร้างลิงก์"), button:has-text("Create Link"), button[type="submit"]',
-    resultDialog: '[role="dialog"]:has-text("ลิงก์"), [role="dialog"]:has-text("Link"), .link-result-dialog',
+    resultDialog: '.success-modal, [role="dialog"]:has-text("ลิงก์"), [role="dialog"]:has-text("Link"), .link-result-dialog',
     resultLinkTextarea: 'textarea[readonly], input[readonly][type="text"]',
     errorMessage: '.error-message, [class*="error"], [class*="Error"]',
   },
@@ -111,8 +111,10 @@ export interface EndpointConfig {
  */
 /**
  * Paths seen on a logged-in affiliate session.
- * batchCustomLink is the gql operation named in the custom-link page script.
- * Dry-run does not call it.
+ * batchCustomLink is the gql query name on POST /api/v3/gql?q=batchCustomLink.
+ * The operation name in the request body is batchGetCustomLink.
+ * A real submit returns data.batchCustomLink[].shortLink, longLink, and failCode.
+ * failCode 0 is success. Dry-run does not call it.
  */
 export const SHOPEE_ENDPOINTS: EndpointConfig = {
   customLinkApi: 'POST /api/v3/gql?q=batchCustomLink',
@@ -170,7 +172,14 @@ export const SHORT_LINK_PATTERN = /^https:\/\/s\.shopee\.co\.th\/[A-Za-z0-9]+$/;
  * Check if URL is a valid short link
  */
 export function isShortLink(url: string): boolean {
-  return SHORT_LINK_PATTERN.test(url);
+  try {
+    const parsed = new URL(url.trim());
+    return parsed.protocol === 'https:'
+      && parsed.hostname === 's.shopee.co.th'
+      && /^\/[A-Za-z0-9_-]+$/.test(parsed.pathname);
+  } catch {
+    return false;
+  }
 }
 
 export interface ParsedProductUrl {

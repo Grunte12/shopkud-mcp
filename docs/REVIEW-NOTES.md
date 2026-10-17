@@ -109,7 +109,7 @@ Nav paths seen on the logged-in home, as pathnames only: `/dashboard`, `/offer/s
 
 The offer result keeps the store percent separate from the total. The total is `default_commission_rate / 1000`. The store row is `seller_commission_rate / 1000`. Shopee is `shopee_commission_rate / 1000`. Xtra is the remainder. Store baht uses the store percent, not the total.
 
-The create operation named in the page script is `batchCustomLink` on `POST /api/v3/gql`. It is not confirmed by a submit, and this tool still will not submit.
+One approved `create-link` run submitted the custom-link form once. The request was `POST /api/v3/gql?q=batchCustomLink` (operation name `batchGetCustomLink`). The response item is `data.batchCustomLink[]` with `shortLink`, `longLink`, and `failCode`. `failCode` 0 is success. The success modal on the same page showed the short link. There is no separate history table on that page. Sub ID 1 was filled and the other four were left empty; `longLink` carries them as `utm_content` with five slots separated by `-`. The short link was not opened. A HEAD request with redirects disabled returned 301. No short link, product id, affiliate id, or tracking signature is stored here.
 
 Port 9222 stays on the buyer login page. The logged-in browser is port 9333, so nobody needs to log in on 9222.
 

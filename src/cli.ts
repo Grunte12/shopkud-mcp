@@ -2,8 +2,9 @@
 /**
  * Read-only / dry-run CLI for the dedicated affiliate Chrome.
  *
- * create-link refuses to submit unless --dry-run is set. This CLI never
- * clicks a short link (s.shopee.co.th) and never types a password.
+ * create-link --dry-run fills the form and does not submit.
+ * create-link without --dry-run clicks submit once.
+ * This CLI never opens a short link (s.shopee.co.th) and never types a password.
  */
 import { chromium, type Browser, type Page, type Response } from 'patchright';
 import { BrowserFlows } from './core/browser-flows.js';
@@ -203,44 +204,49 @@ async function commandGetOffer() {
 }
 
 async function commandCreateLink() {
-  if (!has('--dry-run')) {
-    print({
-      ok: false,
-      error: 'refusing_to_submit',
-      message: 'create-link will not submit. Re-run with --dry-run.',
-    });
-    return 1;
-  }
+  const dryRun = has('--dry-run');
   const { productUrl } = requireProductUrl();
   return withOwnedPage(async (page) => {
+  const seen = watch(page);
   const flows = new BrowserFlows(page);
+  const subIds = {
+    sub_id1: arg('--sub-id1') || null,
+    sub_id2: arg('--sub-id2') || null,
+    sub_id3: arg('--sub-id3') || null,
+    sub_id4: arg('--sub-id4') || null,
+    sub_id5: arg('--sub-id5') || null,
+  };
   const result = await flows.createCustomLink({
     product_url: productUrl,
     channel: arg('--channel') || 'test',
-    sub_ids: {
-      sub_id1: arg('--sub-id1') || null,
-      sub_id2: arg('--sub-id2') || null,
-      sub_id3: arg('--sub-id3') || null,
-      sub_id4: arg('--sub-id4') || null,
-      sub_id5: arg('--sub-id5') || null,
-    },
-  }, { dryRun: true });
-  const data = result.data && 'selectors' in result.data ? result.data : null;
+    sub_ids: subIds,
+  }, { dryRun });
+  const dryData = result.data && 'selectors' in result.data ? result.data : null;
+  const created = result.data && 'short_link' in result.data ? result.data : null;
   print({
     ok: result.ok,
     status: result.status,
     error: result.error,
-    dry_run: true,
-    submitted: false,
-    all_required_resolved: data?.all_required_resolved ?? false,
-    create_request_seen: data?.create_request_seen ?? false,
-    filled: data?.filled ?? {},
-    selectors: (data?.selectors || []).map((item) => ({ name: item.name, resolved: item.resolved, count: item.count })),
-    endpoints: data?.endpoints || [],
+    dry_run: dryRun,
+    submitted: dryRun ? false : result.submitted === true,
+    all_required_resolved: dryData?.all_required_resolved ?? null,
+    create_request_seen: dryData?.create_request_seen ?? Boolean(created),
+    filled: dryData?.filled ?? {},
+    selectors: (dryData?.selectors || []).map((item) => ({ name: item.name, resolved: item.resolved, count: item.count })),
+    endpoints: dryData?.endpoints || [],
+    fail_code: created?.fail_code ?? null,
+    history_seen: created?.history_seen ?? false,
+    page_loads: seen.loads(),
+    short_link_opened: seen.blockedShortLink(),
     current_path: pathOnly(page.url()),
   });
+  if (created?.short_link) {
+    console.log(`SENSITIVE short_link=${created.short_link}`);
+    console.log(`SENSITIVE sub_ids=${JSON.stringify(created.sub_ids)}`);
+  }
   if (!result.ok) {
     console.log(`OUTLINE ${JSON.stringify(await outline(page))}`);
+    if (result.status === 'captcha_detected') return 3;
   }
   return result.ok ? 0 : 1;
   });

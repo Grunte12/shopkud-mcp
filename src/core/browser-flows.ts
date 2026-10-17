@@ -12,6 +12,7 @@ import { Page, type Response } from 'patchright';
 import { SHOPEE_SELECTORS, TIMEOUTS, DELAYS, isShortLink, parseProductUrl } from '../config/selectors.js';
 import type { SubIds } from './database.js';
 import { commissionFromOfferPayload } from './offer-commission.js';
+import { customLinksFromResponse } from './custom-link.js';
 
 export interface BrowserFlowResult<T = any> {
   ok: boolean;
@@ -19,6 +20,7 @@ export interface BrowserFlowResult<T = any> {
   error?: string;
   status?: 'success' | 'captcha_detected' | 'login_required' | 'network_error' | 'timeout' | 'uncertain';
   receipt?: any;
+  submitted?: boolean;
 }
 
 export interface CreateLinkParams {
@@ -36,6 +38,8 @@ export interface CreateLinkResult {
   shop_id: string;
   created_at: string;
   method: 'custom_link_form' | 'network_capture';
+  fail_code: number | null;
+  history_seen: boolean;
   receipt: {
     page_url: string;
     submitted_at: string;
@@ -152,12 +156,14 @@ export class BrowserFlows {
   async createCustomLink(params: CreateLinkParams, options: { dryRun?: boolean } = {}): Promise<BrowserFlowResult<CreateLinkResult | CreateLinkDryRunData>> {
     const endpointLog = this.startEndpointLog();
     let createRequestSeen = false;
+    let clicked = false;
     const onCreate = (response: Response) => {
       try {
         const path = new URL(response.url()).pathname;
         const method = response.request().method();
         if (method !== 'POST') return;
-        if (path.includes('custom_link') || path.includes('create_link')) {
+        const query = new URL(response.url()).searchParams.get('q');
+        if (query === 'batchCustomLink' || path.includes('custom_link') || path.includes('create_link')) {
           createRequestSeen = true;
         }
       } catch {
@@ -296,67 +302,76 @@ export class BrowserFlows {
         };
       }
 
+      const beforeClick = await this.checkForBlockers();
+      if (beforeClick.captcha) {
+        return { ok: false, error: 'CAPTCHA detected', status: 'captcha_detected' };
+      }
+      if (beforeClick.login) {
+        return { ok: false, error: 'Login required', status: 'login_required' };
+      }
+      if (this.page.url().includes('s.shopee.co.th')) {
+        return { ok: false, error: 'Stopped before submit: short link host', status: 'uncertain' };
+      }
+
       await this.pause('beforeSubmit');
 
       let networkResponse: any = null;
       const responsePromise = this.page.waitForResponse(
-        (response) => {
-          const url = response.url();
-          return url.includes('/custom_link/create') || url.includes('/create_link');
-        },
+        (response) => this.isCreateResponse(response),
         { timeout: TIMEOUTS.formSubmit }
       ).then(async (response) => {
         try {
           networkResponse = await response.json();
         } catch {
-          networkResponse = await response.text();
+          networkResponse = null;
         }
       }).catch(() => {});
 
       const submitButton = this.page.locator(SHOPEE_SELECTORS.customLink.submitButton).first();
-      await submitButton.click();
+      await submitButton.click({ timeout: TIMEOUTS.elementVisible });
+      clicked = true;
 
       await Promise.race([
         responsePromise,
         this.page.waitForTimeout(TIMEOUTS.formSubmit),
       ]);
 
-      await this.pause('afterSubmit');
+      const afterClick = await this.checkForBlockers();
+      if (afterClick.captcha) {
+        return { ok: false, error: 'CAPTCHA detected', status: 'captcha_detected', submitted: true };
+      }
 
-      const errorMsg = await this.page.locator(SHOPEE_SELECTORS.customLink.errorMessage).first().textContent().catch(() => null);
-      if (errorMsg && errorMsg.trim().length > 0) {
+      const created = customLinksFromResponse(networkResponse)[0] || null;
+      const failCode = created?.failCode ?? null;
+      if (failCode != null && failCode !== 0) {
         return {
           ok: false,
-          error: `Form error: ${errorMsg}`,
+          error: `batchCustomLink failCode ${failCode}`,
           status: 'uncertain',
+          submitted: true,
+          receipt: {
+            page_url: this.page.url(),
+            submitted_at: submittedAt,
+            captured_at: new Date().toISOString(),
+            network_response: networkResponse,
+          },
         };
       }
 
-      const resultDialog = this.page.locator(SHOPEE_SELECTORS.customLink.resultDialog).first();
-      const dialogVisible = await resultDialog.isVisible({ timeout: TIMEOUTS.dialogOpen }).catch(() => false);
-
-      let shortLink: string | null = null;
-
-      if (dialogVisible) {
-        const linkTextarea = resultDialog.locator(SHOPEE_SELECTORS.customLink.resultLinkTextarea).first();
-        const linkValue = await linkTextarea.inputValue().catch(() => null);
-        if (linkValue && isShortLink(linkValue)) {
-          shortLink = linkValue;
-        }
-      }
-
-      if (!shortLink && networkResponse) {
-        const extracted = this.extractShortLinkFromResponse(networkResponse);
-        if (extracted) {
-          shortLink = extracted;
-        }
+      let shortLink = created?.shortLink && isShortLink(created.shortLink) ? created.shortLink : null;
+      const historySeen = shortLink ? await this.shortLinkShown(shortLink) : false;
+      if (!shortLink) {
+        const shown = await this.readShownShortLink();
+        if (shown) shortLink = shown;
       }
 
       if (!shortLink) {
+        const errorMsg = await this.page.locator('.ant-message-error, .error-message').first().textContent().catch(() => null);
         return {
           ok: false,
-          error: 'Could not capture short link from result',
+          error: errorMsg && errorMsg.trim() ? `Form error: ${errorMsg.trim()}` : 'Could not capture short link from result',
           status: 'uncertain',
+          submitted: true,
           receipt: {
             page_url: this.page.url(),
             submitted_at: submittedAt,
@@ -373,6 +388,7 @@ export class BrowserFlows {
       return {
         ok: true,
         status: 'success',
+        submitted: true,
         data: {
           short_link: shortLink,
           product_url: params.product_url,
@@ -382,6 +398,8 @@ export class BrowserFlows {
           shop_id,
           created_at: new Date().toISOString(),
           method: networkResponse ? 'network_capture' : 'custom_link_form',
+          fail_code: failCode,
+          history_seen: historySeen || await this.shortLinkShown(shortLink),
           receipt: {
             page_url: this.page.url(),
             submitted_at: submittedAt,
@@ -395,6 +413,7 @@ export class BrowserFlows {
         ok: false,
         error: error.message || String(error),
         status: 'network_error',
+        submitted: clicked,
       };
     } finally {
       this.page.off('response', onCreate);
@@ -594,25 +613,52 @@ export class BrowserFlows {
     }
   }
 
-  private extractShortLinkFromResponse(response: any): string | null {
-    if (!response) return null;
-
-    const candidates = [
-      response.data?.short_link,
-      response.data?.link,
-      response.short_link,
-      response.link,
-      response.data?.affiliate_url,
-      response.affiliate_url,
-    ];
-
-    for (const candidate of candidates) {
-      if (typeof candidate === 'string' && isShortLink(candidate)) {
-        return candidate;
-      }
+  private isCreateResponse(response: Response): boolean {
+    try {
+      if (response.request().method() !== 'POST') return false;
+      const url = new URL(response.url());
+      if (url.searchParams.get('q') === 'batchCustomLink') return true;
+      return url.pathname.includes('/custom_link/create') || url.pathname.includes('/create_link');
+    } catch {
+      return false;
     }
+  }
 
+  private async shownLinkText(): Promise<string> {
+    const dialogs = this.page.locator('.success-modal, [role="dialog"]');
+    const count = await dialogs.count().catch(() => 0);
+    const chunks: string[] = [];
+    for (let index = 0; index < count; index += 1) {
+      const dialog = dialogs.nth(index);
+      const fields = dialog.locator('textarea, input');
+      const fieldCount = await fields.count().catch(() => 0);
+      for (let field = 0; field < fieldCount; field += 1) {
+        const value = await fields.nth(field).inputValue({ timeout: 250 }).catch(() => '');
+        if (value) chunks.push(value);
+      }
+      const text = await dialog.innerText({ timeout: 250 }).catch(() => '');
+      if (text) chunks.push(text);
+    }
+    return chunks.join('\n');
+  }
+
+  private async readShownShortLink(): Promise<string | null> {
+    const deadline = Date.now() + (this.options.fast ? 2000 : TIMEOUTS.dialogOpen);
+    while (Date.now() < deadline) {
+      const line = (await this.shownLinkText()).split('\n').map((item) => item.trim()).find((item) => isShortLink(item));
+      if (line) return line;
+      await this.page.waitForTimeout(200);
+    }
     return null;
+  }
+
+  private async shortLinkShown(shortLink: string): Promise<boolean> {
+    const deadline = Date.now() + (this.options.fast ? 2000 : TIMEOUTS.dialogOpen);
+    while (Date.now() < deadline) {
+      if ((await this.shownLinkText()).includes(shortLink)) return true;
+      await this.page.waitForTimeout(200);
+    }
+    return false;
   }
 
   private extractOfferFromResponse(response: any): any | null {

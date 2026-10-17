@@ -131,10 +131,12 @@ test('createCustomLink on the mock submits only when dry-run is off', async () =
       sub_ids: SUB_IDS,
     });
     assert.strictEqual(result.ok, true, result.error);
+    assert.strictEqual(result.submitted, true);
     assert.strictEqual(state.createCalls, 1);
     assert.ok(result.data && 'short_link' in result.data);
     if (result.data && 'short_link' in result.data) {
       assert.match(result.data.short_link, /^https:\/\/s\.shopee\.co\.th\/[A-Za-z0-9]+$/);
+      assert.strictEqual(result.data.history_seen, true);
       assert.strictEqual(result.data.item_id, '67890');
       assert.strictEqual(result.data.shop_id, '12345');
     }
