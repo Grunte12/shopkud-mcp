@@ -119,7 +119,7 @@ Port 9222 stays on the buyer login page. The logged-in browser is port 9333, so 
 
 Each checkout becomes one or more rows. `utm_content` is split on `-` into five slots: platform, product, clip, variant, yyyymm. The row id is a hash, so order and item ids are not stored. `source` and `as_of` are stored with the row. Amounts of 100000 or more are baht × 100000. Smaller amounts stay as baht. Status text is filtered in the tool after the download, not by a status query on the list URL. Re-saving the same rows updates them in place.
 
-`sales_by` reads those stored rows. `sub_id` groups the full slot string. `platform`, `product`, and `clip` use slots 1, 2, and 3. It returns orders, GMV, commission, and a cancelled count. There is no separate dimension for variant or month. A live read found rows, and every Sub ID slot on those rows was empty, so platform, product, and clip all land in `(none)` until a link is created with those slots filled. The custom link from the earlier one-submit run was not in this report.
+`sales_by` reads those stored rows. `sub_id` groups the full slot string. `platform`, `product`, `clip`, `variant`, and `month` use slots 1 through 5. It returns orders, GMV, commission, and a cancelled count. A live read found rows, and every Sub ID slot on those rows was empty, so platform, product, and clip all land in `(none)` until a link is created with those slots filled. The custom link from the earlier one-submit run was not in this report.
 
 `verify_link` no longer opens the short link. It sends HEAD with redirects disabled and reads the `Location` header. Ownership is true when the digits in `utm_source` or `mmp_pid` match the numeric `affiliate_id` saved from the report list. The `an_` prefix is ignored. It is false when both markers exist and differ. It is unknown when the header is missing or either marker is missing, so a check before the first report read cannot decide ownership. The product path (`/product/{shop}/{item}` or `/opaanlp/{shop}/{item}`) sets target verified. Two short links from this account can both be owned: the marker says which account created them, not which Sub ID they carry. The tool does not return the Location URL or the marker.
 
@@ -212,15 +212,25 @@ Security: the CDP port (9222) exposes full browser control. Binding to 127.0.0.1
 
 The requirements state "Detect CAPTCHA or verify pages and stop cleanly with a clear error (no auto-solve)." Auto-solvers violate ToS and risk account suspension.
 
-## What's NOT Implemented (Out of Scope for P0)
+## Backend added on the CDP server
 
-- Affiliate Open API: **NOT USED** - removed completely, browser automation only
-- Actual Sub ID entry during link creation (mock short links returned)
+Local tools (no page load) now cover commission health, replacement ranking from our snapshots, cancellation classes, offer search, price history, product media, earnings summary from stored snapshots, mission list plus prepare-only enroll, video clip list plus prepare-only cart swap, link text conversion, posting budget, formula-safe CSV/JSON export, and `setup_status`. `sales_by` adds `variant` (s4) and `month` (s5). `get_offer` warns when the category matches the cited prohibited list in help article 132895. `create_link` / `create_links_batch` write the product, the clip, and all five Sub ID slots. The short link from that tool is still a placeholder (`origin: "placeholder"`). A real Shopee submit is not part of this change.
+
+`get_conversions` sends a status query only when the list URL already carries `checkout_status`, `order_status`, or `status`. Otherwise it filters the stored rows locally. The mock page includes `checkout_status`. The earlier live list URL did not.
+
+A later read-only pass loaded `/payment/billing` and `/payment/payout_record`, then stopped on a CAPTCHA check at `/campaign/campaign_list`. Offer search still uses local snapshots: `/api/v3/offer/product/list` was seen earlier, without a keyword query and without captured response fields. Earnings summary does not call `GET /api/v3/payment/billing_list`. No video or creator path was in the dashboard, billing, or payout nav. Enroll and cart swap never submit to Shopee. The conversion-report list was not opened again, so the earlier finding stands: that live list URL had no status key.
+
+The HTTP shapes are in `docs/API.md`. `POST /api/v1/tools/:name` calls the same `invoke` path as MCP.
+
+## What's NOT Implemented
+
+- Affiliate Open API: **NOT USED** - browser automation only
+- Real short links from `create_link` (placeholder registry rows only; live submit still needs a separate approval)
 - A captured Shopee CSV export (the JSON list is used; the download fallback parser is tested on a redacted header only)
-- Missions tracker
-- Payout status
-- Product research / history pricing
-- Shopee Video clip cart swap
+- Live mission rows (nav path seen; CAPTCHA stopped the page before campaign APIs were captured)
+- Live payout amounts (`/payment/billing` and `/payment/payout_record` loaded; the earnings tool does not fetch them)
+- Live offer search results (product list path seen; keyword search and response fields not captured)
+- Shopee Video creator page (no video or creator path in the checked affiliate nav)
 - Extension network-relay fallback (prototype is CDP-only)
 
 ## Known Limitations & Risks
@@ -245,7 +255,7 @@ The requirements state "Detect CAPTCHA or verify pages and stop cleanly with a c
 
 ## Testing Gaps
 
-- **No real Shopee account testing:** All tests use mock data or skip live calls. The prototype has NOT been tested against affiliate.shopee.co.th with a real logged-in account.
+- **No real Shopee account testing in the automated suite:** Unit tests use mock data or skip live calls. Separate read-only checks on the logged-in Chrome confirmed offer, billing, and payout paths, then stopped on a CAPTCHA check at the campaign page. Those checks are not part of `npm test`.
 - **No CI coverage:** The bot detection tests require a headed Chrome instance, which is hard to run in CI. Consider running these locally before deployments.
 - **No load testing:** The queue and task system haven't been tested under high concurrency.
 - **No Windows native testing:** The setup instructions include Windows paths, but the prototype was built and tested on macOS/Linux.

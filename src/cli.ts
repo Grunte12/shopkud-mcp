@@ -9,9 +9,9 @@
 import { chromium, type Browser, type Page, type Response } from 'patchright';
 import { BrowserFlows } from './core/browser-flows.js';
 import { parseProductUrl } from './config/selectors.js';
-import { resolveCdpUrl } from './config/cdp.js';
+import { cdpPortOf, resolveCdpUrl } from './config/cdp.js';
 import { ShopkudDatabase } from './core/database.js';
-import { salesBy, type SalesDim } from './core/conversions.js';
+import { salesBy, SALES_DIMS, isSalesDim, type SalesDim } from './core/conversions.js';
 import { headNoRedirect, ownershipFromLocation } from './core/verify-link.js';
 
 const CDP_URL = resolveCdpUrl();
@@ -405,14 +405,14 @@ async function commandGetConversions() {
   return withOwnedPage(async (page) => {
     const seen = watch(page);
     const flows = new BrowserFlows(page);
-    const result = await flows.getConversions(from, to);
+    const result = await flows.getConversions(from, to, status);
     if (result.status === 'captcha_detected') {
       print({ ok: false, status: result.status, error: result.error, page_loads: seen.loads() });
       return 3;
     }
     const asOf = new Date().toISOString();
     let rows = result.data?.rows || [];
-    if (status) {
+    if (status && result.data?.status_filter !== 'server') {
       const needle = status.toLowerCase();
       rows = rows.filter((row) => row.status.toLowerCase().includes(needle));
     }
@@ -429,6 +429,9 @@ async function commandGetConversions() {
       source: result.data?.source || null,
       endpoint_path: result.data?.endpoint_path || null,
       download_clicked: result.data?.download_clicked ?? false,
+      status_filter: result.data?.status_filter || null,
+      status_query_key: result.data?.status_query_key || null,
+      list_query_keys: result.data?.list_query_keys || [],
       row_count: rows.length,
       empty: rows.length === 0,
       page_loads: seen.loads(),
@@ -443,8 +446,7 @@ async function commandSalesBy() {
   const dim = arg('--dim') as SalesDim | undefined;
   const from = arg('--from');
   const to = arg('--to');
-  const dims: SalesDim[] = ['sub_id', 'platform', 'clip', 'product'];
-  if (!dim || !dims.includes(dim) || !from || !to) throw new Error('Usage: sales-by --dim sub_id|platform|clip|product --from YYYY-MM-DD --to YYYY-MM-DD');
+  if (!dim || !isSalesDim(dim) || !from || !to) throw new Error(`Usage: sales-by --dim ${SALES_DIMS.join('|')} --from YYYY-MM-DD --to YYYY-MM-DD`);
   const status = arg('--status');
   const db = new ShopkudDatabase(dbPath());
   let rows = db.listConversions(from, to);
@@ -462,6 +464,69 @@ async function commandSalesBy() {
     buckets: salesBy(rows, dim, from, to),
   });
   return 0;
+}
+
+async function commandDiscover() {
+  if (cdpPortOf(CDP_URL) !== '9333') {
+    throw new Error('discover only runs against the logged-in Chrome: SHOPKUD_CDP_PORT=9333');
+  }
+  return withOwnedPage(async (page) => {
+    const flows = new BrowserFlows(page);
+    const seen = watch(page);
+    const budget = 8;
+    const visited: string[] = [];
+    const nav: string[] = [];
+    const open = async (url: string) => {
+      if (seen.loads() >= budget) return 'budget';
+      if (url.includes('s.shopee.co.th')) return 'short_link';
+      await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+      await humanPause();
+      visited.push(pathOnly(page.url()));
+      const verdict = await pageVerdict(page, flows);
+      if (verdict !== 'ok') return verdict;
+      if (seen.blockedShortLink()) return 'short_link';
+      const hrefs = await page.locator('a[href]').evaluateAll((nodes) => nodes.map((node) => node.getAttribute('href') || ''));
+      for (const href of hrefs) {
+        try {
+          const target = new URL(href, page.url());
+          if (target.hostname.endsWith('shopee.co.th') && !target.hostname.startsWith('s.')) nav.push(target.pathname);
+        } catch {
+          // Ignore malformed hrefs.
+        }
+      }
+      return 'ok';
+    };
+    const home = await open('https://affiliate.shopee.co.th/dashboard');
+    if (home !== 'ok') {
+      print({ ok: false, stopped: home, page_loads: seen.loads(), visited });
+      return home === 'login' ? 2 : 3;
+    }
+    const interesting = [...new Set(nav)].filter((path) => /earn|payout|income|mission|task|video|search|offer|product|report|wallet|commission/i.test(path));
+    for (const path of interesting) {
+      if (seen.loads() >= budget || visited.includes(path)) continue;
+      if (visited.length >= 6) break;
+      const step = await open(new URL(path, 'https://affiliate.shopee.co.th').toString());
+      if (step === 'captcha' || step === 'login' || step === 'short_link' || step === 'ratelimit') {
+        print({
+          ok: false,
+          stopped: step,
+          page_loads: seen.loads(),
+          visited,
+          nav: [...new Set(nav)].slice(0, 80),
+          endpoints: seen.endpoints,
+        });
+        return 3;
+      }
+    }
+    print({
+      ok: true,
+      page_loads: seen.loads(),
+      visited,
+      nav: [...new Set(nav)].slice(0, 80),
+      endpoints: seen.endpoints,
+    });
+    return 0;
+  });
 }
 
 async function commandVerifyLink() {
@@ -488,7 +553,7 @@ async function commandVerifyLink() {
 async function main() {
   const command = process.argv[2];
   if (!command || command === '--help') {
-    console.log('Usage: tsx src/cli.ts <connection-status|get-offer|create-link|reports|smoke|get-conversions|sales-by|verify-link>');
+    console.log('Usage: tsx src/cli.ts <connection-status|get-offer|create-link|reports|smoke|get-conversions|sales-by|verify-link|discover>');
     return 0;
   }
   if (command === 'connection-status') return commandConnectionStatus();
@@ -499,6 +564,7 @@ async function main() {
   if (command === 'get-conversions') return commandGetConversions();
   if (command === 'sales-by') return commandSalesBy();
   if (command === 'verify-link') return commandVerifyLink();
+  if (command === 'discover') return commandDiscover();
   throw new Error(`Unknown command: ${command}`);
 }
 

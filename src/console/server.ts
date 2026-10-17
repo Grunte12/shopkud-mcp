@@ -4,19 +4,26 @@ import { dirname, join } from 'path';
 import { ShopkudDatabase } from '../core/database.js';
 import { CDPController } from '../core/cdp-controller.js';
 import { resolveCdpUrl } from '../config/cdp.js';
+import { ShopkudMCPServer } from '../mcp/server.js';
+import { mountToolApi } from '../api/http.js';
+import { probeChrome } from '../core/chrome-probe.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const app = express();
 const port = parseInt(process.env.CONSOLE_PORT || '3000', 10);
+app.use(express.json({ limit: '100kb' }));
 
 const dbPath = process.env.SHOPKUD_DB_PATH || './shopkud.db';
 const db = new ShopkudDatabase(dbPath);
 const cdpUrl = resolveCdpUrl();
 const cdp = new CDPController(cdpUrl);
+const core = new ShopkudMCPServer(dbPath, cdpUrl, {
+  probe: (url) => probeChrome(url, { allowReserved: true }),
+});
+mountToolApi(app, core, core.getDatabase());
 
-app.use(express.json());
 app.use(express.static(join(__dirname, 'public')));
 
 app.get('/api/links', (req, res) => {

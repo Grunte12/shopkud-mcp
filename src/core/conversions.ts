@@ -38,6 +38,9 @@ export interface ConversionRow {
   gmv: number;
   commission: number;
   cancelled: number;
+  category?: string | null;
+  reason_hint?: string | null;
+  buyer_class?: string | null;
 }
 
 export interface SalesBucket {
@@ -48,7 +51,12 @@ export interface SalesBucket {
   cancelled: number;
 }
 
-export type SalesDim = 'sub_id' | 'platform' | 'clip' | 'product';
+export const SALES_DIMS = ['sub_id', 'platform', 'product', 'clip', 'variant', 'month'] as const;
+export type SalesDim = typeof SALES_DIMS[number];
+
+export function isSalesDim(value: string): value is SalesDim {
+  return (SALES_DIMS as readonly string[]).includes(value);
+}
 
 function asRecord(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
@@ -111,6 +119,12 @@ export function conversionsFromReportList(payload: unknown): ConversionRow[] {
       const commission = orders.length <= 1 && checkoutCommission > 0 ? checkoutCommission : itemCommission;
       const status = orderStatus || checkoutStatus || 'unknown';
       const cancelled = cancelledStatus(status) || cancelledStatus(checkoutStatus) ? 1 : 0;
+      const firstItem = asRecord(items[0]);
+      const category = typeof firstItem.category === 'string' ? firstItem.category
+        : typeof checkout.category === 'string' ? checkout.category : null;
+      const hint = typeof order.reason_hint === 'string' ? order.reason_hint
+        : typeof checkout.reason_hint === 'string' ? checkout.reason_hint : null;
+      const buyer = typeof checkout.buyer_class === 'string' ? checkout.buyer_class : null;
       const orderKey = typeof order.order_sn === 'string' && order.order_sn ? order.order_sn : String(orderIndex);
       const itemKey = items.map((item) => String(asRecord(item).item_id ?? '')).join(',');
       rows.push({
@@ -127,6 +141,9 @@ export function conversionsFromReportList(payload: unknown): ConversionRow[] {
         gmv,
         commission,
         cancelled,
+        category,
+        reason_hint: hint,
+        buyer_class: buyer,
       });
     });
   });
@@ -204,7 +221,9 @@ export function salesBy(rows: ConversionRow[], dim: SalesDim, from: string, to: 
     const key = dim === 'platform' ? row.sub_id1
       : dim === 'product' ? row.sub_id2
         : dim === 'clip' ? row.sub_id3
-          : row.utm_content;
+          : dim === 'variant' ? row.sub_id4
+            : dim === 'month' ? row.sub_id5
+              : row.utm_content;
     const name = key || '(none)';
     const bucket = buckets.get(name) || { key: name, orders: 0, gmv: 0, commission: 0, cancelled: 0 };
     bucket.orders += row.orders;

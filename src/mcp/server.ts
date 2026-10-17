@@ -7,8 +7,12 @@ import {
 import { CDPController, CaptchaDetectedError } from '../core/cdp-controller.js';
 import { resolveCdpUrl } from '../config/cdp.js';
 import { ShopkudDatabase, type SubIds } from '../core/database.js';
-import { parseMappedCsv, salesBy, type SalesDim } from '../core/conversions.js';
+import { parseMappedCsv, salesBy, SALES_DIMS, isSalesDim, type SalesDim } from '../core/conversions.js';
 import { headNoRedirect, ownershipFromLocation } from '../core/verify-link.js';
+import { parseProductUrl } from '../config/selectors.js';
+import { offerAnnotations, safeImageUrls } from '../core/excluded-categories.js';
+import { probeChrome, type ChromeProbe } from '../core/chrome-probe.js';
+import { isLocalTool, LOCAL_TOOL_SCHEMAS, runLocalTool, subIdKey } from '../core/local-tools.js';
 import { randomBytes } from 'crypto';
 import * as crypto from 'crypto';
 
@@ -61,8 +65,9 @@ export class ShopkudMCPServer {
   private db: ShopkudDatabase;
   private affiliateOpenApiUrl: string;
   private affiliateOpenApiKey: string | null;
+  private probe: (url: string) => Promise<ChromeProbe>;
 
-  constructor(dbPath: string, cdpUrl?: string) {
+  constructor(dbPath: string, cdpUrl?: string, options: { probe?: (url: string) => Promise<ChromeProbe> } = {}) {
     this.server = new Server(
       {
         name: 'shopkud-core',
@@ -80,6 +85,7 @@ export class ShopkudMCPServer {
     
     this.affiliateOpenApiUrl = process.env.SHOPEE_AFFILIATE_API_URL || '';
     this.affiliateOpenApiKey = process.env.SHOPEE_AFFILIATE_API_KEY || null;
+    this.probe = options.probe || ((url) => probeChrome(url, { allowReserved: false }));
 
     this.setupHandlers();
   }
@@ -162,11 +168,11 @@ export class ShopkudMCPServer {
         },
         {
           name: 'sales_by',
-          description: 'Aggregate stored conversions by sub_id, platform (s1), product (s2), or clip (s3).',
+          description: 'Aggregate stored conversions by sub_id, platform (s1), product (s2), clip (s3), variant (s4), or month (s5).',
           inputSchema: {
             type: 'object',
             properties: {
-              dim: { type: 'string', enum: ['sub_id', 'platform', 'clip', 'product'] },
+              dim: { type: 'string', enum: [...SALES_DIMS] },
               from: { type: 'string', description: 'Start date YYYY-MM-DD' },
               to: { type: 'string', description: 'End date YYYY-MM-DD' },
               status: { type: 'string', description: 'Optional status text to keep' },
@@ -233,34 +239,14 @@ export class ShopkudMCPServer {
             required: ['workspace_id', 'csv_text', 'mapping', 'marketplace', 'period_start', 'period_end'],
           },
         },
+        ...LOCAL_TOOL_SCHEMAS,
       ],
     }));
 
     this.server.setRequestHandler(CallToolRequestSchema, async (request) => {
       try {
         const args = request.params.arguments || {};
-        switch (request.params.name) {
-          case 'find_link':
-            return await this.findLink(args as any as FindLinkParams);
-          case 'create_link':
-            return await this.createLink(args as any as CreateLinkParams);
-          case 'create_links_batch':
-            return await this.createLinksBatch(args as any as { items: CreateLinkParams[] });
-          case 'get_conversions':
-            return await this.getConversions(args as any as { from: string; to: string; status?: string });
-          case 'sales_by':
-            return await this.salesByTool(args as any as { dim: SalesDim; from: string; to: string; status?: string });
-          case 'verify_link':
-            return await this.verifyLink(args as any as VerifyLinkParams);
-          case 'get_offer':
-            return await this.getOffer(args as any as GetOfferParams);
-          case 'get_connection_status':
-            return await this.getConnectionStatus();
-          case 'import_report_csv':
-            return await this.importReportCsv(args as any as ImportReportParams);
-          default:
-            throw new Error(`Unknown tool: ${request.params.name}`);
-        }
+        return await this.execute(request.params.name, args as Record<string, unknown>);
       } catch (error) {
         if (error instanceof CaptchaDetectedError) {
           return {
@@ -307,20 +293,23 @@ export class ShopkudMCPServer {
   }
 
   private async createLink(params: CreateLinkParams) {
-    const productMatch = params.product_url.match(/shopee\.co\.th\/.*-i\.(\d+)\.(\d+)/);
-    if (!productMatch) {
+    const parsed = parseProductUrl(params.product_url);
+    if (!parsed) {
       throw new Error('Invalid Shopee product URL format');
     }
 
-    const [, shopId, itemId] = productMatch;
+    const { shopId, itemId } = parsed;
     const productId = params.clip_id ? `${params.clip_id}-${itemId}` : itemId;
 
     const existing = this.db.findLinks({ 
       product_id: productId, 
       channel: params.channel,
     });
+    const wanted = subIdKey(params.sub_ids);
+    const same = existing.find((link) => subIdKey(link.sub_ids) === wanted);
 
-    if (existing.length > 0) {
+    if (same) {
+      if (params.clip_id) this.db.upsertClip({ clip_id: params.clip_id, channel: params.channel });
       return {
         content: [{
           type: 'text',
@@ -329,7 +318,7 @@ export class ShopkudMCPServer {
             created: false,
             source: 'cache',
             as_of: new Date().toISOString(),
-            link: existing[0],
+            link: same,
           }),
         }],
       };
@@ -356,6 +345,7 @@ export class ShopkudMCPServer {
       price_min: 0,
       price_max: 0,
     });
+    if (params.clip_id) this.db.upsertClip({ clip_id: params.clip_id, channel: params.channel });
 
     return {
       content: [{
@@ -363,7 +353,9 @@ export class ShopkudMCPServer {
         text: JSON.stringify({
           ok: true,
           created: true,
-          source: 'cdp',
+          source: 'placeholder',
+          origin: link.origin,
+          clip_saved: Boolean(params.clip_id),
           as_of: new Date().toISOString(),
           link,
         }),
@@ -376,8 +368,7 @@ export class ShopkudMCPServer {
     const validationErrors: Array<{ index: number; error: string }> = [];
     for (let i = 0; i < params.items.length; i++) {
       const item = params.items[i];
-      const productMatch = item.product_url.match(/shopee\.co\.th\/.*-i\.(\d+)\.(\d+)/);
-      if (!productMatch) {
+      if (!parseProductUrl(item.product_url)) {
         validationErrors.push({ index: i, error: `Invalid product URL: ${item.product_url}` });
       }
     }
@@ -427,7 +418,7 @@ export class ShopkudMCPServer {
         type: 'text',
         text: JSON.stringify({
           ok: true,
-          source: 'cdp',
+          source: 'placeholder',
           as_of: new Date().toISOString(),
           total: params.items.length,
           successful: successCount,
@@ -442,7 +433,7 @@ export class ShopkudMCPServer {
     await this.cdp.ensureConnected();
     let result;
     try {
-      result = await this.cdp.getBrowserFlows().getConversions(params.from, params.to);
+      result = await this.cdp.getBrowserFlows().getConversions(params.from, params.to, params.status);
     } finally {
       await this.cdp.disconnect();
     }
@@ -456,7 +447,7 @@ export class ShopkudMCPServer {
     }
     const asOf = new Date().toISOString();
     let rows = result.data.rows;
-    if (params.status) {
+    if (params.status && result.data.status_filter !== 'server') {
       const needle = params.status.toLowerCase();
       rows = rows.filter((row) => row.status.toLowerCase().includes(needle));
     }
@@ -471,6 +462,9 @@ export class ShopkudMCPServer {
           as_of: asOf,
           endpoint_path: result.data.endpoint_path,
           download_clicked: result.data.download_clicked,
+          status_filter: params.status && result.data.status_filter !== 'server' ? 'local' : result.data.status_filter,
+          status_query_key: result.data.status_query_key,
+          list_query_keys: result.data.list_query_keys,
           row_count: rows.length,
           empty: rows.length === 0,
         }),
@@ -479,8 +473,7 @@ export class ShopkudMCPServer {
   }
 
   private async salesByTool(params: { dim: SalesDim; from: string; to: string; status?: string }) {
-    const dims: SalesDim[] = ['sub_id', 'platform', 'clip', 'product'];
-    if (!dims.includes(params.dim)) {
+    if (!isSalesDim(params.dim)) {
       return { content: [{ type: 'text', text: JSON.stringify({ ok: false, error: 'invalid_dim' }) }] };
     }
     let rows = this.db.listConversions(params.from, params.to);
@@ -541,6 +534,8 @@ export class ShopkudMCPServer {
     if (cachedOffer) {
       const ageMinutes = (Date.now() - new Date(cachedOffer.as_of).getTime()) / 60000;
       if (ageMinutes < 360) {
+        const snapshot = this.db.listOfferSnapshots(1, params.item_id)[0];
+        const notes = offerAnnotations(snapshot?.category);
         return {
           content: [{
             type: 'text',
@@ -557,6 +552,8 @@ export class ShopkudMCPServer {
                 commission_rate_video: cachedOffer.commission_rate_video,
                 extra_comm: cachedOffer.extra_comm,
                 stock_available: cachedOffer.stock_available,
+                ...notes,
+                citation: notes.excluded_category ? 'https://help.shopee.co.th/portal/10/article/132895' : null,
               },
             }),
           }],
@@ -598,9 +595,21 @@ export class ShopkudMCPServer {
         stock_available: Number(data.stock ?? 0) > 0,
       };
 
+      const notes = offerAnnotations(typeof data.category === 'string' ? data.category : null);
+      const offerAsOf = new Date().toISOString();
+      this.db.saveProduct({
+        item_id: params.item_id,
+        shop_id: String(data.shop_id || '0'),
+        title: typeof data.product_name === 'string' ? data.product_name : `Product ${params.item_id}`,
+        price_min: price,
+        price_max: price,
+        category: typeof data.category === 'string' ? data.category : null,
+        image_urls: safeImageUrls(data.images),
+        official: Boolean(data.official),
+      });
       this.db.saveOffer({
         ...saved,
-        as_of: new Date().toISOString(),
+        as_of: offerAsOf,
         source: 'cdp',
       });
 
@@ -616,7 +625,28 @@ export class ShopkudMCPServer {
         total_commission_baht: data.total_commission_baht ?? null,
         commission_min_baht: data.commission_min_baht ?? null,
         commission_max_baht: data.commission_max_baht ?? null,
+        ...notes,
+        images: safeImageUrls(data.images),
+        citation: notes.excluded_category ? 'https://help.shopee.co.th/portal/10/article/132895' : null,
       };
+      this.db.saveOfferSnapshot({
+        item_id: params.item_id,
+        as_of: offerAsOf,
+        price,
+        store_rate: storePercent,
+        shopee_rate: data.shopee_commission_percent ?? null,
+        xtra_rate: data.xtra_commission_percent ?? null,
+        total_rate: data.total_commission_percent ?? null,
+        extra_comm: false,
+        stock: data.stock == null ? null : Number(data.stock),
+        category: notes.category,
+        title: typeof data.product_name === 'string' ? data.product_name : null,
+        image_urls: safeImageUrls(data.images),
+        official: Boolean(data.official),
+        excluded_category: notes.excluded_category,
+        excluded_match: notes.excluded_match,
+        source: 'cdp',
+      });
 
       return {
         content: [{
@@ -624,7 +654,7 @@ export class ShopkudMCPServer {
           text: JSON.stringify({
             ok: true,
             source: 'cdp',
-            as_of: new Date().toISOString(),
+            as_of: offerAsOf,
             offer,
           }),
         }],
@@ -760,6 +790,58 @@ export class ShopkudMCPServer {
     }
   }
 
+  getDatabase(): ShopkudDatabase {
+    return this.db;
+  }
+
+  /** Same dispatch the MCP handler uses. Returns the tool JSON object. */
+  async invoke(name: string, args: Record<string, unknown> = {}): Promise<unknown> {
+    try {
+      const result = await this.execute(name, args);
+      return JSON.parse(result.content[0].text);
+    } catch (error) {
+      if (error instanceof CaptchaDetectedError) {
+        return { ok: false, error: 'captcha_detected', message: error.message };
+      }
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  private async execute(name: string, args: Record<string, unknown>) {
+    if (isLocalTool(name)) return this.localTool(name, args);
+    switch (name) {
+      case 'find_link':
+        return await this.findLink(args as any as FindLinkParams);
+      case 'create_link':
+        return await this.createLink(args as any as CreateLinkParams);
+      case 'create_links_batch':
+        return await this.createLinksBatch(args as any as { items: CreateLinkParams[] });
+      case 'get_conversions':
+        return await this.getConversions(args as any as { from: string; to: string; status?: string });
+      case 'sales_by':
+        return await this.salesByTool(args as any as { dim: SalesDim; from: string; to: string; status?: string });
+      case 'verify_link':
+        return await this.verifyLink(args as any as VerifyLinkParams);
+      case 'get_offer':
+        return await this.getOffer(args as any as GetOfferParams);
+      case 'get_connection_status':
+        return await this.getConnectionStatus();
+      case 'import_report_csv':
+        return await this.importReportCsv(args as any as ImportReportParams);
+      default:
+        throw new Error(`Unknown tool: ${name}`);
+    }
+  }
+
+  private async localTool(name: string, args: Record<string, unknown>) {
+    const chrome = name === 'setup_status'
+      ? await this.probe(this.cdp.getCdpUrl())
+      : { reachable: false, port: null, browser: null, skipped: true };
+    return {
+      content: [{ type: 'text' as const, text: JSON.stringify(runLocalTool(name, args, this.db, chrome)) }],
+    };
+  }
+
   async start() {
     await this.cdp.connect();
     const transport = new StdioServerTransport();
@@ -777,7 +859,9 @@ async function main() {
   const dbPath = process.env.SHOPKUD_DB_PATH || './shopkud.db';
   const cdpUrl = resolveCdpUrl();
 
-  const server = new ShopkudMCPServer(dbPath, cdpUrl);
+  const server = new ShopkudMCPServer(dbPath, cdpUrl, {
+    probe: (url) => probeChrome(url, { allowReserved: true }),
+  });
 
   process.on('SIGINT', async () => {
     await server.stop();

@@ -181,7 +181,9 @@ test('getConversions reads the report list and does not download or open a short
     assert.strictEqual(result.data?.endpoint_path, '/api/v3/report/list');
     assert.strictEqual(result.data?.download_clicked, false);
     assert.strictEqual(result.data?.affiliate_id, '42');
-    assert.strictEqual(result.data?.rows.length, 1);
+    assert.strictEqual(result.data?.rows.length, 2);
+    assert.strictEqual(result.data?.status_query_key, 'checkout_status');
+    assert.strictEqual(result.data?.status_filter, 'none');
     assert.strictEqual(result.data?.rows[0].sub_id1, 'tiktok');
     assert.strictEqual(result.data?.rows[0].sub_id2, 'P1');
     assert.strictEqual(result.data?.rows[0].sub_id3, 'clip');
@@ -189,6 +191,23 @@ test('getConversions reads the report list and does not download or open a short
     assert.strictEqual(result.data?.rows[0].gmv, 100);
     assert.strictEqual(result.data?.rows[0].commission, 10);
     assert.strictEqual(result.data?.rows[0].cancelled, 0);
+    assert.ok(!page.url().includes('s.shopee.co.th'));
+  } finally {
+    await context.close();
+  }
+});
+
+test('getConversions sends checkout_status when the list URL already has that key', async () => {
+  resetState();
+  const { context, page, flows } = await openFlows();
+  try {
+    const result = await flows.getConversions('2026-01-01', '2026-12-31', 'Cancelled');
+    assert.strictEqual(result.ok, true, result.error);
+    assert.strictEqual(result.data?.status_filter, 'server');
+    assert.strictEqual(result.data?.status_query_key, 'checkout_status');
+    assert.strictEqual(result.data?.rows.length, 1);
+    assert.strictEqual(result.data?.rows[0].sub_id1, 'ig');
+    assert.strictEqual(result.data?.rows[0].cancelled, 1);
     assert.ok(!page.url().includes('s.shopee.co.th'));
   } finally {
     await context.close();

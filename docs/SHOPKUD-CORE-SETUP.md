@@ -243,6 +243,24 @@ The CDP controller includes:
 └─────────────────┘
 ```
 
+## JSON API
+
+`npm run console` also serves `POST /api/v1/tools/:name` on `127.0.0.1`. Send `X-ShopKud-Console: 1`. The route calls the same MCP tool functions. Shapes, confirm tokens, and the export route are in `docs/API.md`.
+
+Local checks that do not open Chrome:
+
+```bash
+npx tsx src/cli.ts sales-by --dim variant --from 2026-10-01 --to 2026-10-31
+```
+
+A read-only nav check on the logged-in Chrome (new tab only, at most 8 page loads):
+
+```bash
+SHOPKUD_CDP_PORT=9333 npx tsx src/cli.ts discover
+```
+
+`discover` prints paths and query keys. It does not print response values. Stop if a CAPTCHA or login wall appears.
+
 ## Support
 
 For issues or questions, refer to the test suite and `docs/REVIEW-NOTES.md`.

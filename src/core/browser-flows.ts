@@ -14,6 +14,8 @@ import type { SubIds } from './database.js';
 import { commissionFromOfferPayload } from './offer-commission.js';
 import { customLinksFromResponse } from './custom-link.js';
 import { conversionsFromMappedCsv, conversionsFromReportList, csvMappingFromHeader, parseMappedCsv, reportAffiliateId, type ConversionRow } from './conversions.js';
+import { safeImageUrls } from './excluded-categories.js';
+import { reportListCarriesStatus } from './local-tools.js';
 
 export interface BrowserFlowResult<T = any> {
   ok: boolean;
@@ -556,12 +558,15 @@ export class BrowserFlows {
    * Uses the JSON list the page loads. Clicks download only if that list never arrives.
    * Does not open short links.
    */
-  async getConversions(from: string, to: string): Promise<BrowserFlowResult<{
+  async getConversions(from: string, to: string, status?: string): Promise<BrowserFlowResult<{
     rows: ConversionRow[];
     endpoint_path: string | null;
     source: 'report_list' | 'csv';
     affiliate_id: string | null;
     download_clicked: boolean;
+    status_query_key: string | null;
+    list_query_keys: string[];
+    status_filter: 'server' | 'local' | 'none';
   }>> {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
       return { ok: false, error: 'Dates must be YYYY-MM-DD', status: 'uncertain' };
@@ -600,9 +605,13 @@ export class BrowserFlows {
       let payload = listPayload;
       let source: 'report_list' | 'csv' = 'report_list';
       let downloadClicked = false;
-      if (listUrl) {
-        payload = await this.fetchReportList(listUrl, from, to) ?? payload;
-      }
+      const statusKey = listUrl ? reportListCarriesStatus(listUrl) : null;
+      const listQueryKeys = listUrl ? [...new URL(listUrl).searchParams.keys()] : [];
+      const fetched = listUrl
+        ? await this.fetchReportList(listUrl, from, to, status && statusKey ? { key: statusKey, value: status } : undefined)
+        : null;
+      if (fetched) payload = fetched;
+      const serverFiltered = Boolean(status && statusKey && fetched);
       if (!payload) {
         downloadClicked = true;
         const csv = await this.downloadReportCsv(from, to);
@@ -624,6 +633,9 @@ export class BrowserFlows {
             source: 'csv',
             affiliate_id: null,
             download_clicked: true,
+            status_query_key: null,
+            list_query_keys: [],
+            status_filter: status ? 'local' : 'none',
           },
         };
       }
@@ -636,6 +648,9 @@ export class BrowserFlows {
           source,
           affiliate_id: reportAffiliateId(payload),
           download_clicked: downloadClicked,
+          status_query_key: statusKey,
+          list_query_keys: listQueryKeys,
+          status_filter: status ? (serverFiltered ? 'server' : 'local') : 'none',
         },
       };
     } catch (error: any) {
@@ -646,17 +661,18 @@ export class BrowserFlows {
     }
   }
 
-  private async fetchReportList(sampleUrl: string, from: string, to: string): Promise<any | null> {
+  private async fetchReportList(sampleUrl: string, from: string, to: string, status?: { key: string; value: string }): Promise<any | null> {
     const start = Date.parse(`${from}T00:00:00+07:00`);
     const end = Date.parse(`${to}T23:59:59+07:00`);
     if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
-    return this.page.evaluate(async ({ sampleUrl: raw, startMs, endMs }): Promise<any> => {
+    return this.page.evaluate(async ({ sampleUrl: raw, startMs, endMs, statusKey, statusValue }): Promise<any> => {
       const sample = new URL(raw);
       const stamp = Number(sample.searchParams.get('purchase_time_s') || '0');
       const useMs = stamp > 1e12;
       sample.searchParams.set('purchase_time_s', String(useMs ? startMs : Math.floor(startMs / 1000)));
       sample.searchParams.set('purchase_time_e', String(useMs ? endMs : Math.floor(endMs / 1000)));
       sample.searchParams.set('page_num', '1');
+      if (statusKey && statusValue) sample.searchParams.set(statusKey, statusValue);
       const first = await fetch(sample.toString(), { credentials: 'include' });
       const body = await first.json() as any;
       const pageSize = Number(body?.data?.page_size || sample.searchParams.get('page_size') || 20);
@@ -671,7 +687,7 @@ export class BrowserFlows {
       }
       if (body?.data) body.data.list = list;
       return body;
-    }, { sampleUrl, startMs: start, endMs: end }).catch(() => null);
+    }, { sampleUrl, startMs: start, endMs: end, statusKey: status?.key || '', statusValue: status?.value || '' }).catch(() => null);
   }
 
   private async downloadReportCsv(from: string, to: string): Promise<{ text: string; path: string } | null> {
@@ -817,11 +833,16 @@ export class BrowserFlows {
     const data = response?.data;
     if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
     const card = data.batch_item_for_item_card_full || {};
+    const category = [data.category_name, data.category, card.category_name, card.category].find((value) => typeof value === 'string') || null;
+    const images = safeImageUrls([card.image, ...(Array.isArray(data.images) ? data.images : []), ...(Array.isArray(card.images) ? card.images : [])]);
     return {
       ...parsed,
       product_name: card.name || data.product_name || data.name || null,
       shop_id: card.shopid || data.shop_id || null,
       stock: card.stock ?? data.stock ?? null,
+      category,
+      images,
+      official: Boolean(data.official || card.is_official_shop),
     };
   }
 
