@@ -1,435 +1,336 @@
 (() => {
   "use strict";
-  
-  /**
-   * SubID and link creation module for Shopee Affiliate Get Link dialog.
-   * Supports 5 SubID fields with configurable selectors.
-   * Convention: sub_id_1=platform, sub_id_2=product, sub_id_3=clip, sub_id_4=variant, sub_id_5=date
-   */
-  
+
   const DEFAULT_SUBID_CONFIG = {
-    // These are configurable selectors that need to be verified against live Shopee UI
     dialog_selector: '[role="dialog"]',
-    dialog_title_text: 'ลิงก์ข้อเสนอสินค้า',
-    subid_container_selector: '.subid-inputs, .sub-id-section, [class*="SubId"]',
+    dialog_title_text: "ลิงก์ข้อเสนอสินค้า",
     subid_input_selectors: [
       'input[name="subId1"], input[placeholder*="Sub ID 1"]',
-      'input[name="subId2"], input[placeholder*="Sub ID 2"]', 
+      'input[name="subId2"], input[placeholder*="Sub ID 2"]',
       'input[name="subId3"], input[placeholder*="Sub ID 3"]',
       'input[name="subId4"], input[placeholder*="Sub ID 4"]',
       'input[name="subId5"], input[placeholder*="Sub ID 5"]'
     ],
-    // Fallback: detect all text inputs in SubID section
-    generic_input_selector: 'input[type="text"]',
-    create_button_text: ['สร้างลิงก์', 'Create Link', 'รับลิงก์', 'Get Link'],
-    link_output_selector: 'textarea[readonly], input[readonly][type="text"]',
+    create_button_text: ["สร้างลิงก์", "Create Link", "รับลิงก์", "Get Link", "Convert", "คัดลอกลิงก์"],
+    link_output_selector: "textarea, input",
     max_subid_length: 128
   };
-  
+
+  const TITLE_RE = /^(?:ลิงก์ข้อเสนอสินค้า|get\s*link|custom\s*link|รับลิงก์|ลิงก์กำหนดเอง)$/iu;
+  const SLOT_RE = /(?:sub[\s_-]*id|subid|รหัสย่อย)\s*([1-5])\b/iu;
+  const memoryAttempts = new Map();
   let config = {...DEFAULT_SUBID_CONFIG};
-  
-  /**
-   * Update SubID configuration (for testing or adapting to UI changes)
-   */
+
   function configure(newConfig) {
     config = {...DEFAULT_SUBID_CONFIG, ...newConfig};
   }
-  
-  /**
-   * Detect if Get Link dialog is open and ready
-   */
+
+  function storageKey(intent) {
+    return "shopkud-create-attempt:" + intent;
+  }
+
+  async function loadAttempt(intent) {
+    if (!intent) return null;
+    if (memoryAttempts.has(intent)) return memoryAttempts.get(intent);
+    try {
+      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+        const stored = await chrome.storage.local.get(storageKey(intent));
+        const value = stored[storageKey(intent)];
+        if (value) memoryAttempts.set(intent, value);
+        return value || null;
+      }
+    } catch {
+      return memoryAttempts.get(intent) || null;
+    }
+    return null;
+  }
+
+  async function saveAttempt(intent, value) {
+    if (!intent) return;
+    memoryAttempts.set(intent, value);
+    try {
+      if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.local) {
+        await chrome.storage.local.set({[storageKey(intent)]: value});
+      }
+    } catch {
+      /* The in-memory record still blocks a retry in this page. */
+    }
+  }
+
+  function fieldBlob(input, dialog) {
+    const parts = [
+      input.getAttribute && input.getAttribute("aria-label"),
+      input.getAttribute && input.getAttribute("placeholder"),
+      input.getAttribute && input.getAttribute("name"),
+      input.getAttribute && input.getAttribute("id")
+    ];
+    let node = input.parentElement;
+    while (node) {
+      const children = node.children ? [...node.children] : [];
+      for (const child of children) {
+        const tag = (child.tagName || "").toUpperCase();
+        if (tag === "LABEL" || /ant-form-item-label/u.test(child.className || "")) {
+          parts.push(child.textContent || "");
+        }
+      }
+      if (node === dialog || (node.getAttribute && node.getAttribute("role") === "dialog")) break;
+      node = node.parentElement;
+    }
+    return parts.filter(Boolean).join(" ");
+  }
+
+  function isTextInput(input) {
+    const tag = (input.tagName || "").toUpperCase();
+    if (tag !== "INPUT" && tag !== "TEXTAREA") return false;
+    const type = (input.getAttribute && input.getAttribute("type") || input.type || "text").toLowerCase();
+    return tag === "TEXTAREA" || type === "text" || type === "search" || type === "";
+  }
+
   function detectDialog(doc) {
-    const dialogs = [...doc.querySelectorAll(config.dialog_selector)]
-      .filter(d => {
-        const title = d.querySelector('h4, h3, h2, [class*="title"], [class*="Title"]');
-        return title && title.textContent.trim() === config.dialog_title_text && 
-               d.getClientRects().length > 0;
-      });
-    
-    if (dialogs.length === 0) {
-      return {ok: false, error: 'dialog_not_found'};
-    }
-    if (dialogs.length > 1) {
-      return {ok: false, error: 'multiple_dialogs_detected'};
-    }
-    
+    const dialogs = [...doc.querySelectorAll(config.dialog_selector)].filter(dialog => {
+      if (!dialog.getClientRects().length) return false;
+      const titleNode = dialog.querySelector("h4, h3, h2, .ant-modal-title");
+      const title = (titleNode && titleNode.textContent || "").trim();
+      return TITLE_RE.test(title) || title === config.dialog_title_text;
+    });
+    if (dialogs.length === 0) return {ok: false, error: "dialog_not_found", status: "not_attempted"};
+    if (dialogs.length > 1) return {ok: false, error: "multiple_dialogs_detected", status: "not_attempted"};
     return {ok: true, dialog: dialogs[0]};
   }
-  
-  /**
-   * Detect SubID input fields in the dialog
-   */
+
   function detectSubIdInputs(dialog) {
-    const inputs = [];
-    
-    // Try specific selectors first
-    for (let i = 0; i < config.subid_input_selectors.length; i++) {
-      const input = dialog.querySelector(config.subid_input_selectors[i]);
-      if (input && input.type === 'text' && !input.disabled && !input.readOnly) {
-        inputs[i] = input;
-      }
+    const inputs = [null, null, null, null, null];
+    const nodes = [...dialog.querySelectorAll("input, textarea")].filter(isTextInput);
+    for (const input of nodes) {
+      if (input.disabled || input.readOnly) continue;
+      const blob = fieldBlob(input, dialog);
+      const match = SLOT_RE.exec(blob);
+      if (!match) continue;
+      const index = Number(match[1]) - 1;
+      if (!inputs[index]) inputs[index] = input;
     }
-    
-    // If no specific selectors worked, try to find SubID container and generic inputs
-    if (inputs.filter(Boolean).length === 0) {
-      const container = dialog.querySelector(config.subid_container_selector);
-      if (container) {
-        const genericInputs = [...container.querySelectorAll(config.generic_input_selector)]
-          .filter(input => !input.disabled && !input.readOnly && input.getClientRects().length > 0)
-          .slice(0, 5);
-        genericInputs.forEach((input, idx) => inputs[idx] = input);
-      }
-    }
-    
     const available = inputs.filter(Boolean).length;
-    
     return {
       ok: true,
-      inputs: inputs, // Array with 5 slots, may have nulls
+      inputs,
       available_count: available,
-      detection_method: available > 0 ? 
-        (inputs[0] && inputs[0].matches(config.subid_input_selectors[0]) ? 'specific_selector' : 'generic_container') : 
-        'none',
-      ui_structure_verified: false, // Must be set by operator after manual verification
+      detection_method: available > 0 ? "specific_selector" : "none",
       requires_manual_verification: available === 0
     };
   }
-  
-  /**
-   * Validate SubID values before filling
-   */
+
   function validateSubIds(subIds) {
     if (!Array.isArray(subIds) || subIds.length > 5) {
-      return {ok: false, error: 'invalid_subid_array', message: 'SubIDs must be array of max 5 strings'};
+      return {ok: false, error: "invalid_subid_array", status: "not_attempted", message: "SubIDs must be an array of at most 5 strings"};
     }
-    
     const errors = [];
     subIds.forEach((value, idx) => {
-      if (value !== null && value !== undefined && value !== '') {
-        if (typeof value !== 'string') {
-          errors.push(`SubID ${idx + 1}: must be string, got ${typeof value}`);
-        } else if (value.length > config.max_subid_length) {
-          errors.push(`SubID ${idx + 1}: exceeds max length ${config.max_subid_length}`);
-        } else if (/[\r\n\t]/.test(value)) {
-          errors.push(`SubID ${idx + 1}: contains invalid whitespace characters`);
-        }
+      if (value !== null && value !== undefined && value !== "") {
+        if (typeof value !== "string") errors.push(`SubID ${idx + 1}: must be string`);
+        else if (value.length > config.max_subid_length) errors.push(`SubID ${idx + 1}: exceeds max length`);
+        else if (/[\r\n\t]/u.test(value)) errors.push(`SubID ${idx + 1}: contains invalid whitespace`);
       }
     });
-    
-    if (errors.length > 0) {
-      return {ok: false, error: 'invalid_subid_values', validation_errors: errors};
-    }
-    
+    if (errors.length > 0) return {ok: false, error: "invalid_subid_values", status: "not_attempted", validation_errors: errors};
     return {ok: true};
   }
-  
-  /**
-   * Fill SubID inputs with provided values
-   */
+
   function fillSubIds(dialog, subIds) {
     const validation = validateSubIds(subIds);
-    if (!validation.ok) {
-      return validation;
-    }
-    
+    if (!validation.ok) return validation;
     const detection = detectSubIdInputs(dialog);
-    if (!detection.ok) {
-      return detection;
-    }
-    
-    if (detection.requires_manual_verification) {
+    if (detection.detection_method !== "specific_selector") {
       return {
-        ok: false, 
-        error: 'subid_inputs_not_detected',
-        message: 'Could not detect SubID input fields. Manual UI verification required.',
-        detection_evidence: detection
+        ok: false,
+        error: "subid_fields_not_identified",
+        status: "not_attempted",
+        message: "Requested SubID values need a uniquely numbered field."
       };
     }
-    
     const filled = [];
-    const skipped = [];
-    const unavailable = [];
-    
-    subIds.forEach((value, idx) => {
-      if (value === null || value === undefined || value === '') {
-        skipped.push(idx + 1);
-        return;
-      }
-      
+    const missing = [];
+    for (let idx = 0; idx < subIds.length; idx += 1) {
+      const value = subIds[idx];
+      if (value === null || value === undefined || value === "") continue;
       const input = detection.inputs[idx];
       if (!input) {
-        unavailable.push(idx + 1);
-        return;
+        missing.push(idx + 1);
+        continue;
       }
-      
       try {
-        // Clear existing value
-        input.value = '';
-        input.dispatchEvent(new Event('input', {bubbles: true}));
-        input.dispatchEvent(new Event('change', {bubbles: true}));
-        
-        // Set new value
+        input.value = "";
+        input.dispatchEvent(new Event("input", {bubbles: true}));
         input.value = value;
-        input.dispatchEvent(new Event('input', {bubbles: true}));
-        input.dispatchEvent(new Event('change', {bubbles: true}));
-        
-        filled.push({slot: idx + 1, value: value});
-      } catch (error) {
-        return {ok: false, error: 'fill_failed', slot: idx + 1, message: error.message};
+        input.dispatchEvent(new Event("input", {bubbles: true}));
+        input.dispatchEvent(new Event("change", {bubbles: true}));
+        if (input.value !== value) {
+          return {ok: false, error: "fill_readback_mismatch", status: "not_attempted", slot: idx + 1};
+        }
+        filled.push({slot: idx + 1});
+      } catch {
+        return {ok: false, error: "fill_failed", status: "not_attempted", slot: idx + 1};
       }
-    });
-    
-    return {
-      ok: true,
-      filled: filled,
-      skipped: skipped,
-      unavailable: unavailable,
-      detection_method: detection.detection_method,
-      requires_manual_ui_verification: detection.detection_method !== 'specific_selector'
-    };
+    }
+    if (missing.length) {
+      return {
+        ok: false,
+        error: "subid_field_missing",
+        status: "not_attempted",
+        missing_slots: missing,
+        filled
+      };
+    }
+    return {ok: true, filled, missing_slots: [], detection_method: detection.detection_method};
   }
-  
-  /**
-   * Find the create/get link button in dialog
-   */
+
   function findCreateButton(dialog) {
-    const buttons = [...dialog.querySelectorAll('button')]
-      .filter(btn => {
-        if (btn.disabled || !btn.getClientRects().length) return false;
-        const text = btn.innerText.trim();
-        return config.create_button_text.some(pattern => 
-          new RegExp(`^${pattern}$`, 'iu').test(text)
-        );
-      });
-    
-    if (buttons.length === 0) {
-      return {ok: false, error: 'create_button_not_found'};
-    }
-    if (buttons.length > 1) {
-      return {ok: false, error: 'multiple_create_buttons', count: buttons.length};
-    }
-    
-    return {ok: true, button: buttons[0], button_text: buttons[0].innerText.trim()};
+    const buttons = [...dialog.querySelectorAll("button")].filter(button => {
+      if (button.disabled || !button.getClientRects().length) return false;
+      const text = (button.innerText || button.textContent || "").trim();
+      return config.create_button_text.some(pattern => new RegExp(`^${pattern}$`, "iu").test(text));
+    });
+    if (buttons.length === 0) return {ok: false, error: "create_button_not_found", status: "not_attempted"};
+    if (buttons.length > 1) return {ok: false, error: "multiple_create_buttons", status: "not_attempted", count: buttons.length};
+    return {ok: true, button: buttons[0], button_text: (buttons[0].innerText || buttons[0].textContent || "").trim()};
   }
-  
-  /**
-   * Wait for link output to appear after clicking create
-   */
+
   async function waitForLinkOutput(dialog, timeout = 10000) {
     const start = Date.now();
-    
     while (Date.now() - start < timeout) {
-      const outputs = [...dialog.querySelectorAll(config.link_output_selector)]
-        .filter(el => el.value && el.value.startsWith('https://') && el.getClientRects().length > 0);
-      
-      if (outputs.length === 1) {
-        const url = outputs[0].value.trim();
-        if (/^https:\/\/s\.shopee\.co\.th\/[A-Za-z0-9]+$/.test(url)) {
-          return {ok: true, affiliate_url: url, output_element: outputs[0]};
-        }
-      }
-      
-      // Check for errors
-      const errorElements = [...dialog.querySelectorAll('[class*="error"], [class*="Error"], .ant-message-error')]
-        .filter(el => el.getClientRects().length > 0);
-      if (errorElements.length > 0) {
-        return {
-          ok: false, 
-          error: 'link_creation_failed',
-          error_message: errorElements.map(el => el.textContent.trim()).join('; ')
-        };
-      }
-      
-      await new Promise(resolve => setTimeout(resolve, 100));
+      const outputs = [...dialog.querySelectorAll(config.link_output_selector)].filter(el => {
+        return el.value && el.getClientRects().length > 0;
+      });
+      const urls = outputs.map(el => el.value.trim()).filter(url => /^https:\/\/s\.shopee\.co\.th\/[A-Za-z0-9]+$/u.test(url));
+      if (urls.length === 1) return {ok: true, affiliate_url: urls[0]};
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
-    
-    return {ok: false, error: 'link_output_timeout'};
+    return {ok: false, error: "link_output_timeout", status: "unconfirmed", retry_automatically: false, clicked: true};
   }
-  
-  /**
-   * Main function: create affiliate link with SubIDs
-   * Returns: {ok, affiliate_url, sub_ids_used, link_receipt}
-   */
+
+  function blockedAttempt(prior) {
+    return {
+      ok: prior.status === "confirmed",
+      error: prior.status === "confirmed" ? undefined : "create_not_replayed",
+      status: prior.status,
+      affiliate_url: prior.affiliate_url || null,
+      product_id: prior.product_id || null,
+      clicked: false,
+      retry_automatically: false,
+      link_receipt: prior.receipt || null
+    };
+  }
+
   async function createLinkWithSubIds(doc, subIds, options = {}) {
-    const {
-      dry_run = false,
-      validate_only = false
-    } = options;
-    
-    // Step 1: Detect dialog
+    const {dry_run = false, expected_product_id = null, page_url = null, intent_key = null} = options;
+    if (!expected_product_id) {
+      return {ok: false, error: "product_unattested", status: "not_attempted", retry_automatically: false, clicked: false};
+    }
     const dialogDetection = detectDialog(doc);
-    if (!dialogDetection.ok) {
-      return dialogDetection;
-    }
+    if (!dialogDetection.ok) return {...dialogDetection, clicked: false};
     const dialog = dialogDetection.dialog;
-    
-    // Step 2: Detect SubID inputs
-    const inputDetection = detectSubIdInputs(dialog);
-    if (validate_only) {
-      return {
-        ok: true,
-        validate_only: true,
-        dialog_detected: true,
-        subid_detection: inputDetection
-      };
-    }
-    
-    // Step 3: Fill SubIDs
     const fillResult = fillSubIds(dialog, subIds || []);
-    if (!fillResult.ok) {
-      return fillResult;
-    }
-    
+    if (!fillResult.ok) return {...fillResult, clicked: false, product_id: expected_product_id};
     if (dry_run) {
-      return {
-        ok: true,
-        dry_run: true,
-        would_fill: fillResult
-      };
+      return {ok: true, dry_run: true, status: "not_attempted", would_fill: fillResult, product_id: expected_product_id, clicked: false};
     }
-    
-    // Step 4: Find and click create button
+    const prior = await loadAttempt(intent_key);
+    if (prior && (prior.status === "unconfirmed" || prior.status === "confirmed")) return blockedAttempt(prior);
     const buttonDetection = findCreateButton(dialog);
-    if (!buttonDetection.ok) {
-      return buttonDetection;
-    }
-    
+    if (!buttonDetection.ok) return {...buttonDetection, clicked: false};
     const clickTime = new Date().toISOString();
+    await saveAttempt(intent_key, {status: "unconfirmed", product_id: expected_product_id, at: clickTime});
     try {
       buttonDetection.button.click();
-    } catch (error) {
-      return {ok: false, error: 'click_failed', message: error.message};
+    } catch {
+      return {ok: false, error: "click_failed", status: "unconfirmed", retry_automatically: false, clicked: true, product_id: expected_product_id};
     }
-    
-    // Step 5: Wait for link output
-    const linkResult = await waitForLinkOutput(dialog);
+    const linkResult = await waitForLinkOutput(dialog, options.output_timeout || 10000);
     if (!linkResult.ok) {
-      return linkResult;
+      await saveAttempt(intent_key, {status: "unconfirmed", product_id: expected_product_id, at: clickTime});
+      return {...linkResult, product_id: expected_product_id, retry_automatically: false};
     }
-    
-    const completedTime = new Date().toISOString();
-    
-    // Step 6: Capture receipt
     const receipt = {
       affiliate_url: linkResult.affiliate_url,
-      sub_ids_filled: fillResult.filled,
+      product_id: expected_product_id,
+      product_attested: true,
+      page_url: page_url,
       created_at: clickTime,
-      captured_at: completedTime,
-      dialog_detection_method: inputDetection.detection_method,
-      button_text: buttonDetection.button_text,
-      requires_manual_ui_verification: fillResult.requires_manual_ui_verification
+      captured_at: new Date().toISOString(),
+      status: "confirmed",
+      dialog_detection_method: "specific_selector",
+      sub_id_slots: fillResult.filled.map(item => item.slot)
     };
-    
+    await saveAttempt(intent_key, {
+      status: "confirmed",
+      product_id: expected_product_id,
+      affiliate_url: linkResult.affiliate_url,
+      receipt
+    });
+    const subIdsUsed = {};
+    (subIds || []).forEach((value, idx) => {
+      if (value) subIdsUsed[`sub_id_${idx + 1}`] = value;
+    });
     return {
       ok: true,
+      status: "confirmed",
       affiliate_url: linkResult.affiliate_url,
-      sub_ids_used: fillResult.filled.reduce((obj, item) => {
-        obj[`sub_id_${item.slot}`] = item.value;
-        return obj;
-      }, {}),
+      product_id: expected_product_id,
+      product_attested: true,
+      sub_ids_used: subIdsUsed,
       link_receipt: receipt,
-      link_source: 'extension_subid_creation',
-      requires_manual_ui_verification: fillResult.requires_manual_ui_verification
+      link_source: "extension_subid_creation",
+      clicked: true,
+      retry_automatically: false
     };
   }
-  
-  /**
-   * Batch link creation - sequential with checkpointing
-   */
+
   async function createBatchLinks(doc, items, options = {}) {
-    const {
-      on_progress = null,
-      stop_on_error = true
-    } = options;
-    
+    const {stop_on_error = true, attested_product_id = null, page_url = null} = options;
     const results = [];
     let stopped = false;
-    
-    for (let i = 0; i < items.length; i++) {
-      if (stopped) {
-        results.push({
-          ok: false,
-          item_index: i,
-          product_id: items[i].product_id,
-          error: 'batch_stopped',
-          status: 'not_attempted'
-        });
-        continue;
-      }
-      
+    for (let i = 0; i < items.length; i += 1) {
       const item = items[i];
-      
-      // Check for interruptions (login, CAPTCHA, etc.)
-      const captcha = [...doc.querySelectorAll('iframe[src*="captcha"], .captcha, #captcha, [data-testid="captcha"]')]
-        .some(el => el.getClientRects().length > 0);
-      if (captcha) {
-        stopped = true;
+      if (stopped) {
+        results.push({ok: false, item_index: i, product_id: item.product_id, error: "batch_stopped", status: "not_attempted", clicked: false});
+        continue;
+      }
+      if (!attested_product_id || item.product_id !== attested_product_id) {
         results.push({
           ok: false,
           item_index: i,
           product_id: item.product_id,
-          error: 'captcha_detected',
-          status: 'stopped'
+          attested_product_id: attested_product_id,
+          error: "product_not_on_page",
+          status: "not_attempted",
+          clicked: false
         });
         continue;
       }
-      
-      try {
-        const result = await createLinkWithSubIds(doc, item.sub_ids, {dry_run: false});
-        results.push({
-          ...result,
-          item_index: i,
-          product_id: item.product_id,
-          status: result.ok ? 'completed' : 'failed'
-        });
-        
-        if (!result.ok && stop_on_error) {
-          stopped = true;
-        }
-        
-        if (on_progress) {
-          on_progress({
-            completed: i + 1,
-            total: items.length,
-            current_result: result
-          });
-        }
-        
-        // Small delay between items to avoid rate limiting
-        if (i < items.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 2000 + Math.random() * 1000));
-        }
-      } catch (error) {
-        results.push({
-          ok: false,
-          item_index: i,
-          product_id: item.product_id,
-          error: 'unexpected_error',
-          message: error.message,
-          status: 'failed'
-        });
-        if (stop_on_error) {
-          stopped = true;
-        }
-      }
+      const result = await createLinkWithSubIds(doc, item.sub_ids, {
+        dry_run: false,
+        expected_product_id: attested_product_id,
+        page_url,
+        intent_key: item.intent_key || null
+      });
+      const status = result.status || (result.ok ? "confirmed" : "failed");
+      results.push({...result, item_index: i, product_id: attested_product_id, status});
+      if (status === "unconfirmed" || (stop_on_error && !result.ok)) stopped = true;
     }
-    
-    const completed = results.filter(r => r.status === 'completed').length;
-    const failed = results.filter(r => r.status === 'failed').length;
-    const not_attempted = results.filter(r => r.status === 'not_attempted').length;
-    
+    const completed = results.filter(row => row.status === "confirmed").length;
+    const failed = results.filter(row => row.status === "failed" || row.status === "unconfirmed").length;
+    const notAttempted = results.filter(row => row.status === "not_attempted").length;
     return {
-      ok: completed > 0 && failed === 0 && not_attempted === 0,
-      batch_completed: !stopped,
+      ok: completed > 0 && failed === 0 && notAttempted === 0,
       total_items: items.length,
       completed_items: completed,
       failed_items: failed,
-      not_attempted_items: not_attempted,
-      results: results
+      not_attempted_items: notAttempted,
+      results,
+      retry_automatically: false
     };
   }
-  
-  window.ShopKudSubId = {
+
+  const api = {
     configure,
     detectDialog,
     detectSubIdInputs,
@@ -437,6 +338,9 @@
     fillSubIds,
     createLinkWithSubIds,
     createBatchLinks,
-    DEFAULT_CONFIG: DEFAULT_SUBID_CONFIG
+    DEFAULT_CONFIG: DEFAULT_SUBID_CONFIG,
+    _memoryAttempts: memoryAttempts
   };
+  if (typeof window !== "undefined") window.ShopKudSubId = api;
+  if (typeof module !== "undefined") module.exports = api;
 })();

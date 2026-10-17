@@ -25,6 +25,7 @@ MAX_ABANDONED_CALLS = MAX_PAGES
 ALLOWED_OPERATIONS = frozenset({
     "snapshot", "selections", "prepare", "apply", "export", "clear",
     "pagination", "navigate", "scan", "scan_read", "review", "detail", "open_offer", "entry_info", "search_scan", "read_listing",
+    "create_link_with_subids", "batch_create_links", "verify_link",
 })
 PRODUCT_PAGE_URL = "https://affiliate.shopee.co.th/offer/product_offer"
 _PRODUCT_DETAIL_URL_RE = re.compile(re.escape(PRODUCT_PAGE_URL) + r"/[1-9][0-9]{0,19}\Z")

@@ -145,30 +145,44 @@
       try{return await Detail.openLink(document,location.href,Core,()=>!command.cancelled && active && Detail.route(location.href)?.url===activeUrl && Detail.route(location.href)?.product_id===args.expected_product_id);}
       finally{busy=false;}
     }
-    if(operation==="create_link_with_subids") {
+    if(operation==="create_link_with_subids" || operation==="batch_create_links" || operation==="verify_link") {
+      const allowed={
+        create_link_with_subids:["product_id","sub_ids","dry_run","intent_key"],
+        batch_create_links:["items","stop_on_error"],
+        verify_link:["affiliate_url","expected_product_id","link_receipt","check_ownership","check_target","try_my_links"]
+      };
+      if(Object.keys(args).some(key=>!allowed[operation].includes(key)))return fail("invalid_input");
+      const context=Detail.route(location.href);
+      if(operation==="verify_link") {
+        if(!window.ShopKudVerify)return fail("verify_module_not_loaded");
+        return await window.ShopKudVerify.verifyLink(document,args.affiliate_url,{
+          expected_product_id:args.expected_product_id,
+          link_receipt:args.link_receipt,
+          check_ownership:args.check_ownership !== false,
+          check_target:args.check_target !== false,
+          try_my_links:args.try_my_links !== false
+        });
+      }
       if(!window.ShopKudSubId)return fail("subid_module_not_loaded");
-      busy=true;
-      try{
-        return await window.ShopKudSubId.createLinkWithSubIds(document,args.sub_ids,{dry_run:args.dry_run || false});
-      }finally{busy=false;}
-    }
-    if(operation==="verify_link") {
-      if(!window.ShopKudVerify)return fail("verify_module_not_loaded");
-      return await window.ShopKudVerify.verifyLink(document,args.affiliate_url,{
-        expected_product_id:args.expected_product_id,
-        link_receipt:args.link_receipt,
-        check_ownership:args.check_ownership !== false,
-        check_target:args.check_target !== false,
-        try_my_links:args.try_my_links !== false
-      });
-    }
-    if(operation==="batch_create_links") {
-      if(!window.ShopKudSubId)return fail("subid_module_not_loaded");
+      if(context?.kind!=="detail")return {ok:false,error:"product_detail_required",status:"not_attempted",clicked:false,retry_automatically:false};
+      if(operation==="create_link_with_subids") {
+        if(args.product_id!==context.product_id)return {ok:false,error:"product_mismatch",status:"not_attempted",attested_product_id:context.product_id,clicked:false,retry_automatically:false};
+        busy=true;
+        try{
+          return await window.ShopKudSubId.createLinkWithSubIds(document,args.sub_ids,{
+            dry_run:args.dry_run===true,
+            expected_product_id:context.product_id,
+            page_url:context.url,
+            intent_key:args.intent_key || null
+          });
+        }finally{busy=false;}
+      }
       busy=true;
       try{
         return await window.ShopKudSubId.createBatchLinks(document,args.items,{
-          on_progress:null,
-          stop_on_error:args.stop_on_error !== false
+          stop_on_error:args.stop_on_error !== false,
+          attested_product_id:context.product_id,
+          page_url:context.url
         });
       }finally{busy=false;}
     }

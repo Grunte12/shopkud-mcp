@@ -1,311 +1,162 @@
 (() => {
   "use strict";
-  
-  /**
-   * Link verification module - verify affiliate links without opening them.
-   * Checks: target resolution, ownership, commission status
-   * Never opens links or creates tracking clicks.
-   */
-  
-  /**
-   * Parse Shopee short link structure (without following redirect)
-   */
+
+  function canonicalAffiliate(value) {
+    if (typeof value !== "string" || value.length > 2048) return null;
+    try {
+      const url = new URL(value);
+      if (url.protocol !== "https:" || url.hostname !== "s.shopee.co.th" || url.username || url.password || url.port) return null;
+      if (!/^\/[A-Za-z0-9]+$/u.test(url.pathname)) return null;
+      return `https://s.shopee.co.th${url.pathname}`;
+    } catch {
+      return null;
+    }
+  }
+
   function parseShortLink(url) {
-    if (typeof url !== 'string') {
-      return {ok: false, error: 'invalid_url'};
-    }
-    
-    const match = /^https:\/\/s\.shopee\.co\.th\/([A-Za-z0-9]+)(?:\?.*)?$/.exec(url);
-    if (!match) {
-      return {ok: false, error: 'not_shopee_short_link'};
-    }
-    
+    const canonical = canonicalAffiliate(url);
+    if (!canonical) return {ok: false, error: "not_shopee_short_link"};
+    const code = canonical.slice("https://s.shopee.co.th/".length);
     return {
       ok: true,
-      short_code: match[1],
-      base_url: `https://s.shopee.co.th/${match[1]}`,
-      has_params: url.includes('?')
+      short_code: code,
+      base_url: canonical,
+      has_params: typeof url === "string" && url.includes("?")
     };
   }
-  
-  /**
-   * Verify link ownership by checking if it appears in "My Links" list
-   * This requires the extension to be on the My Links page
-   */
+
+  function pageText(doc) {
+    const nodes = doc.querySelectorAll ? [...doc.querySelectorAll("h1,h2,h3,h4,[role=heading]")] : [];
+    return nodes.map(node => (node.textContent || "").replace(/\s+/gu, " ").trim()).filter(text => text && text.length <= 80).join("\n");
+  }
+
+  function ownershipSurface(doc) {
+    const path = doc.location && doc.location.pathname || "";
+    const heading = pageText(doc);
+    const recognized = /(?:^|\/)(?:my-links?|custom-link|conversion-report)(?:\/|$)/iu.test(path)
+      || /custom\s*link|my\s*links|conversion\s*report|ลิงก์ของฉัน|ลิงก์กำหนดเอง|รายงานการแปลง/iu.test(heading);
+    const controls = doc.querySelectorAll ? [...doc.querySelectorAll("a,button,[aria-label]")] : [];
+    const paginated = controls.some(node => /^(?:next|ถัดไป|>|›)$/iu.test((node.innerText || node.textContent || node.getAttribute?.("aria-label") || "").trim())
+      && node.getAttribute?.("aria-disabled") !== "true" && !node.disabled);
+    if (!recognized) return {kind: "unsupported", paginated: false};
+    return {kind: paginated ? "paginated" : "recognized_complete", paginated};
+  }
+
+  function elementUrl(element) {
+    const raw = (element.getAttribute && (element.getAttribute("href") || element.getAttribute("data-affiliate-url")))
+      || (typeof element.value === "string" && element.value.startsWith("https://") ? element.value : "");
+    return canonicalAffiliate(raw);
+  }
+
+  function inOwnershipRow(element) {
+    let node = element;
+    while (node) {
+      const tag = (node.tagName || "").toUpperCase();
+      if (tag === "TR" || (node.getAttribute && (node.getAttribute("role") === "row" || node.getAttribute("data-link-row") === "true"))) return true;
+      node = node.parentElement;
+    }
+    return false;
+  }
+
   function verifyOwnershipFromMyLinks(doc, affiliateUrl) {
-    const shortLinkParse = parseShortLink(affiliateUrl);
-    if (!shortLinkParse.ok) {
-      return {ok: false, error: shortLinkParse.error};
+    const expected = canonicalAffiliate(affiliateUrl);
+    if (!expected) return {ok: false, error: "not_shopee_short_link"};
+    const surface = ownershipSurface(doc);
+    if (surface.kind === "unsupported") {
+      return {ok: true, ownership_verified: "unknown", method: "none", evidence: "unsupported_page"};
     }
-    
-    // Check if we're on My Links page
-    const isMyLinksPage = /^\/my-links?(?:\/|$)/.test(doc.location.pathname) ||
-                          doc.querySelector('[class*="MyLinks"], [class*="my-links"]');
-    
-    if (!isMyLinksPage) {
-      return {
-        ok: false,
-        error: 'not_on_my_links_page',
-        requires_navigation: true
-      };
+    const nodes = [...doc.querySelectorAll("a, input, textarea, [data-affiliate-url]")];
+    const exact = nodes.filter(node => elementUrl(node) === expected && inOwnershipRow(node));
+    if (exact.length === 1) {
+      return {ok: true, ownership_verified: true, method: "exact_row", evidence: "exact_url_in_ownership_row"};
     }
-    
-    // Search for the link in the page
-    const linkElements = [...doc.querySelectorAll('a[href], input[value], textarea')]
-      .filter(el => {
-        const value = el.href || el.value || el.textContent;
-        return value && value.includes(shortLinkParse.short_code);
-      });
-    
-    if (linkElements.length === 0) {
-      return {
-        ok: true,
-        ownership_verified: false,
-        method: 'my_links_search',
-        evidence: 'link_not_found_in_my_links'
-      };
+    if (exact.length > 1) {
+      return {ok: true, ownership_verified: "unknown", method: "exact_row", evidence: "ambiguous_exact_rows"};
     }
-    
-    // Try to extract product info from the same row/card
-    const productInfo = {};
-    linkElements.forEach(el => {
-      const container = el.closest('tr, .card, .item, [class*="Link"]');
-      if (container) {
-        const nameEl = container.querySelector('[class*="name"], [class*="product"], [class*="title"]');
-        if (nameEl) {
-          productInfo.product_name = nameEl.textContent.trim().slice(0, 200);
-        }
-      }
-    });
-    
-    return {
-      ok: true,
-      ownership_verified: true,
-      method: 'my_links_search',
-      evidence: 'link_found_in_my_links',
-      product_info: productInfo
-    };
+    if (surface.paginated) {
+      return {ok: true, ownership_verified: "unknown", method: "exact_row", evidence: "paginated_list_incomplete"};
+    }
+    return {ok: true, ownership_verified: false, method: "exact_row", evidence: "exact_url_absent"};
   }
-  
-  /**
-   * Verify target resolution from Get Link dialog receipt
-   * The dialog shows the product info when link is created
-   */
+
   function verifyTargetFromReceipt(receipt, expectedProductId) {
-    if (!receipt || typeof receipt !== 'object') {
-      return {ok: false, error: 'invalid_receipt'};
+    if (!receipt || typeof receipt !== "object") return {ok: false, error: "invalid_receipt"};
+    const attested = receipt.product_attested === true && receipt.status === "confirmed" && typeof receipt.product_id === "string";
+    if (!attested) {
+      return {ok: true, target_verified: "unknown", method: "receipt", evidence: "receipt_not_attested"};
     }
-    
-    // Receipt should contain product context from when link was created
-    if (!receipt.product_id) {
+    if (!expectedProductId) {
       return {
         ok: true,
-        target_verified: false,
-        method: 'receipt',
-        evidence: 'product_id_not_in_receipt'
+        target_verified: "unknown",
+        method: "receipt",
+        resolved_item_id: receipt.product_id,
+        evidence: "expected_product_missing"
       };
     }
-    
-    const matches = !expectedProductId || receipt.product_id === expectedProductId;
-    
+    const matches = receipt.product_id === expectedProductId;
     return {
       ok: true,
       target_verified: matches,
-      method: 'receipt',
+      method: "receipt",
       resolved_item_id: receipt.product_id,
-      resolved_title: receipt.product_name || null,
-      evidence: matches ? 'product_id_matches_receipt' : 'product_id_mismatch'
+      evidence: matches ? "attested_product_match" : "attested_product_mismatch"
     };
   }
-  
-  /**
-   * Verify from dashboard data (if extension can read it)
-   */
-  function verifyFromDashboard(doc, affiliateUrl) {
-    const shortLinkParse = parseShortLink(affiliateUrl);
-    if (!shortLinkParse.ok) {
-      return {ok: false, error: shortLinkParse.error};
-    }
-    
-    // Check if we're on dashboard/analytics page
-    const isDashboard = /^\/(?:dashboard|analytics|performance)(?:\/|$)/.test(doc.location.pathname);
-    
-    if (!isDashboard) {
-      return {
-        ok: false,
-        error: 'not_on_dashboard',
-        requires_navigation: true
-      };
-    }
-    
-    // Try to find the link in dashboard data
-    // This is speculative - actual implementation depends on dashboard structure
-    const dataElements = [...doc.querySelectorAll('[class*="data"], [class*="stat"], [class*="metric"]')]
-      .filter(el => {
-        const text = el.textContent;
-        return text && text.includes(shortLinkParse.short_code);
-      });
-    
-    if (dataElements.length === 0) {
-      return {
-        ok: true,
-        ownership_verified: 'unknown',
-        method: 'dashboard_search',
-        evidence: 'link_not_found_in_dashboard'
-      };
-    }
-    
-    return {
-      ok: true,
-      ownership_verified: true,
-      method: 'dashboard_search',
-      evidence: 'link_found_in_dashboard'
-    };
+
+  function verifyFromDashboard() {
+    return {ok: true, ownership_verified: "unknown", method: "dashboard_search", evidence: "dashboard_is_not_ownership_proof"};
   }
-  
-  /**
-   * Main verification function
-   * Tries multiple methods to verify without opening the link
-   */
+
   async function verifyLink(doc, affiliateUrl, options = {}) {
     const {
       expected_product_id = null,
       link_receipt = null,
       check_ownership = true,
       check_target = true,
-      try_my_links = true,
-      try_dashboard = false
+      try_my_links = true
     } = options;
-    
+    const linkParse = parseShortLink(affiliateUrl);
+    if (!linkParse.ok) return {...linkParse, affiliate_url: affiliateUrl, opens_links: false};
     const result = {
       ok: true,
-      affiliate_url: affiliateUrl,
+      affiliate_url: linkParse.base_url,
       verified_at: new Date().toISOString(),
-      target_verified: null,
-      ownership_verified: null,
-      commission_rate: null,
+      target_verified: "unknown",
+      ownership_verified: "unknown",
+      opens_links: false,
       warnings: []
     };
-    
-    // Parse the link structure
-    const linkParse = parseShortLink(affiliateUrl);
-    if (!linkParse.ok) {
-      return {...linkParse, affiliate_url: affiliateUrl};
-    }
-    
-    result.short_code = linkParse.short_code;
-    
-    // Check target resolution
     if (check_target) {
       if (link_receipt) {
         const receiptVerify = verifyTargetFromReceipt(link_receipt, expected_product_id);
         if (receiptVerify.ok) {
           result.target_verified = receiptVerify.target_verified;
-          result.resolved_item_id = receiptVerify.resolved_item_id;
-          result.resolved_title = receiptVerify.resolved_title;
-          result.target_verification_method = receiptVerify.method;
+          result.resolved_item_id = receiptVerify.resolved_item_id || null;
           result.target_verification_evidence = receiptVerify.evidence;
         }
       } else {
-        result.target_verified = 'unknown';
-        result.target_verification_evidence = 'no_receipt_provided';
-        result.warnings.push('Cannot verify target without receipt or navigation');
+        result.target_verification_evidence = "no_receipt_provided";
       }
     }
-    
-    // Check ownership
     if (check_ownership) {
-      let ownershipResult = null;
-      
-      if (try_my_links) {
-        ownershipResult = verifyOwnershipFromMyLinks(doc, affiliateUrl);
-      } else if (try_dashboard) {
-        ownershipResult = verifyFromDashboard(doc, affiliateUrl);
-      }
-      
-      if (ownershipResult && ownershipResult.ok) {
-        result.ownership_verified = ownershipResult.ownership_verified;
-        result.ownership_verification_method = ownershipResult.method;
-        result.ownership_verification_evidence = ownershipResult.evidence;
-        
-        if (ownershipResult.product_info) {
-          result.product_info = ownershipResult.product_info;
-        }
-      } else {
-        result.ownership_verified = 'unknown';
-        result.ownership_verification_evidence = 'verification_method_unavailable';
-        result.warnings.push('Cannot verify ownership without My Links or dashboard access');
+      const ownership = try_my_links ? verifyOwnershipFromMyLinks(doc, affiliateUrl) : verifyFromDashboard();
+      if (ownership.ok) {
+        result.ownership_verified = ownership.ownership_verified;
+        result.ownership_verification_evidence = ownership.evidence;
       }
     }
-    
-    // Add warnings about verification limitations
-    if (result.target_verified === 'unknown' || result.ownership_verified === 'unknown') {
-      result.warnings.push('Partial verification only - some checks returned unknown');
-    }
-    
-    result.verification_complete = 
-      (result.target_verified === true || result.target_verified === false) &&
-      (result.ownership_verified === true || result.ownership_verified === false);
-    
     return result;
   }
-  
-  /**
-   * Batch verify multiple links
-   */
-  async function verifyLinks(doc, links, options = {}) {
-    const results = [];
-    
-    for (const link of links) {
-      const result = await verifyLink(doc, link.affiliate_url, {
-        ...options,
-        expected_product_id: link.product_id,
-        link_receipt: link.link_receipt
-      });
-      
-      results.push({
-        ...result,
-        product_id: link.product_id,
-        channel: link.channel,
-        clip_id: link.clip_id
-      });
-      
-      // Small delay between verifications
-      if (results.length < links.length) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
-    }
-    
-    const verified = results.filter(r => 
-      r.ownership_verified === true && r.target_verified === true
-    ).length;
-    
-    const partially_verified = results.filter(r =>
-      (r.ownership_verified === true || r.target_verified === true) &&
-      !(r.ownership_verified === true && r.target_verified === true)
-    ).length;
-    
-    const unverified = results.filter(r =>
-      r.ownership_verified !== true && r.target_verified !== true
-    ).length;
-    
-    return {
-      ok: true,
-      total: links.length,
-      fully_verified: verified,
-      partially_verified: partially_verified,
-      unverified: unverified,
-      results: results,
-      warnings: results.flatMap(r => r.warnings).filter((v, i, a) => a.indexOf(v) === i)
-    };
-  }
-  
-  window.ShopKudVerify = {
+
+  const api = {
     parseShortLink,
+    canonicalAffiliate,
     verifyLink,
-    verifyLinks,
     verifyOwnershipFromMyLinks,
     verifyTargetFromReceipt,
     verifyFromDashboard
   };
+  if (typeof window !== "undefined") window.ShopKudVerify = api;
+  if (typeof module !== "undefined") module.exports = api;
 })();

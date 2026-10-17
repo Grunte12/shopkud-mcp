@@ -84,7 +84,7 @@ function entries(ids,options={}){
 }
 
 async function main(){
-  assert.deepEqual(manifest.permissions,["nativeMessaging"],"entry management does not broaden extension permissions");
+  assert.deepEqual(manifest.permissions,["nativeMessaging","storage"],"storage is limited to local create-attempt records");
   assert.equal(Object.hasOwn(manifest,"host_permissions"),false,"entry management adds no broad host permission");
   const h=harness();
   const initial=entries([11,12,13,14]);h.seed(initial);

@@ -169,6 +169,9 @@ def ensure_schema(connection) -> None:
         for column, declaration in columns.items():
             if column not in present:
                 connection.execute(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+    earnings_columns = {row[1] for row in connection.execute("PRAGMA table_info(earnings_snapshots)")}
+    if "unpaid_since" not in earnings_columns:
+        connection.execute("ALTER TABLE earnings_snapshots ADD COLUMN unpaid_since TEXT")
 
 
 def account_id(value: Any) -> str:
@@ -177,6 +180,152 @@ def account_id(value: Any) -> str:
     if type(value) is not str or not _ACCOUNT_RE.fullmatch(value):
         _fail("invalid_request")
     return value
+
+
+_PII_HEADER_RE = re.compile(
+    r"(?i)(?:order[\s_-]*id|buyer|customer|phone|e-?mail|address|recipient|"
+    r"ชื่อผู้ซื้อ|เบอร์โทร|อีเมล|เลขออเดอร์|เลขที่สั่ง)"
+)
+_PII_VALUE_RE = re.compile(
+    r"(?i)(?:^ord(?:er)?[-_ ]?\d|^order[-_ ]?id\b|@|"
+    r"\b(?:buyer|customer|recipient)(?:[-_ ]?(?:name|email|phone|id))?\b|^0\d{8,}$|^\+?\d{10,}$)"
+)
+_RECEIPT_KEYS = frozenset({
+    "affiliate_url", "product_id", "page_url", "created_at", "captured_at",
+    "status", "product_attested", "dialog_detection_method", "sub_id_slots",
+})
+_RECEIPT_STATUS = frozenset({"confirmed", "unconfirmed", "not_attempted"})
+_SLOT_METHOD_RE = re.compile(r"[a-z0-9_]{1,40}\Z")
+_OFFER_PAGE_RE = re.compile(r"https://affiliate\.shopee\.co\.th/offer/product_offer/[1-9][0-9]{0,19}\Z")
+
+
+def reject_attribution(value: str) -> str:
+    """Reject buyer, order, and contact-shaped attribution. Do not echo the value."""
+    if type(value) is not str or not value or len(value) > 128:
+        _fail("invalid_request")
+    if _PII_VALUE_RE.search(value):
+        _fail("pii_rejected")
+    return value
+
+
+def reject_mapping_header(header: str) -> None:
+    if type(header) is not str or _PII_HEADER_RE.search(header):
+        _fail("pii_rejected")
+
+
+def sanitize_receipt(receipt: dict[str, Any], *, affiliate_url: str, product_id: str) -> dict[str, Any]:
+    """Keep an allowlisted creation receipt. Unknown keys are rejected, not stored."""
+    if type(receipt) is not dict:
+        _fail("invalid_request")
+    if set(receipt) - _RECEIPT_KEYS:
+        _fail("pii_rejected")
+    clean: dict[str, Any] = {}
+    if "affiliate_url" in receipt:
+        if receipt["affiliate_url"] != affiliate_url:
+            _fail("invalid_request")
+        clean["affiliate_url"] = affiliate_url
+    if "product_id" in receipt:
+        if type(receipt["product_id"]) is not str or receipt["product_id"] != product_id:
+            _fail("invalid_request")
+        clean["product_id"] = product_id
+    if "page_url" in receipt:
+        if type(receipt["page_url"]) is not str or not _OFFER_PAGE_RE.fullmatch(receipt["page_url"]):
+            _fail("invalid_request")
+        if not receipt["page_url"].endswith("/" + product_id):
+            _fail("invalid_request")
+        clean["page_url"] = receipt["page_url"]
+    for stamp in ("created_at", "captured_at"):
+        if stamp in receipt:
+            if type(receipt[stamp]) is not str or len(receipt[stamp]) > 40:
+                _fail("invalid_request")
+            try:
+                datetime.fromisoformat(receipt[stamp].replace("Z", "+00:00"))
+            except ValueError:
+                _fail("invalid_request")
+            clean[stamp] = receipt[stamp]
+    if "status" in receipt:
+        if receipt["status"] not in _RECEIPT_STATUS:
+            _fail("invalid_request")
+        clean["status"] = receipt["status"]
+    if "product_attested" in receipt:
+        if type(receipt["product_attested"]) is not bool:
+            _fail("invalid_request")
+        clean["product_attested"] = receipt["product_attested"]
+    if "dialog_detection_method" in receipt:
+        if type(receipt["dialog_detection_method"]) is not str or not _SLOT_METHOD_RE.fullmatch(receipt["dialog_detection_method"]):
+            _fail("invalid_request")
+        clean["dialog_detection_method"] = receipt["dialog_detection_method"]
+    if "sub_id_slots" in receipt:
+        slots = receipt["sub_id_slots"]
+        if type(slots) is not list or len(slots) > 5 or any(type(slot) is not int or not 1 <= slot <= 5 for slot in slots):
+            _fail("invalid_request")
+        clean["sub_id_slots"] = slots
+    return clean
+
+
+def verify_receipt_only(
+    affiliate_url: str,
+    expected_product_id: str | None,
+    link_receipt: dict[str, Any] | None,
+    *,
+    check_target: bool,
+    check_ownership: bool,
+) -> dict[str, Any]:
+    """Trust only an extension receipt that attests this exact URL and product."""
+    result: dict[str, Any] = {
+        "ok": True,
+        "affiliate_url": affiliate_url,
+        "target_verified": "unknown",
+        "ownership_verified": "unknown",
+        "verification_method": "receipt_only",
+        "opens_links": False,
+        "verified_at": _now(),
+    }
+    if not link_receipt:
+        result["warnings"] = ["no_receipt"]
+        return result
+    if type(link_receipt) is not dict:
+        return {**result, "ok": False, "error": "invalid_request"}
+    if type(link_receipt.get("affiliate_url")) is str and link_receipt["affiliate_url"] != affiliate_url:
+        result["target_verified"] = "unknown"
+        result["ownership_verified"] = "unknown"
+        result["target_evidence"] = "receipt_url_mismatch"
+        result["ownership_evidence"] = "receipt_url_mismatch"
+        return result
+    product_id = link_receipt.get("product_id") if type(link_receipt.get("product_id")) is str else (expected_product_id or "")
+    try:
+        clean = sanitize_receipt(link_receipt, affiliate_url=affiliate_url, product_id=product_id or "0")
+    except CampaignError as error:
+        return {**result, "ok": False, "error": error.code}
+    attested = (
+        clean.get("product_attested") is True
+        and clean.get("status") == "confirmed"
+        and clean.get("affiliate_url") == affiliate_url
+        and type(clean.get("product_id")) is str
+    )
+    if check_target:
+        if not attested:
+            result["target_verified"] = "unknown"
+            result["target_evidence"] = "receipt_not_attested"
+        elif expected_product_id and clean["product_id"] == expected_product_id:
+            result["target_verified"] = True
+            result["resolved_item_id"] = clean["product_id"]
+            result["target_evidence"] = "attested_product_match"
+        elif expected_product_id:
+            result["target_verified"] = False
+            result["resolved_item_id"] = clean["product_id"]
+            result["target_evidence"] = "attested_product_mismatch"
+        else:
+            result["target_verified"] = "unknown"
+            result["target_evidence"] = "expected_product_missing"
+    if check_ownership:
+        if attested and clean.get("created_at"):
+            result["ownership_verified"] = True
+            result["ownership_evidence"] = "attested_creation_receipt"
+        else:
+            result["ownership_verified"] = "unknown"
+            result["ownership_evidence"] = "receipt_not_attested"
+    return result
 
 
 def _now() -> str:
@@ -623,27 +772,32 @@ class SpecOps:
         account = account_id(account) if account else None
         clip_filter = _scope_clips(scope)
         with self.store._connection() as connection:
-            rows = connection.execute(
-                """SELECT item_id, as_of, rate_social, rate_video, extra_comm, stock, title
-                   FROM offer_snapshots WHERE workspace_id=? ORDER BY item_id, as_of""",
-                (workspace_id,),
-            ).fetchall()
+            query = """SELECT item_id, as_of, rate_social, rate_video, extra_comm, stock, title, account_id
+                       FROM offer_snapshots WHERE workspace_id=?"""
+            params: list[Any] = [workspace_id]
+            if account is not None:
+                query += " AND account_id=?"
+                params.append(account)
+            query += " ORDER BY account_id, item_id, as_of"
+            rows = connection.execute(query, params).fetchall()
             clip_items = None
             if clip_filter is not None:
                 marks = ",".join("?" * len(clip_filter))
-                found = connection.execute(
-                    f"""SELECT DISTINCT product_id FROM links
-                        WHERE workspace_id=? AND clip_id IN ({marks})""",
-                    (workspace_id, *clip_filter),
-                ).fetchall()
+                clip_query = f"""SELECT DISTINCT product_id FROM links
+                        WHERE workspace_id=? AND clip_id IN ({marks})"""
+                clip_params: list[Any] = [workspace_id, *clip_filter]
+                if account is not None:
+                    clip_query += " AND account_id=?"
+                    clip_params.append(account)
+                found = connection.execute(clip_query, clip_params).fetchall()
                 clip_items = {row[0] for row in found}
-        grouped: dict[str, list] = {}
+        grouped: dict[tuple[str, str], list] = {}
         for row in rows:
             if clip_items is not None and row[0] not in clip_items:
                 continue
-            grouped.setdefault(row[0], []).append(row)
+            grouped.setdefault((row[7], row[0]), []).append(row)
         results = []
-        for item, observations in grouped.items():
+        for (row_account, item), observations in grouped.items():
             latest = observations[-1]
             previous = observations[-2] if len(observations) > 1 else None
             new_rate = _best_rate(latest[2], latest[3])
@@ -661,6 +815,7 @@ class SpecOps:
             results.append({
                 "clip_id": clip_id,
                 "item_id": item,
+                "account": row_account or None,
                 "title": latest[6],
                 "old_rate": old_rate,
                 "new_rate": new_rate,
@@ -671,15 +826,17 @@ class SpecOps:
         if clip_filter is not None:
             with self.store._connection() as connection:
                 marks = ",".join("?" * len(clip_filter))
-                link_rows = connection.execute(
-                    f"""SELECT clip_id, product_id FROM links
-                        WHERE workspace_id=? AND clip_id IN ({marks})""",
-                    (workspace_id, *clip_filter),
-                ).fetchall()
-            by_item = {row["item_id"]: row for row in results}
+                link_query = f"""SELECT clip_id, product_id, account_id FROM links
+                        WHERE workspace_id=? AND clip_id IN ({marks})"""
+                link_params: list[Any] = [workspace_id, *clip_filter]
+                if account is not None:
+                    link_query += " AND account_id=?"
+                    link_params.append(account)
+                link_rows = connection.execute(link_query, link_params).fetchall()
+            by_item = {(row.get("account") or "", row["item_id"]): row for row in results}
             scoped = []
-            for clip_id, product_id in link_rows:
-                row = by_item.get(product_id)
+            for clip_id, product_id, link_account in link_rows:
+                row = by_item.get((link_account or "", product_id))
                 if row:
                     scoped.append({**row, "clip_id": clip_id})
             results = scoped
@@ -713,12 +870,14 @@ class SpecOps:
                 query += " AND account_id=?"
                 params.append(account)
             buckets = connection.execute(query, params).fetchall()
-            status_rows = connection.execute(
-                """SELECT rg.status_counts FROM report_groups rg
+            status_query = """SELECT rg.status_counts FROM report_groups rg
                    JOIN reports r ON r.report_id=rg.report_id
-                   WHERE r.workspace_id=? AND r.period_start>=? AND r.period_end<=? AND r.status_present=1""",
-                (workspace_id, period_start, period_end),
-            ).fetchall()
+                   WHERE r.workspace_id=? AND r.period_start>=? AND r.period_end<=? AND r.status_present=1"""
+            status_params: list[Any] = [workspace_id, period_start, period_end]
+            if account is not None:
+                status_query += " AND r.account_id=?"
+                status_params.append(account)
+            status_rows = connection.execute(status_query, status_params).fetchall()
         totals: dict[str, dict[str, Any]] = {}
         total_rows = 0
         zero_rows = 0
@@ -832,17 +991,18 @@ class SpecOps:
         if type(caption) is not str or len(caption) > 5000:
             _fail("invalid_request")
         with self.store._connection() as connection:
+            stored_account = account_id(None)
             row = connection.execute(
                 """SELECT requirements_json, enrolled FROM missions
-                   WHERE mission_id=? AND workspace_id=?""",
-                (mission_id, workspace_id),
+                   WHERE mission_id=? AND workspace_id=? AND account_id=?""",
+                (mission_id, workspace_id, stored_account),
             ).fetchone()
             saved = None
             if link:
                 saved = connection.execute(
                     """SELECT affiliate_url, sub_id_1, sub_id_2, sub_id_3, channel
-                       FROM links WHERE workspace_id=? AND affiliate_url=?""",
-                    (workspace_id, link),
+                       FROM links WHERE workspace_id=? AND account_id=? AND affiliate_url=?""",
+                    (workspace_id, stored_account, link),
                 ).fetchone()
         if row is None:
             _fail("mission_not_enrolled")
@@ -881,7 +1041,7 @@ class SpecOps:
     def list_video_clips(self, workspace_id: str, account: Any = None) -> dict[str, Any]:
         workspace_id = _workspace_id(workspace_id)
         account = account_id(account) if account else None
-        query = """SELECT video_id, title, status, cart_items_json, commission_flag, observed_at
+        query = """SELECT video_id, title, status, cart_items_json, commission_flag, observed_at, account_id
                    FROM video_clips WHERE workspace_id=?"""
         params: list[Any] = [workspace_id]
         if account is not None:
@@ -890,22 +1050,24 @@ class SpecOps:
         query += " ORDER BY observed_at DESC"
         with self.store._connection() as connection:
             rows = connection.execute(query, params).fetchall()
+            health_query = "SELECT account_id, product_id, status FROM commission_health WHERE workspace_id=?"
+            health_params: list[Any] = [workspace_id]
+            if account is not None:
+                health_query += " AND account_id=?"
+                health_params.append(account)
             health = {
-                row[0]: row[1]
-                for row in connection.execute(
-                    "SELECT product_id, status FROM commission_health WHERE workspace_id=?",
-                    (workspace_id,),
-                )
+                (row[0], row[1]): row[2]
+                for row in connection.execute(health_query, health_params)
             }
         clips = []
-        for video_id, title, status, cart_json, flag, observed_at in rows:
+        for video_id, title, status, cart_json, flag, observed_at, clip_account in rows:
             try:
                 items = json.loads(cart_json) if cart_json else []
             except json.JSONDecodeError:
                 items = []
             flagged = flag
             if flagged is None:
-                flagged = any(health.get(str(item.get("product_id"))) in {"dropped", "removed"} for item in items if type(item) is dict)
+                flagged = any(health.get((clip_account, str(item.get("product_id")))) in {"dropped", "removed"} for item in items if type(item) is dict)
             clips.append({
                 "video_id": video_id,
                 "title": title,
@@ -935,16 +1097,29 @@ class SpecOps:
         if next_payout is not None:
             next_payout = _date(next_payout)
         stamp = _timestamp(as_of)
+        pending_text = _money_text(pending)
+        validated_text = _money_text(validated)
         snapshot_id = _token()
         with self.store._connection(write=True) as connection:
             self.store._begin(connection)
+            previous = connection.execute(
+                """SELECT pending_thb, validated_thb, unpaid_since, as_of
+                   FROM earnings_snapshots
+                   WHERE workspace_id=? AND account_id=?
+                   ORDER BY as_of DESC, rowid DESC LIMIT 1""",
+                (workspace_id, account),
+            ).fetchone()
+            if previous and previous[0] == pending_text and previous[1] == validated_text:
+                unpaid_since = previous[2] or previous[3]
+            else:
+                unpaid_since = stamp
             connection.execute(
                 """INSERT INTO earnings_snapshots
                    (snapshot_id, workspace_id, account_id, pending_thb, validated_thb, paid_thb,
-                    next_payout, kyc_status, expiring_json, source, as_of)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', 'ext', ?)""",
-                (snapshot_id, workspace_id, account, _money_text(pending), _money_text(validated),
-                 _money_text(paid), next_payout, kyc_status, stamp),
+                    next_payout, kyc_status, expiring_json, source, as_of, unpaid_since)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, '[]', 'ext', ?, ?)""",
+                (snapshot_id, workspace_id, account, pending_text, validated_text,
+                 _money_text(paid), next_payout, kyc_status, stamp, unpaid_since),
             )
             connection.commit()
         return self.get_earnings_summary(workspace_id, account=account or None)
@@ -952,13 +1127,13 @@ class SpecOps:
     def get_earnings_summary(self, workspace_id: str, account: Any = None) -> dict[str, Any]:
         workspace_id = _workspace_id(workspace_id)
         account = account_id(account) if account else None
-        query = """SELECT pending_thb, validated_thb, paid_thb, next_payout, kyc_status, as_of
+        query = """SELECT pending_thb, validated_thb, paid_thb, next_payout, kyc_status, as_of, unpaid_since
                    FROM earnings_snapshots WHERE workspace_id=?"""
         params: list[Any] = [workspace_id]
         if account is not None:
             query += " AND account_id=?"
             params.append(account)
-        query += " ORDER BY as_of DESC LIMIT 1"
+        query += " ORDER BY as_of DESC, rowid DESC LIMIT 1"
         with self.store._connection() as connection:
             row = connection.execute(query, params).fetchone()
         if row is None:
@@ -976,7 +1151,8 @@ class SpecOps:
                 "provenance": _PROVENANCE,
             }
         expiring = []
-        observed = datetime.fromisoformat(row[5])
+        balance_since = row[6] or row[5]
+        observed = datetime.fromisoformat(balance_since)
         age = datetime.now(timezone.utc) - observed
         unpaid = Decimal(row[0] or "0") + Decimal(row[1] or "0")
         if unpaid > 0 and age >= timedelta(days=EARNINGS_EXPIRY_DAYS - EARNINGS_WARN_DAYS):
@@ -984,6 +1160,7 @@ class SpecOps:
                 "kind": "six_month_window",
                 "unpaid_thb": _decimal_text(unpaid),
                 "snapshot_age_days": age.days,
+                "balance_since": balance_since,
                 "warn_within_days": EARNINGS_WARN_DAYS,
                 "assumed_expiry_days": EARNINGS_EXPIRY_DAYS,
             })
@@ -997,6 +1174,7 @@ class SpecOps:
             "expiring": expiring,
             "source": "ext" if row else "cache",
             "as_of": row[5],
+            "balance_since": balance_since,
             "expiry_rule": "local_assumption_180_days",
             "provenance": _PROVENANCE,
         }
@@ -1311,49 +1489,62 @@ class SpecOps:
                 if period_end:
                     query += " AND r.period_end<=?"
                     params.append(period_end)
+                if account is not None:
+                    query += " AND r.account_id=?"
+                    params.append(account)
                 query += " ORDER BY r.period_start LIMIT 5000"
                 fetched = connection.execute(query, params).fetchall()
                 columns = ["period_start", "period_end", "amount_state", "channel", "content_id",
                            "unmapped", "rows", "commission_thb", "orders", "clicks"]
                 return [dict(zip(columns, row)) for row in fetched]
+            def account_clause(sql: str, params: list[Any], column: str = "account_id") -> tuple[str, list[Any]]:
+                if account is None:
+                    return sql, params
+                return sql + f" AND {column}=?", [*params, account]
+
             if kind == "commissions":
-                fetched = connection.execute(
-                    """SELECT product_id, last_commission_pct, previous_commission_pct, status, last_check_at
-                       FROM commission_health WHERE workspace_id=? ORDER BY last_check_at DESC LIMIT 5000""",
-                    (workspace_id,),
-                ).fetchall()
-                columns = ["product_id", "commission_pct", "previous_commission_pct", "status", "as_of"]
+                sql, bound = account_clause(
+                    """SELECT product_id, last_commission_pct, previous_commission_pct, status, last_check_at, account_id
+                       FROM commission_health WHERE workspace_id=?""",
+                    [workspace_id],
+                )
+                fetched = connection.execute(sql + " ORDER BY last_check_at DESC LIMIT 5000", bound).fetchall()
+                columns = ["product_id", "commission_pct", "previous_commission_pct", "status", "as_of", "account"]
                 return [dict(zip(columns, row)) for row in fetched]
             if kind == "missions":
-                fetched = connection.execute(
-                    """SELECT mission_id, name, reward, enrolled, deadline, enrolled_at, completed_at
-                       FROM missions WHERE workspace_id=? LIMIT 5000""",
-                    (workspace_id,),
-                ).fetchall()
-                columns = ["mission_id", "name", "reward", "enrolled", "deadline", "enrolled_at", "completed_at"]
+                sql, bound = account_clause(
+                    """SELECT mission_id, name, reward, enrolled, deadline, enrolled_at, completed_at, account_id
+                       FROM missions WHERE workspace_id=?""",
+                    [workspace_id],
+                )
+                fetched = connection.execute(sql + " LIMIT 5000", bound).fetchall()
+                columns = ["mission_id", "name", "reward", "enrolled", "deadline", "enrolled_at", "completed_at", "account"]
                 return [dict(zip(columns, row)) for row in fetched]
             if kind == "videos":
-                fetched = connection.execute(
-                    """SELECT video_id, title, status, observed_at FROM video_clips
-                       WHERE workspace_id=? ORDER BY observed_at DESC LIMIT 5000""",
-                    (workspace_id,),
-                ).fetchall()
-                columns = ["video_id", "title", "status", "as_of"]
+                sql, bound = account_clause(
+                    """SELECT video_id, title, status, observed_at, account_id FROM video_clips
+                       WHERE workspace_id=?""",
+                    [workspace_id],
+                )
+                fetched = connection.execute(sql + " ORDER BY observed_at DESC LIMIT 5000", bound).fetchall()
+                columns = ["video_id", "title", "status", "as_of", "account"]
                 return [dict(zip(columns, row)) for row in fetched]
             if kind == "offers":
-                fetched = connection.execute(
-                    """SELECT item_id, title, category, price, rate_social, rate_video, extra_comm, stock, as_of
-                       FROM offer_snapshots WHERE workspace_id=? ORDER BY as_of DESC LIMIT 5000""",
-                    (workspace_id,),
-                ).fetchall()
-                columns = ["item_id", "title", "category", "price", "rate_social", "rate_video", "extra_comm", "stock", "as_of"]
+                sql, bound = account_clause(
+                    """SELECT item_id, title, category, price, rate_social, rate_video, extra_comm, stock, as_of, account_id
+                       FROM offer_snapshots WHERE workspace_id=?""",
+                    [workspace_id],
+                )
+                fetched = connection.execute(sql + " ORDER BY account_id, item_id, as_of DESC LIMIT 5000", bound).fetchall()
+                columns = ["item_id", "title", "category", "price", "rate_social", "rate_video", "extra_comm", "stock", "as_of", "account"]
                 return [dict(zip(columns, row)) for row in fetched]
-            fetched = connection.execute(
-                """SELECT pending_thb, validated_thb, paid_thb, next_payout, kyc_status, as_of
-                   FROM earnings_snapshots WHERE workspace_id=? ORDER BY as_of DESC LIMIT 500""",
-                (workspace_id,),
-            ).fetchall()
-            columns = ["pending", "validated", "paid", "next_payout", "kyc_status", "as_of"]
+            sql, bound = account_clause(
+                """SELECT pending_thb, validated_thb, paid_thb, next_payout, kyc_status, as_of, account_id
+                   FROM earnings_snapshots WHERE workspace_id=?""",
+                [workspace_id],
+            )
+            fetched = connection.execute(sql + " ORDER BY as_of DESC LIMIT 500", bound).fetchall()
+            columns = ["pending", "validated", "paid", "next_payout", "kyc_status", "as_of", "account"]
             return [dict(zip(columns, row)) for row in fetched]
 
     def _latest_offer(self, connection, workspace_id: str, item_id: str, account: str | None):

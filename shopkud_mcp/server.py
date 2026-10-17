@@ -1,6 +1,7 @@
 """Small standalone MCP service; the calling agent owns research/analysis."""
 import argparse
 from contextlib import asynccontextmanager
+import hashlib
 import hmac
 import json
 import os
@@ -20,6 +21,23 @@ from .model_match import normalize_model, model_match, brief_listing
 from .guides import workflow_guide
 
 _PAGE_ID_RE = re.compile(r"(?:0|[1-9][0-9]{0,9}):[0-9a-f]{32}\Z")
+_UNCONFIRMED_OPERATIONS = frozenset({
+    "apply", "clear", "navigate", "scan", "search_scan",
+    "create_link_with_subids", "batch_create_links",
+})
+
+
+def _create_intent(workspace_id, account, product_id, channel, clip_id, sub_ids) -> str:
+    payload = {
+        "account": account or "",
+        "channel": channel,
+        "clip": clip_id or "",
+        "product_id": product_id,
+        "sub_ids": list(sub_ids),
+        "workspace": workspace_id or "",
+    }
+    body = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(body.encode("utf-8")).hexdigest()
 _PageId = Annotated[str, Field(strict=True, pattern=r"^(?:0|[1-9][0-9]{0,9}):[0-9a-f]{32}$")]
 
 
@@ -159,7 +177,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
             return result
         except BrokerError as error:
             return {"ok":False,"error":error.code,
-                    "outcome":"unconfirmed" if operation in {"apply","clear","navigate","scan","search_scan"} else "not_completed",
+                    "outcome":"unconfirmed" if operation in _UNCONFIRMED_OPERATIONS else "not_completed",
                     "retry_automatically":False}
 
     async def open_offer(offer_url):
@@ -503,10 +521,10 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         link_receipt: Annotated[dict | None, Field(strict=True)] = None,
     ) -> dict:
         """บันทึกลิงก์Affiliate พร้อม SubID สูงสุด 5 ช่อง (sub_id หลัก + sub_id_1 ถึง sub_id_5) คู่กับช่องทาง คอนเทนต์ คลิป และตลาด
-        
-        Convention: sub_id_1=platform (tiktok/ig/fb/x/yt/spv), sub_id_2=product (P1), sub_id_3=clip (v6), 
-        sub_id_4=variant/hook (a/b), sub_id_5=date (yyyymm). ไม่สร้าง/แก้/คลิกลิงก์ ไม่รับรองว่า URL มี SubID จริง 
-        ป้องกัน URL/SubID ชนระหว่างช่องทาง link_receipt เก็บหลักฐานจากการสร้าง (เช่น timestamp, product_id) 
+
+        Convention: sub_id_1=platform (tiktok/ig/fb/x/yt/spv), sub_id_2=product (P1), sub_id_3=clip (v6),
+        sub_id_4=variant/hook (a/b), sub_id_5=date (yyyymm). ไม่สร้าง/แก้/คลิกลิงก์ ไม่รับรองว่า URL มี SubID จริง
+        ป้องกัน URL/SubID ชนระหว่างช่องทาง link_receipt เก็บหลักฐานจากการสร้าง (เช่น timestamp, product_id)
         link_source ระบุแหล่งที่มา: manual=ผู้ใช้ใส่, extension=ส่วนขยายจับ, extension_subid_creation=สร้างผ่าน SubID dialog"""
         known=local("workspace","get_workspace",workspace_id,"brief")
         if known.get("ok") is False:return known
@@ -514,7 +532,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                     affiliate_url,sub_id,expected_version=expected_version,sub_id_1=sub_id_1,
                     sub_id_2=sub_id_2,sub_id_3=sub_id_3,sub_id_4=sub_id_4,sub_id_5=sub_id_5,
                     clip_id=clip_id,link_source=link_source,link_receipt=link_receipt)
-    
+
     @server.tool()
     async def find_campaign_links(
         workspace_id: str,
@@ -533,6 +551,67 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         return local("campaign","find_links",workspace_id,product_id=product_id,channel=channel,
                     clip_id=clip_id,limit=limit,offset=offset,product=product,account=account)
 
+    def _remember_attempt(intent, workspace_id, product_id, channel, status, account=None, clip_id=None, affiliate_url=None):
+        if not workspace_id or not intent:
+            return {"ok": False, "error": "not_recorded"}
+        return local(
+            "campaign", "note_link_attempt", intent, workspace_id, product_id, channel, status,
+            account=account, clip_id=clip_id, affiliate_url=affiliate_url,
+        )
+
+    def _reject_subids(values):
+        from .campaigns import CampaignError
+        from .spec_ops import reject_attribution
+        try:
+            for value in values:
+                if value in (None, ""):
+                    continue
+                if type(value) is not str:
+                    return {"ok": False, "error": "invalid_input", "status": "not_attempted", "clicked": False, "retry_automatically": False}
+                reject_attribution(value)
+        except CampaignError as error:
+            return {"ok": False, "error": error.code, "status": "not_attempted", "clicked": False, "retry_automatically": False}
+        return None
+
+    def _save_confirmed_link(workspace_id, channel, product_id, clip_id, account, result):
+        receipt = result.get("link_receipt") if isinstance(result.get("link_receipt"), dict) else None
+        attested = (
+            result.get("ok") is True
+            and result.get("status") == "confirmed"
+            and result.get("product_attested") is True
+            and result.get("product_id") == product_id
+            and receipt
+            and receipt.get("product_attested") is True
+            and receipt.get("product_id") == product_id
+            and receipt.get("status") == "confirmed"
+            and receipt.get("affiliate_url") == result.get("affiliate_url")
+            and type(result.get("affiliate_url")) is str
+        )
+        if not attested:
+            return {**result, "saved_to_workspace": False, "save_error": "product_not_attested"}
+        used = result.get("sub_ids_used") if isinstance(result.get("sub_ids_used"), dict) else {}
+        primary = used.get("sub_id_1") or next((value for value in (result.get("sub_ids") or []) if value), None)
+        if not primary:
+            slots = [used.get(f"sub_id_{index}") for index in range(1, 6)]
+            primary = next((value for value in slots if value), None)
+        if not primary:
+            return {**result, "saved_to_workspace": False, "save_error": "sub_id_missing"}
+        save_result = local(
+            "campaign", "set_link", workspace_id, channel, "shopee", clip_id or "default", product_id,
+            result["affiliate_url"], primary,
+            sub_id_1=used.get("sub_id_1"), sub_id_2=used.get("sub_id_2"), sub_id_3=used.get("sub_id_3"),
+            sub_id_4=used.get("sub_id_4"), sub_id_5=used.get("sub_id_5"),
+            clip_id=clip_id, link_source="extension_subid_creation", link_receipt=receipt, account=account,
+        )
+        saved = {**result, "saved_to_workspace": save_result.get("ok") is True}
+        if save_result.get("ok") is False:
+            saved["save_error"] = save_result.get("error")
+            if save_result.get("error") == "pii_rejected":
+                saved.pop("sub_ids_used", None)
+                saved["ok"] = False
+                saved["error"] = "pii_rejected"
+        return saved
+
     @server.tool()
     async def create_link(
         page_id: _PageId,
@@ -543,126 +622,88 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         workspace_id: Annotated[str | None, Field(strict=True)] = None,
         dry_run: Annotated[bool, Field(strict=True)] = False,
         save_to_workspace: Annotated[bool, Field(strict=True)] = True,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
-        """สร้างลิงก์ Affiliate พร้อม SubID สูงสุด 5 ช่องผ่าน Get Link dialog ตรวจหา dialog เติม SubID ตรวจสอบก่อนคลิก 
-        จับลิงก์และใบเสร็จ บันทึกในทะเบียน ไม่ replay คำสั่งที่ผลไม่แน่นอน sub_ids เป็น array สูงสุด 5 ตัว 
-        (เช่น ['tiktok', 'P1', 'v6', 'a', '202610']) ถ้า dry_run=true จะแสดงแผนโดยไม่คลิก 
-        ถ้า workspace_id ระบุและ save_to_workspace=true จะบันทึกลงทะเบียนอัตโนมัติ 
-        หยุดเมื่อ login/CAPTCHA/challenge ต้องเจ้าของแก้ไขในแท็บเดิม"""
-        
+        """สร้างลิงก์ Affiliate พร้อม SubID บนหน้าข้อเสนอสินค้าที่เปิดอยู่เท่านั้น ไม่เปิดลิงก์ ไม่ replay คำสั่งที่ผลไม่แน่นอน."""
+        if type(product_id) is not str or not product_id or len(product_id) > 200:
+            return {"ok": False, "error": "invalid_input", "status": "not_attempted", "clicked": False}
+        if type(channel) is not str or not channel or len(channel) > 80:
+            return {"ok": False, "error": "invalid_input", "status": "not_attempted", "clicked": False}
         if type(sub_ids) is not list or not 1 <= len(sub_ids) <= 5:
-            return {"ok": False, "error": "invalid_input", "message": "sub_ids must be array of 1-5 items"}
+            return {"ok": False, "error": "invalid_input", "status": "not_attempted", "clicked": False}
         if type(dry_run) is not bool or type(save_to_workspace) is not bool:
             return {"ok": False, "error": "invalid_input"}
         if workspace_id is not None and not re.fullmatch(r"[0-9a-f]{32}", workspace_id):
             return {"ok": False, "error": "invalid_input"}
-        
-        # Prepare extension arguments
-        arguments = {
-            "operation": "create_link_with_subids",
+        rejected = _reject_subids(sub_ids)
+        if rejected:
+            return rejected
+        intent = _create_intent(workspace_id, account, product_id, channel, clip_id, sub_ids)
+        if not dry_run and workspace_id:
+            prior = local("campaign", "lookup_link_attempt", intent)
+            if prior.get("found") and prior.get("status") in {"unconfirmed", "confirmed"}:
+                return {
+                    "ok": prior.get("status") == "confirmed",
+                    "error": None if prior.get("status") == "confirmed" else "create_not_replayed",
+                    "status": prior["status"],
+                    "affiliate_url": prior.get("affiliate_url"),
+                    "product_id": product_id,
+                    "intent_key": intent,
+                    "clicked": False,
+                    "retry_automatically": False,
+                }
+        result = await call(page_id, "create_link_with_subids", {
             "product_id": product_id,
             "sub_ids": sub_ids,
-            "dry_run": dry_run
-        }
-        
-        result = await call(page_id, "detail", arguments, timeout=30)
-        
-        if result.get("ok") is True and save_to_workspace and workspace_id and not dry_run:
-            # Save to workspace/campaign registry
-            link_data = {
-                "workspace_id": workspace_id,
-                "channel": channel,
-                "marketplace": "shopee",
-                "content_id": clip_id or "default",
-                "product_id": product_id,
-                "affiliate_url": result.get("affiliate_url"),
-                "sub_id": result.get("sub_ids_used", {}).get("sub_id_1", ""),
-                "sub_id_1": result.get("sub_ids_used", {}).get("sub_id_1"),
-                "sub_id_2": result.get("sub_ids_used", {}).get("sub_id_2"),
-                "sub_id_3": result.get("sub_ids_used", {}).get("sub_id_3"),
-                "sub_id_4": result.get("sub_ids_used", {}).get("sub_id_4"),
-                "sub_id_5": result.get("sub_ids_used", {}).get("sub_id_5"),
-                "clip_id": clip_id,
-                "link_source": "extension_subid_creation",
-                "link_receipt": result.get("link_receipt")
-            }
-            save_result = local("campaign", "set_link", **link_data)
-            result["saved_to_workspace"] = save_result.get("ok") is True
-            if save_result.get("ok") is False:
-                result["save_error"] = save_result.get("error")
-        
+            "dry_run": dry_run,
+            "intent_key": intent,
+        }, timeout=30)
+        if not isinstance(result, dict):
+            result = {"ok": False, "error": "invalid_extension_result", "outcome": "unconfirmed", "status": "unconfirmed", "retry_automatically": False}
+        if workspace_id and not dry_run:
+            lost = result.get("outcome") == "unconfirmed" or result.get("status") == "unconfirmed" or result.get("error") in {"timeout", "disconnected"}
+            if lost:
+                _remember_attempt(intent, workspace_id, product_id, channel, "unconfirmed", account, clip_id)
+                result = {**result, "status": "unconfirmed", "intent_key": intent, "retry_automatically": False}
+            elif result.get("ok") is True and result.get("status") == "confirmed" and result.get("affiliate_url"):
+                _remember_attempt(intent, workspace_id, product_id, channel, "confirmed", account, clip_id, result.get("affiliate_url"))
+        if save_to_workspace and workspace_id and not dry_run and result.get("status") == "confirmed":
+            result = _save_confirmed_link(workspace_id, channel, product_id, clip_id, account, {**result, "sub_ids": sub_ids})
         return result
-    
+
     @server.tool()
     async def verify_link(
+        affiliate_url: Annotated[str, Field(strict=True, max_length=2048)],
         page_id: _PageId | None = None,
-        affiliate_url: Annotated[str, Field(strict=True, max_length=2048)] = None,
         expected_product_id: Annotated[str | None, Field(strict=True, max_length=200)] = None,
         link_receipt: Annotated[dict | None, Field(strict=True)] = None,
         check_ownership: Annotated[bool, Field(strict=True)] = True,
         check_target: Annotated[bool, Field(strict=True)] = True,
         try_my_links: Annotated[bool, Field(strict=True)] = True,
     ) -> dict:
-        """ตรวจสอบลิงก์ Affiliate โดยไม่เปิดลิงก์ (ไม่สร้าง tracking click) ตรวจสอบ target resolution และ ownership แยกกัน 
-        คืน target_verified และ ownership_verified แยก unknown เมื่อไม่มีหลักฐาน ใช้ link_receipt จากการสร้างเป็นหลักฐาน 
-        หรือจับคู่กับ My Links/dashboard ถ้ามี ไม่เปิด redirect ห้ามเปิดลิงก์"""
-        
-        if not affiliate_url or type(affiliate_url) is not str:
-            return {"ok": False, "error": "invalid_input", "message": "affiliate_url required"}
+        """ตรวจลิงก์จากใบเสร็จหรือหน้าที่เปิดอยู่ โดยไม่เปิดลิงก์และไม่ใช้หลักฐานแบบ substring."""
+        if type(affiliate_url) is not str or not affiliate_url:
+            return {"ok": False, "error": "invalid_input"}
         if type(check_ownership) is not bool or type(check_target) is not bool or type(try_my_links) is not bool:
             return {"ok": False, "error": "invalid_input"}
-        
-        arguments = {
-            "operation": "verify_link",
-            "affiliate_url": affiliate_url,
-            "expected_product_id": expected_product_id,
-            "link_receipt": link_receipt,
-            "check_ownership": check_ownership,
-            "check_target": check_target,
-            "try_my_links": try_my_links
-        }
-        
         if page_id:
-            return await call(page_id, "verify", arguments, timeout=20)
-        else:
-            # Pure receipt-based verification without page
-            if not link_receipt:
-                return {
-                    "ok": True,
-                    "affiliate_url": affiliate_url,
-                    "target_verified": "unknown",
-                    "ownership_verified": "unknown",
-                    "verification_method": "none",
-                    "warnings": ["No page_id and no link_receipt - cannot verify"]
-                }
-            
-            # Verify from receipt only
-            from extension.verify import verifyTargetFromReceipt
-            result = {
-                "ok": True,
+            return await call(page_id, "verify_link", {
                 "affiliate_url": affiliate_url,
-                "verified_at": datetime.now(timezone.utc).isoformat(),
-                "target_verified": "unknown",
-                "ownership_verified": "unknown",
-                "verification_method": "receipt_only"
-            }
-            
-            if check_target and link_receipt:
-                if link_receipt.get("product_id") == expected_product_id:
-                    result["target_verified"] = True
-                    result["resolved_item_id"] = link_receipt.get("product_id")
-                elif link_receipt.get("product_id"):
-                    result["target_verified"] = False
-                    result["resolved_item_id"] = link_receipt.get("product_id")
-            
-            if check_ownership:
-                # Receipt implies ownership if it has creation timestamp
-                if link_receipt.get("created_at"):
-                    result["ownership_verified"] = True
-                    result["ownership_verification_evidence"] = "creation_receipt_timestamp"
-            
-            return result
-    
+                "expected_product_id": expected_product_id,
+                "link_receipt": link_receipt,
+                "check_ownership": check_ownership,
+                "check_target": check_target,
+                "try_my_links": try_my_links,
+            }, timeout=20)
+        from .spec_ops import verify_receipt_only
+        return verify_receipt_only(
+            affiliate_url,
+            expected_product_id,
+            link_receipt,
+            check_target=check_target,
+            check_ownership=check_ownership,
+        )
+
     @server.tool()
     async def batch_create_links(
         page_id: _PageId,
@@ -670,43 +711,86 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         channel: str,
         workspace_id: str,
         stop_on_error: Annotated[bool, Field(strict=True)] = True,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
-        """สร้างลิงก์แบบ batch - ทีละรายการตามลำดับ ตรวจสอบ input ทั้งหมดก่อน บันทึก checkpoint และใบเสร็จต่อรายการ 
-        แสดงผลบางส่วน หยุดเมื่อ login/CAPTCHA/challenge/user interference และ resume เฉพาะรายการที่ยืนยันว่ายังไม่เริ่ม 
-        
-        items รูปแบบ: [{"product_id": "123", "sub_ids": ["tiktok", "P1", "v6"], "clip_id": "clip1"}, ...]
-        ไม่ replay create ที่ผลไม่แน่นอน หยุดเมื่อเจอ CAPTCHA หรือ login"""
-        
-        if type(items) is not list or not 1 <= len(items) <= 50:
-            return {"ok": False, "error": "invalid_input", "message": "items must be array of 1-50 items"}
-        if type(stop_on_error) is not bool:
+        """สร้างลิงก์ทีละรายการบนสินค้าที่หน้าปัจจุบันยืนยันเท่านั้น หมดเวลาที่ 120 วินาที และไม่ replay รายการที่ผลไม่แน่นอน."""
+        if type(items) is not list or not 1 <= len(items) <= 50 or type(stop_on_error) is not bool:
             return {"ok": False, "error": "invalid_input"}
-        
-        # Prevalidate all items
-        for i, item in enumerate(items):
-            if not isinstance(item, dict):
-                return {"ok": False, "error": "invalid_input", "item_index": i, "message": "Each item must be dict"}
-            if "product_id" not in item or "sub_ids" not in item:
-                return {"ok": False, "error": "invalid_input", "item_index": i, "message": "Each item needs product_id and sub_ids"}
-            if not isinstance(item["sub_ids"], list) or not 1 <= len(item["sub_ids"]) <= 5:
-                return {"ok": False, "error": "invalid_input", "item_index": i, "message": "sub_ids must be array of 1-5 items"}
-        
-        arguments = {
-            "operation": "batch_create_links",
-            "items": items,
-            "channel": channel,
-            "workspace_id": workspace_id,
-            "stop_on_error": stop_on_error
-        }
-        
-        return await call(page_id, "detail", arguments, timeout=300)
-    
+        if type(channel) is not str or not channel or not re.fullmatch(r"[0-9a-f]{32}", workspace_id):
+            return {"ok": False, "error": "invalid_input"}
+        prepared = []
+        for index, item in enumerate(items):
+            if not isinstance(item, dict) or type(item.get("product_id")) is not str or not item["product_id"]:
+                return {"ok": False, "error": "invalid_input", "item_index": index}
+            sub_ids = item.get("sub_ids")
+            if not isinstance(sub_ids, list) or not 1 <= len(sub_ids) <= 5:
+                return {"ok": False, "error": "invalid_input", "item_index": index}
+            rejected = _reject_subids(sub_ids)
+            if rejected:
+                return {**rejected, "item_index": index}
+            clip_id = item.get("clip_id")
+            intent = _create_intent(workspace_id, account, item["product_id"], channel, clip_id, sub_ids)
+            prepared.append({"product_id": item["product_id"], "sub_ids": sub_ids, "clip_id": clip_id, "intent_key": intent, "item_index": index})
+        blocked = []
+        dispatch = []
+        for item in prepared:
+            prior = local("campaign", "lookup_link_attempt", item["intent_key"])
+            if prior.get("found") and prior.get("status") in {"unconfirmed", "confirmed"}:
+                blocked.append({
+                    "ok": prior.get("status") == "confirmed",
+                    "item_index": item["item_index"],
+                    "product_id": item["product_id"],
+                    "status": prior["status"],
+                    "error": None if prior["status"] == "confirmed" else "create_not_replayed",
+                    "clicked": False,
+                    "retry_automatically": False,
+                    "affiliate_url": prior.get("affiliate_url"),
+                })
+            else:
+                dispatch.append(item)
+        if not dispatch:
+            return {"ok": True, "results": blocked, "dispatched": False, "retry_automatically": False}
+        result = await call(page_id, "batch_create_links", {
+            "items": [
+                {"product_id": item["product_id"], "sub_ids": item["sub_ids"], "intent_key": item["intent_key"]}
+                for item in dispatch
+            ],
+            "stop_on_error": stop_on_error,
+        }, timeout=120)
+        if not isinstance(result, dict):
+            result = {"ok": False, "error": "invalid_extension_result", "outcome": "unconfirmed", "retry_automatically": False}
+        lost = result.get("outcome") == "unconfirmed" or result.get("error") in {"timeout", "disconnected"}
+        if lost:
+            for item in dispatch:
+                _remember_attempt(item["intent_key"], workspace_id, item["product_id"], channel, "unconfirmed", account, item.get("clip_id"))
+            return {**result, "status": "unconfirmed", "retry_automatically": False, "blocked": blocked, "dispatched": True}
+        rows = result.get("results") if isinstance(result.get("results"), list) else []
+        saved_rows = []
+        for offset, item in enumerate(dispatch):
+            row = rows[offset] if offset < len(rows) and isinstance(rows[offset], dict) else {"ok": False, "status": "unconfirmed", "error": "missing_item_result"}
+            row = {**row, "item_index": item["item_index"], "requested_product_id": item["product_id"]}
+            if row.get("status") == "unconfirmed":
+                _remember_attempt(item["intent_key"], workspace_id, item["product_id"], channel, "unconfirmed", account, item.get("clip_id"))
+                row["retry_automatically"] = False
+            elif row.get("status") == "confirmed" and row.get("affiliate_url") and row.get("product_id") == item["product_id"]:
+                _remember_attempt(item["intent_key"], workspace_id, item["product_id"], channel, "confirmed", account, item.get("clip_id"), row.get("affiliate_url"))
+                row = _save_confirmed_link(workspace_id, channel, item["product_id"], item.get("clip_id"), account, {**row, "sub_ids": item["sub_ids"]})
+            elif row.get("product_id") not in (None, item["product_id"]):
+                row["saved_to_workspace"] = False
+                row["save_error"] = "product_not_attested"
+            saved_rows.append(row)
+        result["results"] = blocked + saved_rows
+        result["dispatched"] = True
+        result["retry_automatically"] = False
+        return result
+
     @server.tool()
     async def import_report_csv(
         workspace_id: str, csv_text: str | None, mapping: dict, marketplace: str,
         period_start: str, period_end: str, amount_state: Literal["estimated","confirmed","paid"] = "estimated",
         commit: Annotated[bool,Field(strict=True)] = False, expected_digest: str | None = None, status_map: dict | None = None,
         csv_file: str | None = None,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
         """วิเคราะห์CSVที่เจ้าของให้มาโดยระบุคอลัมน์และความหมายยอดอย่างชัดเจน ไม่เดารูปแบบShopee/TikTokShop previewเป็นค่าเริ่มต้นไม่บันทึก; commitต้องใช้digestจากpreviewเดียวกัน กันimportซ้ำ ไม่เก็บrawCSV/ข้อมูลผู้ซื้อ ไม่รวมsnapshotซ้อนกัน ผู้ใช้ต้องตัดข้อมูลส่วนบุคคลออกก่อนส่งCSVผ่านเอเจนต์ ปริมาณ/ช่วงเวลา/สถานะที่ไม่รู้ต้องคงไม่รู้ ยอดและที่มารายงานเป็นข้อมูลที่ผู้ส่งระบุ ไม่รับรองการจ่ายเงินจริง."""
         known=local("workspace","get_workspace",workspace_id,"brief")
@@ -731,7 +815,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                     if len(data)>200000:raise ValueError("intake_too_large")
                 csv_text=data.decode("utf-8-sig")
             except (ValueError,UnicodeError,OSError):return {"ok":False,"error":"unsafe_or_unavailable_intake_file","outcome":"not_completed"}
-        return local("campaign","import_csv",workspace_id,csv_text,mapping,marketplace,period_start,period_end,amount_state=amount_state,commit=commit,expected_digest=expected_digest,status_map=status_map)
+        return local("campaign","import_csv",workspace_id,csv_text,mapping,marketplace,period_start,period_end,amount_state=amount_state,commit=commit,expected_digest=expected_digest,status_map=status_map,account=account)
 
     @server.tool()
     async def sales_by(
@@ -739,6 +823,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         dimension: Literal["platform", "product", "clip", "variant", "month", "sub_id"],
         period_start: Annotated[str | None, Field(strict=True)] = None,
         period_end: Annotated[str | None, Field(strict=True)] = None,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
         """Query sales attribution by SubID dimension. Aggregates commission, clicks, and orders
         from imported reports, grouping by SubID field:
@@ -747,14 +832,14 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         - clip: sub_id_3 (e.g. v6, v7)
         - variant: sub_id_4 (e.g. a, b)
         - month: sub_id_5 (e.g. 202610)
-        
+
         Requires workspace with imported reports and links with SubIDs. Returns breakdown
         sorted by total commission descending. Period filters are optional YYYY-MM-DD dates.
         Only includes mapped (non-unmapped) data where SubID field is not null."""
         known = local("workspace", "get_workspace", workspace_id, "brief")
         if known.get("ok") is False:
             return known
-        return local("campaign", "sales_by", workspace_id, dimension, period_start, period_end)
+        return local("campaign", "sales_by", workspace_id, dimension, period_start, period_end, account)
 
     @server.tool()
     async def get_offer(
@@ -803,19 +888,19 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
         """Check commission health for tracked products and detect rate changes.
-        
+
         Compares current commission rates with previously observed rates. Returns
         alerts for products where commission has dropped or been removed.
-        
+
         Provide product_ids list to check specific products, or omit to check all
         tracked products in workspace. Returns health status and change alerts.
-        
+
         Requires prior observations via update_commission_health or product detail
         tracking. Does not automatically fetch current rates - use get_offer first."""
         known = local("workspace", "get_workspace", workspace_id, "brief")
         if known.get("ok") is False:
             return known
-        table = local("campaign", "check_commission_health", workspace_id, product_ids, channel)
+        table = local("campaign", "check_commission_health", workspace_id, product_ids, channel, account)
         snaps = local("campaign", "commission_health_from_snapshots", workspace_id, scope if scope is not None else "all", account)
         if snaps.get("ok") and snaps.get("checked_count"):
             snaps["manual_tracker"] = table
@@ -829,42 +914,44 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         commission_pct: Annotated[float, Field(ge=0, le=100)],
         extra_comm: Annotated[int, Field(ge=0, le=100)] = 0,
         channel: Annotated[str | None, Field(max_length=100)] = None,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
         """Update commission health tracking for a product with current rate.
-        
+
         Records current commission percentage and compares with previous observation.
         Automatically detects and flags rate changes (dropped, removed, increased).
-        
+
         Use this after reading product details to track commission over time.
         Typical workflow:
         1. get_offer to read current commission
         2. update_commission_health to record and detect changes
         3. check_commission_health to review all alerts
-        
+
         Returns change detection result with status: healthy, dropped, removed, or increased."""
         known = local("workspace", "get_workspace", workspace_id, "brief")
         if known.get("ok") is False:
             return known
         return local("campaign", "update_commission_health", workspace_id, product_id,
-                    commission_pct, extra_comm, channel)
+                    commission_pct, extra_comm, channel, account)
 
     @server.tool()
     async def list_missions(
         workspace_id: str,
         status: Annotated[Literal["available", "enrolled", "completed", "expired"] | None, Field()] = None,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
         """List missions/campaigns tracked in workspace.
-        
+
         Returns mission list with enrollment status, progress, and deadlines.
         Filter by status: available (not enrolled, not expired), enrolled (active),
         completed, or expired (deadline passed without enrollment).
-        
+
         Missions must be tracked via enroll_mission first. Does not automatically
         fetch from Shopee - use extension to observe available missions."""
         known = local("workspace", "get_workspace", workspace_id, "brief")
         if known.get("ok") is False:
             return known
-        return local("campaign", "list_missions", workspace_id, status)
+        return local("campaign", "list_missions", workspace_id, status, account)
 
     @server.tool()
     async def enroll_mission(
@@ -875,6 +962,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         requirements: Annotated[dict | None, Field()] = None,
         deadline: Annotated[str | None, Field()] = None,
         dry_run: Annotated[bool, Field(strict=True)] = True,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
         """Enroll in a mission. dry_run=true (default) returns a confirm card and does not enroll.
         Pass dry_run=false only after the owner confirms. This does not click Shopee."""
@@ -891,7 +979,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 "source": "cache",
             }
         result = local("campaign", "enroll_mission", workspace_id, mission_id, name,
-                      reward, requirements, deadline)
+                      reward, requirements, deadline, account)
         if type(result) is dict:
             result["submits"] = False
             result["dry_run"] = False
@@ -903,27 +991,29 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         mission_id: str,
         progress: dict,
         completed: Annotated[bool, Field(strict=True)] = False,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
         """Update progress for an enrolled mission.
-        
+
         Progress dict should match requirements structure (e.g., {"posts": 2, "sales": 750}).
         Set completed=true when mission requirements are met.
-        
+
         Requires prior enrollment via enroll_mission."""
         known = local("workspace", "get_workspace", workspace_id, "brief")
         if known.get("ok") is False:
             return known
         return local("campaign", "update_mission_progress", workspace_id, mission_id,
-                    progress, completed)
+                    progress, completed, account)
 
     @server.tool()
     async def explain_cancellations(
         workspace_id: str,
         period_start: str,
         period_end: str,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
         """Analyze cancelled or 0 THB orders from conversion reports.
-        
+
         Examines imported reports within date range and classifies cancellations
         by likely reason using heuristic rules:
         - buyer_cancelled: Order status indicates buyer cancellation
@@ -931,13 +1021,13 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         - invalid_order: Suspicious or test order
         - payment_failed: Payment processing failed
         - unknown: Cannot determine reason
-        
+
         Returns breakdown by classification with counts and commission impact.
         Requires imported reports with status field."""
         known = local("workspace", "get_workspace", workspace_id, "brief")
         if known.get("ok") is False:
             return known
-        return local("campaign", "explain_cancellations", workspace_id, period_start, period_end)
+        return local("campaign", "explain_cancellations", workspace_id, period_start, period_end, account)
 
     @server.tool()
     async def search_products_for_content(
@@ -948,10 +1038,10 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         limit: Annotated[int, Field(ge=1, le=100)] = 20,
     ) -> dict:
         """Search products from workspace suitable for content creation (P1-6).
-        
+
         Filters workspace product observations by commission rate and keyword.
         Returns products ranked by commission, sales potential, or rating.
-        
+
         Requires product detail observations saved in workspace first."""
         known = local("workspace", "get_workspace", workspace_id, "brief")
         if known.get("ok") is False:
@@ -969,9 +1059,10 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         level: Annotated[int, Field(ge=0, le=20)] = 0,
         active_days: Annotated[int, Field(ge=0)] = 0,
         clips_count: Annotated[int, Field(ge=0)] = 0,
+        account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
         """Track Shopee Video clip with cart and level info (P1-3, P2-1).
-        
+
         Records video metadata, cart items, and Shopee Video level progression.
         Level tracking for P2-1: tracks active days, clips published, and current level.
         Tuesday refresh logic can be implemented on top of this data."""
@@ -979,7 +1070,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         if known.get("ok") is False:
             return known
         return local("campaign", "track_video_clip", workspace_id, video_id, title,
-                    status, cart_items, level, active_days, clips_count)
+                    status, cart_items, level, active_days, clips_count, account)
 
     @server.tool()
     async def prepare_cart_swap(
@@ -990,7 +1081,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         new_affiliate_url: str,
     ) -> dict:
         """Prepare cart swap for Shopee Video clip (P1-3).
-        
+
         Returns confirmation card showing swap plan: which product to replace
         and with what. Does not execute swap - returns plan for manual review
         and execution in Shopee Video editor or via extension."""
@@ -1007,10 +1098,10 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         period_days: Annotated[int, Field(ge=1, le=30)] = 1,
     ) -> dict:
         """Check link posting volume against platform limits (P2-4).
-        
+
         Returns link creation counts for period and warns if approaching daily/weekly caps.
         Platform limits are local estimates - actual platform limits may vary.
-        
+
         Helps avoid posting too many affiliate links on one platform in short period."""
         known = local("workspace", "get_workspace", workspace_id, "brief")
         if known.get("ok") is False:
@@ -1025,11 +1116,11 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         clip_id: Annotated[str | None, Field(max_length=200)] = None,
     ) -> dict:
         """Convert Shopee URLs in text to SubID affiliate links (P2-3).
-        
+
         Finds all Shopee product URLs in text block and looks up corresponding
         affiliate links (or notes which need creation). Returns converted text
         ready for posting.
-        
+
         Does not auto-post - returns text for review. Useful for preparing
         social media captions with multiple product links."""
         known = local("workspace", "get_workspace", workspace_id, "brief")

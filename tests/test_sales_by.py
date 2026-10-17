@@ -36,7 +36,7 @@ class TestSalesByAttribution(unittest.TestCase):
             sub_id_2="P1",
             sub_id_3="v1",
         )
-        
+
         self.store.set_link(
             workspace_id=self.workspace_id,
             channel="instagram",
@@ -74,7 +74,7 @@ ig|P1|v2,80,3,150.75"""
             commit=False,
         )
         self.assertTrue(preview["ok"])
-        
+
         result = self.store.import_csv(
             workspace_id=self.workspace_id,
             csv_text=csv_data,
@@ -97,18 +97,18 @@ ig|P1|v2,80,3,150.75"""
         self.assertTrue(sales["ok"])
         self.assertEqual(sales["dimension"], "platform")
         self.assertEqual(len(sales["results"]), 2)
-        
+
         # Should be sorted by commission descending
         self.assertEqual(sales["results"][0]["platform"], "tiktok")
         self.assertEqual(sales["results"][0]["clicks"], 100)
         self.assertEqual(sales["results"][0]["orders"], 5)
         self.assertEqual(Decimal(sales["results"][0]["commission_thb"]), Decimal("250.50"))
-        
+
         self.assertEqual(sales["results"][1]["platform"], "ig")
         self.assertEqual(sales["results"][1]["clicks"], 80)
         self.assertEqual(sales["results"][1]["orders"], 3)
         self.assertEqual(Decimal(sales["results"][1]["commission_thb"]), Decimal("150.75"))
-        
+
         # Check summary
         self.assertEqual(Decimal(sales["summary"]["total_commission_thb"]), Decimal("401.25"))
         self.assertEqual(sales["summary"]["total_clicks"], 180)
@@ -130,7 +130,7 @@ ig|P1|v2,80,3,150.75"""
             sub_id_2="P1",
             sub_id_3="v1",
         )
-        
+
         self.store.set_link(
             workspace_id=self.workspace_id,
             channel="tiktok",
@@ -165,7 +165,7 @@ tiktok|P2|v1,80,3,150.75"""
             amount_state="estimated",
             commit=False,
         )
-        
+
         self.store.import_csv(
             workspace_id=self.workspace_id,
             csv_text=csv_data,
@@ -230,7 +230,7 @@ tiktok|P1|v1,50,2,100.25"""
             amount_state="estimated",
             commit=False,
         )
-        
+
         self.store.import_csv(
             workspace_id=self.workspace_id,
             csv_text=csv1,
@@ -254,7 +254,7 @@ tiktok|P1|v1,50,2,100.25"""
             amount_state="estimated",
             commit=False,
         )
-        
+
         self.store.import_csv(
             workspace_id=self.workspace_id,
             csv_text=csv2,

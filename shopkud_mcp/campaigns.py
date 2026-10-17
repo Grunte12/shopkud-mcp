@@ -100,6 +100,7 @@ class CampaignError(Exception):
         "mission_not_enrolled",
         "video_not_found",
         "offer_not_found",
+        "pii_rejected",
     })
 
     def __init__(self, code: str):
@@ -262,6 +263,7 @@ class CampaignStore:
                     """
                     CREATE TABLE IF NOT EXISTS links (
                         workspace_id TEXT NOT NULL,
+                        account_id TEXT NOT NULL DEFAULT '',
                         channel TEXT NOT NULL,
                         marketplace TEXT NOT NULL,
                         content_id TEXT NOT NULL,
@@ -282,8 +284,8 @@ class CampaignStore:
                         version INTEGER NOT NULL CHECK (version >= 1),
                         created_at TEXT NOT NULL,
                         updated_at TEXT NOT NULL,
-                        PRIMARY KEY (workspace_id, marketplace, content_id, channel, product_id),
-                        UNIQUE (workspace_id, sub_id)
+                        PRIMARY KEY (workspace_id, account_id, marketplace, content_id, channel, product_id),
+                        UNIQUE (workspace_id, account_id, sub_id)
                     );
                     CREATE INDEX IF NOT EXISTS links_workspace_url
                         ON links (workspace_id, affiliate_url);
@@ -372,8 +374,9 @@ class CampaignStore:
                         verification_evidence_json TEXT
                     );
                     CREATE TABLE IF NOT EXISTS commission_health (
-                        product_id TEXT PRIMARY KEY,
-                        workspace_id TEXT,
+                        workspace_id TEXT NOT NULL,
+                        account_id TEXT NOT NULL DEFAULT '',
+                        product_id TEXT NOT NULL,
                         clip_id TEXT,
                         last_check_at TEXT NOT NULL,
                         last_commission_pct REAL NOT NULL,
@@ -381,11 +384,13 @@ class CampaignStore:
                         previous_commission_pct REAL,
                         previous_extra_comm INTEGER,
                         status TEXT NOT NULL,
-                        alert_created_at TEXT
+                        alert_created_at TEXT,
+                        PRIMARY KEY (workspace_id, account_id, product_id)
                     );
                     CREATE TABLE IF NOT EXISTS missions (
-                        mission_id TEXT PRIMARY KEY,
-                        workspace_id TEXT,
+                        workspace_id TEXT NOT NULL,
+                        account_id TEXT NOT NULL DEFAULT '',
+                        mission_id TEXT NOT NULL,
                         name TEXT NOT NULL,
                         reward TEXT,
                         requirements_json TEXT NOT NULL,
@@ -393,11 +398,13 @@ class CampaignStore:
                         enrolled INTEGER NOT NULL DEFAULT 0,
                         progress_json TEXT,
                         enrolled_at TEXT,
-                        completed_at TEXT
+                        completed_at TEXT,
+                        PRIMARY KEY (workspace_id, account_id, mission_id)
                     );
                     CREATE TABLE IF NOT EXISTS video_clips (
-                        video_id TEXT PRIMARY KEY,
-                        workspace_id TEXT,
+                        workspace_id TEXT NOT NULL,
+                        account_id TEXT NOT NULL DEFAULT '',
+                        video_id TEXT NOT NULL,
                         title TEXT,
                         status TEXT NOT NULL,
                         cart_items_json TEXT,
@@ -406,7 +413,20 @@ class CampaignStore:
                         active_days INTEGER DEFAULT 0,
                         clips_count INTEGER DEFAULT 0,
                         observed_at TEXT NOT NULL,
-                        last_tuesday_refresh TEXT
+                        last_tuesday_refresh TEXT,
+                        PRIMARY KEY (workspace_id, account_id, video_id)
+                    );
+                    CREATE TABLE IF NOT EXISTS link_attempts (
+                        intent_key TEXT PRIMARY KEY,
+                        workspace_id TEXT NOT NULL,
+                        account_id TEXT NOT NULL DEFAULT '',
+                        product_id TEXT NOT NULL,
+                        channel TEXT NOT NULL,
+                        clip_id TEXT,
+                        status TEXT NOT NULL,
+                        affiliate_url TEXT,
+                        created_at TEXT NOT NULL,
+                        updated_at TEXT NOT NULL
                     );
                     """
                 )
@@ -416,7 +436,7 @@ class CampaignStore:
                 }
                 new_link_columns = {
                     "sub_id_1": "TEXT",
-                    "sub_id_2": "TEXT", 
+                    "sub_id_2": "TEXT",
                     "sub_id_3": "TEXT",
                     "sub_id_4": "TEXT",
                     "sub_id_5": "TEXT",
@@ -430,6 +450,7 @@ class CampaignStore:
                 for col_name, col_type in new_link_columns.items():
                     if col_name not in existing_columns:
                         connection.execute(f"ALTER TABLE links ADD COLUMN {col_name} {col_type}")
+                self._migrate_scoped_keys(connection)
                 connection.commit()
         except CampaignError:
             raise
@@ -446,6 +467,133 @@ class CampaignStore:
             raise
         except sqlite3.Error:
             _fail("storage_error")
+
+    def _migrate_scoped_keys(self, connection: sqlite3.Connection) -> None:
+        """Rebuild identities that were unique per product or mission instead of per account."""
+        specs = {
+            "links": (
+                ["workspace_id", "account_id", "marketplace", "content_id", "channel", "product_id"],
+                """CREATE TABLE links (
+                    workspace_id TEXT NOT NULL,
+                    account_id TEXT NOT NULL DEFAULT '',
+                    channel TEXT NOT NULL,
+                    marketplace TEXT NOT NULL,
+                    content_id TEXT NOT NULL,
+                    product_id TEXT NOT NULL,
+                    affiliate_url TEXT NOT NULL,
+                    sub_id TEXT NOT NULL,
+                    sub_id_1 TEXT,
+                    sub_id_2 TEXT,
+                    sub_id_3 TEXT,
+                    sub_id_4 TEXT,
+                    sub_id_5 TEXT,
+                    clip_id TEXT,
+                    link_source TEXT NOT NULL DEFAULT 'manual',
+                    link_receipt_json TEXT,
+                    target_verified_at TEXT,
+                    ownership_verified_at TEXT,
+                    verification_status TEXT,
+                    version INTEGER NOT NULL CHECK (version >= 1),
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    PRIMARY KEY (workspace_id, account_id, marketplace, content_id, channel, product_id),
+                    UNIQUE (workspace_id, account_id, sub_id)
+                )""",
+                ["workspace_id", "account_id", "channel", "marketplace", "content_id", "product_id",
+                 "affiliate_url", "sub_id", "sub_id_1", "sub_id_2", "sub_id_3", "sub_id_4", "sub_id_5",
+                 "clip_id", "link_source", "link_receipt_json", "target_verified_at", "ownership_verified_at",
+                 "verification_status", "version", "created_at", "updated_at"],
+            ),
+            "commission_health": (
+                ["workspace_id", "account_id", "product_id"],
+                """CREATE TABLE commission_health (
+                    workspace_id TEXT NOT NULL,
+                    account_id TEXT NOT NULL DEFAULT '',
+                    product_id TEXT NOT NULL,
+                    clip_id TEXT,
+                    last_check_at TEXT NOT NULL,
+                    last_commission_pct REAL NOT NULL,
+                    last_extra_comm INTEGER NOT NULL,
+                    previous_commission_pct REAL,
+                    previous_extra_comm INTEGER,
+                    status TEXT NOT NULL,
+                    alert_created_at TEXT,
+                    PRIMARY KEY (workspace_id, account_id, product_id)
+                )""",
+                ["workspace_id", "account_id", "product_id", "clip_id", "last_check_at", "last_commission_pct",
+                 "last_extra_comm", "previous_commission_pct", "previous_extra_comm", "status", "alert_created_at"],
+            ),
+            "missions": (
+                ["workspace_id", "account_id", "mission_id"],
+                """CREATE TABLE missions (
+                    workspace_id TEXT NOT NULL,
+                    account_id TEXT NOT NULL DEFAULT '',
+                    mission_id TEXT NOT NULL,
+                    name TEXT NOT NULL,
+                    reward TEXT,
+                    requirements_json TEXT NOT NULL,
+                    deadline TEXT,
+                    enrolled INTEGER NOT NULL DEFAULT 0,
+                    progress_json TEXT,
+                    enrolled_at TEXT,
+                    completed_at TEXT,
+                    PRIMARY KEY (workspace_id, account_id, mission_id)
+                )""",
+                ["workspace_id", "account_id", "mission_id", "name", "reward", "requirements_json", "deadline",
+                 "enrolled", "progress_json", "enrolled_at", "completed_at"],
+            ),
+            "video_clips": (
+                ["workspace_id", "account_id", "video_id"],
+                """CREATE TABLE video_clips (
+                    workspace_id TEXT NOT NULL,
+                    account_id TEXT NOT NULL DEFAULT '',
+                    video_id TEXT NOT NULL,
+                    title TEXT,
+                    status TEXT NOT NULL,
+                    cart_items_json TEXT,
+                    commission_flag INTEGER,
+                    level INTEGER DEFAULT 0,
+                    active_days INTEGER DEFAULT 0,
+                    clips_count INTEGER DEFAULT 0,
+                    observed_at TEXT NOT NULL,
+                    last_tuesday_refresh TEXT,
+                    PRIMARY KEY (workspace_id, account_id, video_id)
+                )""",
+                ["workspace_id", "account_id", "video_id", "title", "status", "cart_items_json", "commission_flag",
+                 "level", "active_days", "clips_count", "observed_at", "last_tuesday_refresh"],
+            ),
+        }
+        for table, (expected_pk, create_sql, columns) in specs.items():
+            present_rows = connection.execute(f"PRAGMA table_info({table})").fetchall()
+            if not present_rows:
+                continue
+            primary = [name for _, name in sorted((row[5], row[1]) for row in present_rows if row[5])]
+            if primary == expected_pk:
+                continue
+            present = {row[1] for row in present_rows}
+            if table == "links":
+                connection.execute("DROP INDEX IF EXISTS links_workspace_url")
+            connection.execute(f"ALTER TABLE {table} RENAME TO {table}_legacy")
+            connection.execute(create_sql)
+            selected = []
+            for column in columns:
+                if column == "workspace_id" and "workspace_id" in present:
+                    selected.append("COALESCE(workspace_id, '')")
+                elif column == "account_id" and "account_id" not in present:
+                    selected.append("''")
+                elif column in present:
+                    selected.append(column)
+                else:
+                    continue
+            copied = [column for column in columns if column in present or column == "account_id"]
+            connection.execute(
+                f"INSERT INTO {table} ({', '.join(copied)}) SELECT {', '.join(selected)} FROM {table}_legacy"
+            )
+            connection.execute(f"DROP TABLE {table}_legacy")
+            if table == "links":
+                connection.execute(
+                    "CREATE INDEX IF NOT EXISTS links_workspace_url ON links (workspace_id, affiliate_url)"
+                )
 
     def _ensure_database_file(self) -> None:
         self._verify_root()
@@ -655,42 +803,45 @@ class CampaignStore:
         clip_id: str | None = None,
         link_source: str = 'manual',
         link_receipt: dict | None = None,
+        account: str | None = None,
     ) -> dict[str, Any]:
         workspace_id = _workspace_id(workspace_id)
+        from .spec_ops import account_id, reject_attribution, sanitize_receipt
+        stored_account = account_id(account)
         channel = _channel(channel)
         marketplace = _marketplace(marketplace)
         content_id = _identifier(content_id)
         product_id = _identifier(product_id)
         affiliate_url = _validate_affiliate_url(affiliate_url, marketplace)
-        sub_id = _identifier(sub_id, maximum=128)
+        sub_id = reject_attribution(_identifier(sub_id, maximum=128))
         if expected_version is not None and (not _is_int(expected_version) or expected_version < 0):
             _fail("invalid_request")
-        
+
         # Validate optional SubIDs
         sub_ids_list = [sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5]
-        for i, sid in enumerate(sub_ids_list, 1):
+        for sid in sub_ids_list:
             if sid is not None and (type(sid) is not str or len(sid) > 128):
                 _fail("invalid_request")
-        
+            if type(sid) is str and sid:
+                reject_attribution(sid)
+
         # Validate clip_id and link_source
         if clip_id is not None:
             clip_id = _identifier(clip_id, maximum=200)
         if link_source not in {'manual', 'extension', 'extension_subid_creation', 'api'}:
             _fail("invalid_request")
-        
-        # Validate link_receipt
+
         link_receipt_json = None
         if link_receipt is not None:
-            if not isinstance(link_receipt, dict):
-                _fail("invalid_request")
+            clean_receipt = sanitize_receipt(link_receipt, affiliate_url=affiliate_url, product_id=product_id)
             try:
-                link_receipt_json = json.dumps(link_receipt, ensure_ascii=False, separators=(',', ':'))
-                if len(link_receipt_json) > 8192:
-                    _fail("invalid_request")
+                link_receipt_json = json.dumps(clean_receipt, ensure_ascii=False, separators=(",", ":"))
             except (TypeError, ValueError):
                 _fail("invalid_request")
-        
-        key = (workspace_id, marketplace, content_id, channel, product_id)
+            if len(link_receipt_json) > 8192:
+                _fail("invalid_request")
+
+        key = (workspace_id, stored_account, marketplace, content_id, channel, product_id)
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
         try:
             with self._connection(write=True) as connection:
@@ -698,7 +849,7 @@ class CampaignStore:
                 row = connection.execute(
                     """SELECT affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5,
                               clip_id, link_source, link_receipt_json, version, created_at, updated_at
-                       FROM links WHERE workspace_id=? AND marketplace=? AND content_id=?
+                       FROM links WHERE workspace_id=? AND account_id=? AND marketplace=? AND content_id=?
                        AND channel=? AND product_id=?""",
                     key,
                 ).fetchone()
@@ -715,17 +866,17 @@ class CampaignStore:
                         clip_id, link_source, link_receipt_json, current_version, row[11], row[12], changed=False
                     )
                 duplicate_url = connection.execute(
-                    """SELECT 1 FROM links WHERE workspace_id=? AND affiliate_url=?
+                    """SELECT 1 FROM links WHERE workspace_id=? AND account_id=? AND affiliate_url=?
                        AND (channel<>? OR content_id<>?) LIMIT 1""",
-                    (workspace_id, affiliate_url, channel, content_id),
+                    (workspace_id, stored_account, affiliate_url, channel, content_id),
                 ).fetchone()
                 if duplicate_url:
                     self._rollback(connection)
                     _fail("duplicate_url")
                 duplicate_sub_id = connection.execute(
-                    """SELECT 1 FROM links WHERE workspace_id=? AND sub_id=? AND NOT (
+                    """SELECT 1 FROM links WHERE workspace_id=? AND account_id=? AND sub_id=? AND NOT (
                        marketplace=? AND content_id=? AND channel=? AND product_id=?) LIMIT 1""",
-                    (workspace_id, sub_id, marketplace, content_id, channel, product_id),
+                    (workspace_id, stored_account, sub_id, marketplace, content_id, channel, product_id),
                 ).fetchone()
                 if duplicate_sub_id:
                     self._rollback(connection)
@@ -745,11 +896,11 @@ class CampaignStore:
                     version = 1
                     connection.execute(
                         """INSERT INTO links
-                           (workspace_id, channel, marketplace, content_id, product_id,
+                           (workspace_id, account_id, channel, marketplace, content_id, product_id,
                             affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5,
                             clip_id, link_source, link_receipt_json, version, created_at, updated_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                        (workspace_id, channel, marketplace, content_id, product_id,
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (workspace_id, stored_account, channel, marketplace, content_id, product_id,
                          affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5,
                          clip_id, link_source, link_receipt_json, version, now, now),
                     )
@@ -757,18 +908,18 @@ class CampaignStore:
                 else:
                     version = current_version + 1
                     connection.execute(
-                        """UPDATE links SET affiliate_url=?, sub_id=?, sub_id_1=?, sub_id_2=?, 
-                           sub_id_3=?, sub_id_4=?, sub_id_5=?, clip_id=?, link_source=?, 
+                        """UPDATE links SET affiliate_url=?, sub_id=?, sub_id_1=?, sub_id_2=?,
+                           sub_id_3=?, sub_id_4=?, sub_id_5=?, clip_id=?, link_source=?,
                            link_receipt_json=?, version=?, updated_at=?
-                           WHERE workspace_id=? AND marketplace=? AND content_id=? AND channel=? AND product_id=?""",
-                        (affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5, 
+                           WHERE workspace_id=? AND account_id=? AND marketplace=? AND content_id=? AND channel=? AND product_id=?""",
+                        (affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5,
                          clip_id, link_source, link_receipt_json, version, now, *key),
                     )
                     created_at = row[11]
                 self._check_database_capacity(connection)
                 connection.commit()
-                return self._link_result(key, affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, 
-                                        sub_id_4, sub_id_5, clip_id, link_source, link_receipt_json, 
+                return self._link_result(key, affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3,
+                                        sub_id_4, sub_id_5, clip_id, link_source, link_receipt_json,
                                         version, created_at, now, changed=True)
         except CampaignError:
             raise
@@ -777,9 +928,69 @@ class CampaignStore:
         except sqlite3.Error:
             _fail("storage_error")
 
+    def lookup_link_attempt(self, intent_key: str) -> dict[str, Any]:
+        if type(intent_key) is not str or not re.fullmatch(r"[0-9a-f]{64}", intent_key):
+            _fail("invalid_request")
+        with self._connection() as connection:
+            row = connection.execute(
+                "SELECT status, affiliate_url, product_id FROM link_attempts WHERE intent_key=?",
+                (intent_key,),
+            ).fetchone()
+        if row is None:
+            return {"ok": True, "found": False, "status": None, "affiliate_url": None, "product_id": None}
+        return {"ok": True, "found": True, "status": row[0], "affiliate_url": row[1], "product_id": row[2]}
+
+    def note_link_attempt(
+        self,
+        intent_key: str,
+        workspace_id: str,
+        product_id: str,
+        channel: str,
+        status: str,
+        account: str | None = None,
+        clip_id: str | None = None,
+        affiliate_url: str | None = None,
+    ) -> dict[str, Any]:
+        if type(intent_key) is not str or not re.fullmatch(r"[0-9a-f]{64}", intent_key):
+            _fail("invalid_request")
+        if status not in {"unconfirmed", "confirmed"}:
+            _fail("invalid_request")
+        workspace_id = _workspace_id(workspace_id)
+        from .spec_ops import account_id
+        stored_account = account_id(account)
+        product_id = _identifier(product_id)
+        channel = _channel(channel)
+        if clip_id is not None:
+            clip_id = _identifier(clip_id, maximum=200)
+        if affiliate_url is not None:
+            affiliate_url = _validate_affiliate_url(affiliate_url, "shopee")
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        try:
+            with self._connection(write=True) as connection:
+                self._begin(connection)
+                connection.execute(
+                    """INSERT INTO link_attempts
+                       (intent_key, workspace_id, account_id, product_id, channel, clip_id,
+                        status, affiliate_url, created_at, updated_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       ON CONFLICT(intent_key) DO UPDATE SET
+                         status=CASE WHEN link_attempts.status='confirmed' THEN 'confirmed' ELSE excluded.status END,
+                         affiliate_url=COALESCE(excluded.affiliate_url, link_attempts.affiliate_url),
+                         updated_at=excluded.updated_at
+                       WHERE link_attempts.status!='confirmed' OR excluded.status='confirmed'""",
+                    (intent_key, workspace_id, stored_account, product_id, channel, clip_id,
+                     status, affiliate_url, now, now),
+                )
+                connection.commit()
+        except CampaignError:
+            raise
+        except sqlite3.Error:
+            _fail("storage_error")
+        return {"ok": True, "intent_key": intent_key, "status": status, "product_id": product_id}
+
     @staticmethod
     def _link_result(
-        key: tuple[str, str, str, str, str],
+        key: tuple[str, str, str, str, str, str],
         affiliate_url: str,
         sub_id: str,
         sub_id_1: str | None,
@@ -796,11 +1007,12 @@ class CampaignStore:
         *,
         changed: bool,
     ) -> dict[str, Any]:
-        workspace_id, marketplace, content_id, channel, product_id = key
+        workspace_id, account, marketplace, content_id, channel, product_id = key
         result = {
             "ok": True,
             "link": {
                 "workspace_id": workspace_id,
+                "account": account or None,
                 "channel": channel,
                 "marketplace": marketplace,
                 "content_id": content_id,
@@ -816,7 +1028,7 @@ class CampaignStore:
                 "link_source": link_source,
             },
         }
-        
+
         # Add optional fields only if they exist
         if sub_id_1 is not None:
             result["link"]["sub_id_1"] = sub_id_1
@@ -835,7 +1047,7 @@ class CampaignStore:
                 result["link"]["link_receipt"] = json.loads(link_receipt_json)
             except json.JSONDecodeError:
                 pass
-        
+
         return result
 
     def get_links(self, workspace_id: str, limit: int = 20, offset: int = 0) -> dict[str, Any]:
@@ -885,7 +1097,7 @@ class CampaignStore:
                     pass
             links.append(link)
         return {"ok": True, "links": links, "total": int(total), "limit": limit, "offset": offset}
-    
+
     def find_links(
         self,
         workspace_id: str,
@@ -900,10 +1112,10 @@ class CampaignStore:
         """Find links by item id, SubID product code, channel, or clip_id."""
         workspace_id = _workspace_id(workspace_id)
         limit, offset = self._page_args(limit, offset)
-        
+
         conditions = ["workspace_id=?"]
         params: list[Any] = [workspace_id]
-        
+
         if product_id is not None:
             product_id = _identifier(product_id)
             conditions.append("product_id=?")
@@ -918,34 +1130,34 @@ class CampaignStore:
             from .spec_ops import account_id
             conditions.append("account_id=?")
             params.append(account_id(account))
-        
+
         if channel is not None:
             channel = _channel(channel)
             conditions.append("channel=?")
             params.append(channel)
-        
+
         if clip_id is not None:
             clip_id = _identifier(clip_id)
             conditions.append("clip_id=?")
             params.append(clip_id)
-        
+
         where_clause = " AND ".join(conditions)
-        
+
         with self._connection() as connection:
             total = connection.execute(
                 f"SELECT count(*) FROM links WHERE {where_clause}", params
             ).fetchone()[0]
-            
+
             rows = connection.execute(
                 f"""SELECT workspace_id, channel, marketplace, content_id, product_id,
                            affiliate_url, sub_id, sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5,
-                           clip_id, link_source, link_receipt_json, version, created_at, updated_at
+                           clip_id, link_source, link_receipt_json, version, created_at, updated_at, account_id
                     FROM links WHERE {where_clause}
                     ORDER BY created_at DESC
                     LIMIT ? OFFSET ?""",
                 (*params, limit, offset),
             ).fetchall()
-        
+
         links = []
         for row in rows:
             link = {
@@ -962,6 +1174,7 @@ class CampaignStore:
                 "url_validation": "format_only",
                 "provenance": _PROVENANCE,
                 "link_source": row[13] or "manual",
+                "account": row[18] or None,
             }
             if row[7]: link["sub_id_1"] = row[7]
             if row[8]: link["sub_id_2"] = row[8]
@@ -975,7 +1188,7 @@ class CampaignStore:
                 except json.JSONDecodeError:
                     pass
             links.append(link)
-        
+
         return {
             "ok": True,
             "links": links,
@@ -1001,8 +1214,11 @@ class CampaignStore:
         commit: bool = False,
         expected_digest: str | None = None,
         status_map: dict[str, str] | None = None,
+        account: str | None = None,
     ) -> dict[str, Any]:
         workspace_id = _workspace_id(workspace_id)
+        from .spec_ops import account_id
+        stored_account = account_id(account)
         marketplace = _marketplace(marketplace)
         if not MARKETPLACE_METADATA[marketplace]["csv_import"]:
             _fail("unsupported_marketplace")
@@ -1029,6 +1245,7 @@ class CampaignStore:
             "period_end": period_end,
             "amount_state": amount_state,
             "status_map": normalized_status_map,
+            "account": stored_account,
         })).hexdigest()
 
         if not commit:
@@ -1042,7 +1259,7 @@ class CampaignStore:
                     "preview": self._report_summary(existing),
                 }
             with self._connection() as connection:
-                links = self._link_snapshot(connection, workspace_id, parsed["sub_ids"])
+                links = self._link_snapshot(connection, workspace_id, parsed["sub_ids"], stored_account)
             digest = self._preview_digest(
                 idempotency_key, links, parsed["sub_ids"],
             )
@@ -1070,7 +1287,7 @@ class CampaignStore:
                     return {"ok": True, "committed": True, "duplicate": True,
                             "digest": existing_row[1], "report": self._report_summary(report)}
 
-                links = self._link_snapshot(connection, workspace_id, parsed["sub_ids"])
+                links = self._link_snapshot(connection, workspace_id, parsed["sub_ids"], stored_account)
                 digest = self._preview_digest(idempotency_key, links, parsed["sub_ids"])
                 if digest != expected_digest:
                     self._rollback(connection)
@@ -1097,11 +1314,11 @@ class CampaignStore:
                     """INSERT INTO reports
                        (report_id, workspace_id, digest, idempotency_key, source_marketplace,
                         period_start, period_end, amount_state, row_count, mapped_rows_count,
-                        unmapped_rows_count, status_present, created_at)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        unmapped_rows_count, status_present, created_at, account_id)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (report_id, workspace_id, digest, idempotency_key, marketplace, period_start,
                      period_end, amount_state, summary["rows_count"], summary["mapped_rows_count"],
-                     summary["unmapped_rows_count"], int(parsed["status_present"]), created_at),
+                     summary["unmapped_rows_count"], int(parsed["status_present"]), created_at, stored_account),
                 )
                 for group in groups.values():
                     connection.execute(
@@ -1121,6 +1338,7 @@ class CampaignStore:
                 from .spec_ops import store_conversion_buckets
                 store_conversion_buckets(
                     connection, workspace_id, period_start, period_end, parsed["records"],
+                    account=stored_account,
                 )
                 self._check_database_capacity(connection)
                 connection.commit()
@@ -1147,6 +1365,11 @@ class CampaignStore:
             result[role] = header
         if len(set(result.values())) != len(result):
             _fail("invalid_mapping")
+        from .spec_ops import reject_mapping_header
+        for role, header in result.items():
+            if role == "buyer_class" and re.fullmatch(r"(?i)buyer(?:[\s_-]*class)?", header.strip()):
+                continue
+            reject_mapping_header(header)
         return {role: result[role] for role in sorted(result)}
 
     @staticmethod
@@ -1209,6 +1432,8 @@ class CampaignStore:
                     if sub_id:
                         if len(sub_id) > 128 or any(unicodedata.category(ch) in {"Cc", "Cs"} for ch in sub_id):
                             _fail("invalid_csv")
+                        from .spec_ops import reject_attribution
+                        reject_attribution(sub_id)
                         sub_ids.add(sub_id)
                     else:
                         sub_id = None
@@ -1245,6 +1470,7 @@ class CampaignStore:
         connection: sqlite3.Connection,
         workspace_id: str,
         sub_ids: list[str],
+        account: str = "",
     ) -> dict[str, dict[str, str]]:
         if not sub_ids:
             return {}
@@ -1255,8 +1481,8 @@ class CampaignStore:
             placeholders = ",".join("?" for _ in batch)
             rows.extend(connection.execute(
                 f"""SELECT sub_id, channel, content_id, marketplace
-                    FROM links WHERE workspace_id=? AND sub_id IN ({placeholders})""",
-                (workspace_id, *batch),
+                    FROM links WHERE workspace_id=? AND account_id=? AND sub_id IN ({placeholders})""",
+                (workspace_id, account, *batch),
             ).fetchall())
         return {
             row[0]: {"channel": row[1], "content_id": row[2], "destination_marketplace": row[3]}
@@ -1598,24 +1824,27 @@ class CampaignStore:
         dimension: str,
         period_start: str | None = None,
         period_end: str | None = None,
+        account: str | None = None,
     ) -> dict[str, Any]:
         """Query sales attribution by SubID dimension (platform, product, clip, variant, month).
-        
+
         Aggregates commission, clicks, and orders from report_groups, joining with links
         to extract SubID fields. Returns breakdown by the specified dimension.
-        
+
         Args:
             workspace_id: The workspace to query
-            dimension: One of 'platform', 'product', 'clip', 'variant', 'month' 
+            dimension: One of 'platform', 'product', 'clip', 'variant', 'month'
                       (maps to sub_id_1, sub_id_2, sub_id_3, sub_id_4, sub_id_5)
             period_start: Optional YYYY-MM-DD filter
             period_end: Optional YYYY-MM-DD filter
-            
+
         Returns:
             Dict with aggregated sales data grouped by dimension value
         """
         workspace_id = _workspace_id(workspace_id)
-        
+        from .spec_ops import account_id
+        stored_account = account_id(account) if account else None
+
         # Map dimension names to SubID fields
         dimension_map = {
             "platform": "sub_id_1",
@@ -1625,12 +1854,12 @@ class CampaignStore:
             "month": "sub_id_5",
             "sub_id": "sub_id",
         }
-        
+
         if dimension not in dimension_map:
             _fail("invalid_request")
-        
+
         subid_field = dimension_map[dimension]
-        
+
         # Validate date filters if provided
         if period_start is not None:
             try:
@@ -1642,11 +1871,11 @@ class CampaignStore:
                 datetime.fromisoformat(period_end)
             except ValueError:
                 _fail("invalid_request")
-        
+
         with self._connection() as connection:
             # Build query to aggregate by SubID dimension
             query = f"""
-                SELECT 
+                SELECT
                     l.{subid_field} as dimension_value,
                     SUM(rg.commission_sum) as total_commission,
                     SUM(rg.clicks_sum) as total_clicks,
@@ -1656,47 +1885,51 @@ class CampaignStore:
                 FROM report_groups rg
                 JOIN reports r ON rg.report_id = r.report_id
                 JOIN links l ON (
-                    rg.channel = l.channel 
+                    rg.channel = l.channel
                     AND rg.content_id = l.content_id
                     AND r.workspace_id = l.workspace_id
+                    AND r.account_id = l.account_id
                 )
                 WHERE r.workspace_id = ?
                   AND rg.unmapped = 0
             """
-            
+
             params = [workspace_id]
-            
+            if stored_account is not None:
+                query += " AND r.account_id = ? AND l.account_id = ?"
+                params.extend([stored_account, stored_account])
+
             if period_start is not None:
                 query += " AND r.period_start >= ?"
                 params.append(period_start)
-            
+
             if period_end is not None:
                 query += " AND r.period_end <= ?"
                 params.append(period_end)
-            
+
             query += f"""
                 GROUP BY l.{subid_field}
                 HAVING l.{subid_field} IS NOT NULL
                 ORDER BY total_commission DESC
             """
-            
+
             rows = connection.execute(query, tuple(params)).fetchall()
-            
+
             results = []
             total_commission = Decimal(0)
             total_clicks = 0
             total_orders = 0
             total_rows_count = 0
-            
+
             for row in rows:
                 dim_value, commission, clicks, orders, rows_count, report_count = row
-                
+
                 commission_dec = Decimal(commission) if commission else Decimal(0)
                 total_commission += commission_dec
                 total_clicks += clicks or 0
                 total_orders += orders or 0
                 total_rows_count += rows_count or 0
-                
+
                 results.append({
                     dimension: dim_value,
                     "commission_thb": _decimal_text(commission_dec) if commission else None,
@@ -1705,7 +1938,7 @@ class CampaignStore:
                     "rows": rows_count,
                     "reports": report_count,
                 })
-            
+
             return {
                 "ok": True,
                 "workspace_id": workspace_id,
@@ -1728,23 +1961,26 @@ class CampaignStore:
         workspace_id: str,
         product_ids: list[str] | None = None,
         channel: str | None = None,
+        account: str | None = None,
     ) -> dict[str, Any]:
         """Check commission health for products and detect rate changes.
-        
+
         Compares current commission rates (from product details) with previously
         observed rates in commission_health table. Detects drops, removals, and
         increases. Updates health tracking and returns alerts.
-        
+
         Args:
             workspace_id: The workspace to operate in
             product_ids: Optional list of specific product IDs to check (None = all tracked)
             channel: Optional channel filter (e.g., 'tiktok', 'ig')
-            
+
         Returns:
             Dict with health check results and alerts for changed rates
         """
         workspace_id = _workspace_id(workspace_id)
-        
+        from .spec_ops import account_id
+        stored_account = account_id(account) if account else None
+
         # Validate product_ids if provided
         if product_ids is not None:
             if not isinstance(product_ids, list) or not product_ids or len(product_ids) > 100:
@@ -1752,15 +1988,15 @@ class CampaignStore:
             for pid in product_ids:
                 if not isinstance(pid, str) or not pid or len(pid) > 200:
                     _fail("invalid_request")
-        
+
         with self._connection(write=True) as connection:
             self._begin(connection)
-            
+
             # Get current health records
             if product_ids is not None:
                 placeholders = ",".join("?" * len(product_ids))
                 query = f"""
-                    SELECT product_id, last_check_at, last_commission_pct, 
+                    SELECT product_id, last_check_at, last_commission_pct,
                            last_extra_comm, status
                     FROM commission_health
                     WHERE workspace_id = ? AND product_id IN ({placeholders})
@@ -1774,7 +2010,10 @@ class CampaignStore:
                     WHERE workspace_id = ?
                 """
                 params = [workspace_id]
-            
+            if stored_account is not None:
+                query += " AND account_id = ?"
+                params.append(stored_account)
+
             existing = {
                 row[0]: {
                     "last_check_at": row[1],
@@ -1784,18 +2023,18 @@ class CampaignStore:
                 }
                 for row in connection.execute(query, params).fetchall()
             }
-            
+
             # Prepare results
             now = datetime.now(timezone.utc).isoformat(timespec="seconds")
             alerts = []
             checked = []
             unchanged = []
-            
+
             # Note: In production, this would query current commission rates from
             # the extension/product detail observations. For now, we track what
             # the caller provides via update_commission_health (separate function).
             # This check function returns stored health status.
-            
+
             for product_id, health in existing.items():
                 checked.append({
                     "product_id": product_id,
@@ -1804,7 +2043,7 @@ class CampaignStore:
                     "extra_comm": health["last_extra_comm"],
                     "status": health["status"],
                 })
-                
+
                 if health["status"] in ("dropped", "removed"):
                     alerts.append({
                         "product_id": product_id,
@@ -1812,9 +2051,9 @@ class CampaignStore:
                         "last_commission_pct": health["last_commission_pct"],
                         "checked_at": health["last_check_at"],
                     })
-            
+
             connection.commit()
-            
+
             return {
                 "ok": True,
                 "workspace_id": workspace_id,
@@ -1825,7 +2064,7 @@ class CampaignStore:
                 "products": checked,
                 "provenance": _PROVENANCE,
             }
-    
+
     def update_commission_health(
         self,
         workspace_id: str,
@@ -1833,57 +2072,59 @@ class CampaignStore:
         commission_pct: float,
         extra_comm: int = 0,
         channel: str | None = None,
+        account: str | None = None,
     ) -> dict[str, Any]:
         """Update commission health tracking for a product.
-        
+
         Records current commission rate and compares with previous observation.
         Automatically detects rate changes and updates status.
-        
+
         Args:
             workspace_id: The workspace
             product_id: Product identifier
             commission_pct: Current commission percentage (e.g., 8.5 for 8.5%)
             extra_comm: Extra commission percentage if any
             channel: Optional channel context
-            
+
         Returns:
             Dict with update result and detected change status
         """
         workspace_id = _workspace_id(workspace_id)
-        
+        from .spec_ops import account_id
+        stored_account = account_id(account)
+
         if (not isinstance(product_id, str) or not product_id or len(product_id) > 200
                 or not isinstance(commission_pct, (int, float)) or commission_pct < 0
                 or not isinstance(extra_comm, int) or extra_comm < 0):
             _fail("invalid_request")
-        
+
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        
+
         try:
             with self._connection(write=True) as connection:
                 self._begin(connection)
-                
+
                 # Get existing record
                 existing = connection.execute(
                     """SELECT last_commission_pct, last_extra_comm, status
                        FROM commission_health
-                       WHERE product_id = ? AND workspace_id = ?""",
-                    (product_id, workspace_id)
+                       WHERE product_id = ? AND workspace_id = ? AND account_id = ?""",
+                    (product_id, workspace_id, stored_account)
                 ).fetchone()
-                
+
                 if existing is None:
-                    # First observation - insert
                     connection.execute(
                         """INSERT INTO commission_health
-                           (product_id, workspace_id, last_check_at, last_commission_pct,
+                           (product_id, workspace_id, account_id, last_check_at, last_commission_pct,
                             last_extra_comm, status)
-                           VALUES (?, ?, ?, ?, ?, ?)""",
-                        (product_id, workspace_id, now, commission_pct, extra_comm, "healthy")
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                        (product_id, workspace_id, stored_account, now, commission_pct, extra_comm, "healthy")
                     )
                     status = "healthy"
                     change_detected = False
                 else:
                     prev_pct, prev_extra, prev_status = existing
-                    
+
                     # Detect change
                     if commission_pct == 0:
                         status = "removed"
@@ -1897,7 +2138,7 @@ class CampaignStore:
                     else:
                         status = "healthy"
                         change_detected = False
-                    
+
                     # Update record
                     connection.execute(
                         """UPDATE commission_health
@@ -1907,18 +2148,18 @@ class CampaignStore:
                                last_commission_pct = ?,
                                last_extra_comm = ?,
                                status = ?,
-                               alert_created_at = CASE 
-                                   WHEN ? IN ('dropped', 'removed') THEN ? 
-                                   ELSE alert_created_at 
+                               alert_created_at = CASE
+                                   WHEN ? IN ('dropped', 'removed') THEN ?
+                                   ELSE alert_created_at
                                END
-                           WHERE product_id = ? AND workspace_id = ?""",
+                           WHERE product_id = ? AND workspace_id = ? AND account_id = ?""",
                         (now, commission_pct, extra_comm, status, status, now,
-                         product_id, workspace_id)
+                         product_id, workspace_id, stored_account)
                     )
-                
+
                 self._check_database_capacity(connection)
                 connection.commit()
-                
+
                 return {
                     "ok": True,
                     "product_id": product_id,
@@ -1927,6 +2168,7 @@ class CampaignStore:
                     "extra_comm": extra_comm,
                     "status": status,
                     "change_detected": change_detected,
+                    "account": stored_account or None,
                     "updated_at": now,
                     "provenance": _PROVENANCE,
                 }
@@ -1939,21 +2181,24 @@ class CampaignStore:
         self,
         workspace_id: str,
         status: str | None = None,
+        account: str | None = None,
     ) -> dict[str, Any]:
         """List available missions/campaigns.
-        
+
         Args:
             workspace_id: The workspace
             status: Optional filter: 'available', 'enrolled', 'completed', 'expired'
-            
+
         Returns:
             Dict with mission list and enrollment status
         """
         workspace_id = _workspace_id(workspace_id)
-        
+        from .spec_ops import account_id
+        stored_account = account_id(account) if account else None
+
         if status is not None and status not in ("available", "enrolled", "completed", "expired"):
             _fail("invalid_request")
-        
+
         with self._connection() as connection:
             if status is None:
                 query = """
@@ -2002,9 +2247,12 @@ class CampaignStore:
                 """
                 now = datetime.now(timezone.utc).isoformat(timespec="seconds")
                 params = [workspace_id, now]
-            
+            if stored_account is not None:
+                query = query.replace("WHERE workspace_id = ?", "WHERE workspace_id = ? AND account_id = ?", 1)
+                params.insert(1, stored_account)
+
             rows = connection.execute(query, params).fetchall()
-            
+
             missions = []
             for row in rows:
                 try:
@@ -2012,7 +2260,7 @@ class CampaignStore:
                     progress = json.loads(row[6]) if row[6] else None
                 except json.JSONDecodeError:
                     continue
-                
+
                 missions.append({
                     "mission_id": row[0],
                     "name": row[1],
@@ -2024,7 +2272,7 @@ class CampaignStore:
                     "enrolled_at": row[7],
                     "completed_at": row[8],
                 })
-            
+
             return {
                 "ok": True,
                 "workspace_id": workspace_id,
@@ -2033,7 +2281,7 @@ class CampaignStore:
                 "count": len(missions),
                 "provenance": _PROVENANCE,
             }
-    
+
     def enroll_mission(
         self,
         workspace_id: str,
@@ -2042,9 +2290,10 @@ class CampaignStore:
         reward: str | None = None,
         requirements: dict | None = None,
         deadline: str | None = None,
+        account: str | None = None,
     ) -> dict[str, Any]:
         """Enroll in a mission/campaign or create tracking for one.
-        
+
         Args:
             workspace_id: The workspace
             mission_id: Mission identifier (from Shopee or custom)
@@ -2052,35 +2301,37 @@ class CampaignStore:
             reward: Optional reward description
             requirements: Optional requirements dict (e.g., {"posts": 3, "sales": 1000})
             deadline: Optional ISO8601 deadline
-            
+
         Returns:
             Dict with enrollment result
         """
         workspace_id = _workspace_id(workspace_id)
-        
+        from .spec_ops import account_id
+        stored_account = account_id(account)
+
         if (not isinstance(mission_id, str) or not mission_id or len(mission_id) > 200
                 or not isinstance(name, str) or not name or len(name) > 500):
             _fail("invalid_request")
-        
+
         if deadline is not None:
             try:
                 datetime.fromisoformat(deadline)
             except ValueError:
                 _fail("invalid_request")
-        
+
         requirements_json = json.dumps(requirements or {}, separators=(",", ":"))
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        
+
         try:
             with self._connection(write=True) as connection:
                 self._begin(connection)
-                
+
                 # Check if already exists
                 existing = connection.execute(
-                    "SELECT enrolled FROM missions WHERE mission_id = ? AND workspace_id = ?",
-                    (mission_id, workspace_id)
+                    "SELECT enrolled FROM missions WHERE mission_id = ? AND workspace_id = ? AND account_id = ?",
+                    (mission_id, workspace_id, stored_account)
                 ).fetchone()
-                
+
                 if existing is not None:
                     if existing[0]:
                         connection.commit()
@@ -2088,30 +2339,29 @@ class CampaignStore:
                             "ok": True,
                             "mission_id": mission_id,
                             "already_enrolled": True,
+                            "account": stored_account or None,
                             "provenance": _PROVENANCE,
                         }
                     else:
-                        # Update to enrolled
                         connection.execute(
                             """UPDATE missions
                                SET enrolled = 1, enrolled_at = ?
-                               WHERE mission_id = ? AND workspace_id = ?""",
-                            (now, mission_id, workspace_id)
+                               WHERE mission_id = ? AND workspace_id = ? AND account_id = ?""",
+                            (now, mission_id, workspace_id, stored_account)
                         )
                 else:
-                    # Insert new
                     connection.execute(
                         """INSERT INTO missions
-                           (mission_id, workspace_id, name, reward, requirements_json,
+                           (mission_id, workspace_id, account_id, name, reward, requirements_json,
                             deadline, enrolled, enrolled_at)
-                           VALUES (?, ?, ?, ?, ?, ?, 1, ?)""",
-                        (mission_id, workspace_id, name, reward, requirements_json,
+                           VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)""",
+                        (mission_id, workspace_id, stored_account, name, reward, requirements_json,
                          deadline, now)
                     )
-                
+
                 self._check_database_capacity(connection)
                 connection.commit()
-                
+
                 return {
                     "ok": True,
                     "mission_id": mission_id,
@@ -2124,66 +2374,68 @@ class CampaignStore:
             raise
         except sqlite3.Error:
             _fail("storage_error")
-    
+
     def update_mission_progress(
         self,
         workspace_id: str,
         mission_id: str,
         progress: dict,
         completed: bool = False,
+        account: str | None = None,
     ) -> dict[str, Any]:
         """Update progress for an enrolled mission.
-        
+
         Args:
             workspace_id: The workspace
             mission_id: Mission identifier
             progress: Progress dict (e.g., {"posts": 2, "sales": 750})
             completed: Mark mission as completed
-            
+
         Returns:
             Dict with update result
         """
         workspace_id = _workspace_id(workspace_id)
-        
+        from .spec_ops import account_id
+        stored_account = account_id(account)
+
         if (not isinstance(mission_id, str) or not mission_id or len(mission_id) > 200
                 or not isinstance(progress, dict)):
             _fail("invalid_request")
-        
+
         progress_json = json.dumps(progress, separators=(",", ":"))
         now = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        
+
         try:
             with self._connection(write=True) as connection:
                 self._begin(connection)
-                
+
                 # Check enrollment
                 existing = connection.execute(
-                    "SELECT enrolled FROM missions WHERE mission_id = ? AND workspace_id = ?",
-                    (mission_id, workspace_id)
+                    "SELECT enrolled FROM missions WHERE mission_id = ? AND workspace_id = ? AND account_id = ?",
+                    (mission_id, workspace_id, stored_account)
                 ).fetchone()
-                
+
                 if existing is None or not existing[0]:
                     _fail("mission_not_enrolled")
-                
-                # Update progress
+
                 if completed:
                     connection.execute(
                         """UPDATE missions
                            SET progress_json = ?, completed_at = ?
-                           WHERE mission_id = ? AND workspace_id = ?""",
-                        (progress_json, now, mission_id, workspace_id)
+                           WHERE mission_id = ? AND workspace_id = ? AND account_id = ?""",
+                        (progress_json, now, mission_id, workspace_id, stored_account)
                     )
                 else:
                     connection.execute(
                         """UPDATE missions
                            SET progress_json = ?
-                           WHERE mission_id = ? AND workspace_id = ?""",
-                        (progress_json, mission_id, workspace_id)
+                           WHERE mission_id = ? AND workspace_id = ? AND account_id = ?""",
+                        (progress_json, mission_id, workspace_id, stored_account)
                     )
-                
+
                 self._check_database_capacity(connection)
                 connection.commit()
-                
+
                 return {
                     "ok": True,
                     "mission_id": mission_id,
@@ -2377,6 +2629,7 @@ class CampaignStore:
         new_product_id: str,
         new_affiliate_url: str,
         confirm: bool = False,
+        account: str | None = None,
     ) -> dict[str, Any]:
         """Return a confirm card. Local cart text changes only after confirm=True. Nothing is submitted to Shopee."""
         workspace_id = _workspace_id(workspace_id)
@@ -2389,10 +2642,12 @@ class CampaignStore:
             _fail("invalid_request")
         with self._connection(write=True) as connection:
             self._begin(connection)
+            from .spec_ops import account_id
+            stored_account = account_id(account)
             video = connection.execute(
                 """SELECT title, cart_items_json FROM video_clips
-                   WHERE video_id = ? AND workspace_id = ?""",
-                (video_id, workspace_id),
+                   WHERE video_id = ? AND workspace_id = ? AND account_id = ?""",
+                (video_id, workspace_id, stored_account),
             ).fetchone()
             if video is None:
                 self._rollback(connection)
@@ -2416,8 +2671,8 @@ class CampaignStore:
                 if not replaced:
                     updated.append({"product_id": new_product_id, "affiliate_url": new_affiliate_url, "replaced_from": old_product_id})
                 connection.execute(
-                    "UPDATE video_clips SET cart_items_json=?, observed_at=? WHERE video_id=? AND workspace_id=?",
-                    (json.dumps(updated, separators=(",", ":")), datetime.now(timezone.utc).isoformat(timespec="seconds"), video_id, workspace_id),
+                    "UPDATE video_clips SET cart_items_json=?, observed_at=? WHERE video_id=? AND workspace_id=? AND account_id=?",
+                    (json.dumps(updated, separators=(",", ":")), datetime.now(timezone.utc).isoformat(timespec="seconds"), video_id, workspace_id, stored_account),
                 )
                 connection.commit()
                 applied = True
