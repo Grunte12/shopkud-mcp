@@ -18,8 +18,33 @@ from urllib.parse import urlsplit
 
 from .campaigns import CampaignError, _PROVENANCE, _decimal_text, _fail, _workspace_id
 
-# Owner-editable assumptions. These are not a copy of Shopee's official rules.
-DEFAULT_EXCLUDED_CATEGORIES = (
+# Cited prohibited-category phrases from Shopee Affiliate TH help.
+# https://help.shopee.co.th/portal/10/article/132895
+# Promoting these earns no commission. The article spells the utilities row "Utilites".
+OFFICIAL_EXCLUDED_CATEGORIES = (
+    "เครื่องประดับ",
+    "โลหะมีค่าเพื่อการลงทุน",
+    "แหวน",
+    "ต่างหู",
+    "กำไลข้อมือ",
+    "กำไลข้อเท้า",
+    "ชาร์ม & จี้",
+    "ชาร์ม",
+    "จี้",
+    "อาวุธ",
+    "บุหรี่",
+    "ยาสูบ",
+    "สิ่งมีชีวิตและซากสัตว์",
+    "การบริการ",
+    "utilites",
+    "donation",
+    "local service",
+    "investment",
+    "นมผง",
+)
+EXCLUDED_CATEGORY_CITATION = "https://help.shopee.co.th/portal/10/article/132895"
+# Older local guesses. Article 132895 does not list them, so they are not applied.
+UNVERIFIED_CATEGORY_GUESSES = (
     "voucher",
     "vouchers",
     "e-voucher",
@@ -30,6 +55,8 @@ DEFAULT_EXCLUDED_CATEGORIES = (
     "บัตรกำนัล",
     "ตั๋ว",
 )
+DEFAULT_EXCLUDED_CATEGORIES = OFFICIAL_EXCLUDED_CATEGORIES
+# Local pacing only. No public Shopee page states these daily caps.
 DEFAULT_POSTING_CAPS = {
     "tiktok": 50,
     "ig": 30,
@@ -38,16 +65,50 @@ DEFAULT_POSTING_CAPS = {
     "yt": 20,
     "spv": 20,
 }
-# Spec pain #9: active days and clips of at least 15 seconds. Threshold numbers
-# above level 1 are local placeholders until the owner confirms the live ladder.
+# TH Creator Level help lists levels 0, 1, and 2, refreshed every Tuesday from the
+# prior 28 days. The quantitative cells did not extract as reliable numbers.
+# https://help.shopee.co.th/portal/10/article/203761
+# Singapore publishes different numbers and is not applied:
+# https://help.shopee.sg/10/article/199073-Guidelines-on-Creator-Levelling-as-a-Shopee-Video-Live-Creator
+VIDEO_LEVEL_CITATION = "https://help.shopee.co.th/portal/10/article/203761"
+VIDEO_LEVEL_SG_CITATION = "https://help.shopee.sg/10/article/199073-Guidelines-on-Creator-Levelling-as-a-Shopee-Video-Live-Creator"
 VIDEO_LEVEL_RULES = (
-    {"level": 1, "active_days": 15, "qualifying_clips": 15, "min_clip_seconds": 15},
-    {"level": 2, "active_days": 20, "qualifying_clips": 30, "min_clip_seconds": 15},
-    {"level": 3, "active_days": 25, "qualifying_clips": 45, "min_clip_seconds": 15},
+    {"level": 1, "active_days": None, "qualifying_clips": None, "min_clip_seconds": None, "quantitative_thresholds": "unverified", "market": "TH"},
+    {"level": 2, "active_days": None, "qualifying_clips": None, "min_clip_seconds": None, "quantitative_thresholds": "unverified", "market": "TH"},
 )
 VIDEO_REFRESH_DAY = "tuesday"
+# Not found in the 2026 TH payout article. The warning stays local.
+# https://help.shopee.co.th/portal/10/article/142437
 EARNINGS_EXPIRY_DAYS = 180
 EARNINGS_WARN_DAYS = 30
+PAYOUT_CITATION = "https://help.shopee.co.th/portal/10/article/142437"
+PAYOUT_FACTS = {
+    "citation": PAYOUT_CITATION,
+    "kyc_verified_label": "ยืนยัน (Valid)",
+    "minimum_accumulated_thb": 100,
+    "non_vat_individual": "twice_a_week_new_bills_only",
+    "vat_or_juristic": "twice_a_month_including_historical_bills",
+    "next_cycle_phrase": "รอบการจ่ายถัดไป",
+    "expiry_days": None,
+    "expiry_evidence": "unverified",
+}
+ASSUMPTIONS = {
+    "excluded_categories": {"evidence": "cited", "citation": EXCLUDED_CATEGORY_CITATION, "applied": list(OFFICIAL_EXCLUDED_CATEGORIES)},
+    "category_guesses": {"evidence": "unverified", "applied": False, "labels": list(UNVERIFIED_CATEGORY_GUESSES)},
+    "video_levels": {
+        "evidence": "partial",
+        "citation": VIDEO_LEVEL_CITATION,
+        "levels": [0, 1, 2],
+        "refresh_day": VIDEO_REFRESH_DAY,
+        "refresh_day_evidence": "cited",
+        "quantitative_thresholds": "unverified",
+        "min_clip_seconds": None,
+        "sg_not_applied": VIDEO_LEVEL_SG_CITATION,
+    },
+    "earnings_expiry": {"evidence": "unverified", "assumed_days": EARNINGS_EXPIRY_DAYS, "citation_checked": PAYOUT_CITATION},
+    "payout_schedule": {"evidence": "cited", **PAYOUT_FACTS},
+    "posting_caps": {"evidence": "unverified", "caps": dict(DEFAULT_POSTING_CAPS)},
+}
 REASON_HINTS = frozenset({
     "cancelled", "returned", "self", "household", "another_link", "voucher",
     "excluded_category", "indirect", "shop_cancel", "seller_cancel",
@@ -384,12 +445,20 @@ def sanitize_category(value: Any) -> str | None:
     return text
 
 
+def _label_in(folded: str, label: str) -> bool:
+    needle = label.casefold()
+    if len(needle) <= 2:
+        return re.search(rf"(?<!\S){re.escape(needle)}(?!\S)", folded) is not None
+    return needle in folded
+
+
 def excluded_category(category: str | None, extra: tuple[str, ...] = ()) -> str | None:
+    """Match the cited TH prohibited-category list. Unverified guesses are not applied."""
     if not category:
         return None
     folded = category.casefold()
     for label in (*DEFAULT_EXCLUDED_CATEGORIES, *extra):
-        if label.casefold() in folded:
+        if _label_in(folded, label):
             return label
     return None
 
@@ -1176,6 +1245,9 @@ class SpecOps:
             "as_of": row[5],
             "balance_since": balance_since,
             "expiry_rule": "local_assumption_180_days",
+            "expiry_evidence": "unverified",
+            "payout_citation": PAYOUT_CITATION,
+            "payout_facts": PAYOUT_FACTS,
             "provenance": _PROVENANCE,
         }
 
@@ -1225,7 +1297,9 @@ class SpecOps:
         as_of = row[3] if row else None
         next_rule = None
         for rule in VIDEO_LEVEL_RULES:
-            if active_days < rule["active_days"] or clips < rule["qualifying_clips"] or (level or 0) < rule["level"]:
+            day_gap = rule["active_days"] is not None and active_days < rule["active_days"]
+            clip_gap = rule["qualifying_clips"] is not None and clips < rule["qualifying_clips"]
+            if day_gap or clip_gap or (level or 0) < rule["level"]:
                 next_rule = rule
                 break
         return {
@@ -1235,8 +1309,13 @@ class SpecOps:
             "qualifying_clips": clips,
             "next_threshold": next_rule,
             "refresh_day": VIDEO_REFRESH_DAY,
-            "min_clip_seconds": 15,
+            "refresh_day_evidence": "cited",
+            "refresh_day_citation": VIDEO_LEVEL_CITATION,
+            "min_clip_seconds": None,
+            "min_clip_seconds_evidence": "unverified",
             "rules_are_assumptions": True,
+            "quantitative_thresholds": "unverified",
+            "levels_observed": [0, 1, 2],
             "source": "ext" if row else "cache",
             "as_of": as_of,
             "provenance": _PROVENANCE,
@@ -1328,6 +1407,7 @@ class SpecOps:
             "cap": limit,
             "ok_to_post": count < limit,
             "remaining": max(0, limit - count),
+            "cap_evidence": "owner_set" if cap is not None or saved else "unverified_local",
             "source": "cache",
             "as_of": _now(),
             "provenance": _PROVENANCE,

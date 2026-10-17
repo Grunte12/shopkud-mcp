@@ -120,7 +120,11 @@ function run() {
   const newPort = safety.ports[1];
   const command = { type: "command", id: "b".repeat(32), page_id: "7:" + "a".repeat(32), operation: "snapshot", arguments: {} };
   newPort.onMessage.fire(command);
-  assert.equal(safety.sentToTabs.filter(x => x.message.type === "shopkud-command").length, 1);
+  newPort.onMessage.fire({...command, id: "c".repeat(32), operation: "selector_health"});
+  newPort.onMessage.fire({...command, id: "d".repeat(32), operation: "create_link_with_subids"});
+  assert.equal(safety.sentToTabs.filter(x => x.message.type === "shopkud-command").length, 3);
+  assert.ok(safety.sentToTabs.some(x => x.message.operation === "selector_health"));
+  assert.ok(safety.sentToTabs.some(x => x.message.operation === "create_link_with_subids"));
   oldPort.onDisconnect.fire();
   assert.equal(safety.timers.size, 0, "stale port disconnect cannot schedule over current port");
   assert.equal(safety.ports.length, 2, "stale port does not replace or drop current port");

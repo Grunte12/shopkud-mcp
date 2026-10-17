@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from shopkud_mcp.campaigns import CampaignError, CampaignStore
-from shopkud_mcp.spec_ops import classify_cancellation, excluded_category, project_offer
+from shopkud_mcp.spec_ops import ASSUMPTIONS, classify_cancellation, excluded_category, project_offer
 
 
 WORKSPACE = "0123456789abcdef" * 2
@@ -81,8 +81,8 @@ class FullSpecTests(unittest.TestCase):
         projected = project_offer({
             "product_id": "26916762523",
             "shop_id": "12345",
-            "name": "คูปองส่วนลด",
-            "category": "E-Voucher",
+            "name": "นมผงสำหรับเด็ก",
+            "category": "นมผงทุกชนิด",
             "price_min_thb": 50,
             "official": False,
             "channels": [
@@ -96,7 +96,17 @@ class FullSpecTests(unittest.TestCase):
         self.assertTrue(projected["excluded_category"])
         self.assertIn("excluded_category", projected["warnings"])
         self.assertFalse(projected["commission_eligible"])
-        self.assertEqual(excluded_category("บัตรกำนัลร้านค้า"), "บัตรกำนัล")
+        self.assertEqual(excluded_category("นมผงทุกชนิด"), "นมผง")
+        self.assertEqual(excluded_category("หมวดหมู่เครื่องประดับ"), "เครื่องประดับ")
+        self.assertIsNone(excluded_category("บัตรกำนัลร้านค้า"))
+        self.assertIsNone(excluded_category("E-Voucher"))
+        self.assertEqual(excluded_category("Utilites"), "utilites")
+        self.assertIsNone(excluded_category("utilities"))
+        self.assertEqual(excluded_category("จี้"), "จี้")
+        self.assertEqual(ASSUMPTIONS["excluded_categories"]["evidence"], "cited")
+        self.assertIn("132895", ASSUMPTIONS["excluded_categories"]["citation"])
+        self.assertFalse(ASSUMPTIONS["category_guesses"]["applied"])
+        self.assertEqual(ASSUMPTIONS["earnings_expiry"]["evidence"], "unverified")
 
     def test_find_link_by_product_code_and_channel(self):
         self.link()
@@ -109,10 +119,16 @@ class FullSpecTests(unittest.TestCase):
         self.offer()
         self.offer(item_id="26916762524", title="กระติกน้ำเดินป่า", price=249, as_of="2026-10-15T00:00:00+00:00")
         self.offer(item_id="26916762524", title="กระติกน้ำเดินป่า", price=219, as_of="2026-10-16T00:00:00+00:00")
-        self.offer(item_id="999", title="คูปองอาหาร", category="voucher", rate_social=20, official=False, extra_comm=0)
+        prohibited = self.offer(item_id="999", title="อาวุธทดสอบ", category="อาวุธ", rate_social=20, official=False, extra_comm=0)
+        self.assertTrue(prohibited["excluded_category"])
+        voucher = self.store.record_offer(
+            WORKSPACE, "998", title="คูปองอาหาร", category="voucher", official=False,
+            price=10, rate_social=20, extra_comm=0, stock="in_stock",
+        )
+        self.assertFalse(voucher["excluded_category"])
         found = self.store.search_offers(WORKSPACE, keyword="กระติก", sort="commission", official=True, extra_comm=True, min_rate=5)
         self.assertGreaterEqual(found["count"], 1)
-        self.assertTrue(all("คูปอง" not in item["title"] for item in found["items"]))
+        self.assertTrue(all(item["item_id"] != "999" for item in found["items"]))
         history = self.store.get_price_history(WORKSPACE, "26916762524")
         self.assertEqual([point["price"] for point in history["points"]], [249.0, 219.0])
         media = self.store.get_product_media(WORKSPACE, "26916762523")
@@ -146,7 +162,8 @@ class FullSpecTests(unittest.TestCase):
     def test_cancellation_rules_use_aggregates_only(self):
         self.assertEqual(classify_cancellation({"buyer_class": "household", "status": "cancelled"})["likely_reason"], "self_or_household_purchase")
         self.assertEqual(classify_cancellation({"reason_hint": "another_link"})["likely_reason"], "buyer_clicked_another_link")
-        self.assertEqual(classify_cancellation({"category": "gift card", "status": "completed"})["likely_reason"], "excluded_category")
+        self.assertEqual(classify_cancellation({"category": "บุหรี่", "status": "completed"})["likely_reason"], "excluded_category")
+        self.assertNotEqual(classify_cancellation({"category": "gift card", "status": "completed"})["likely_reason"], "excluded_category")
         self.assertEqual(classify_cancellation({"reason_hint": "voucher", "commission_thb": "0", "orders": 2})["likely_reason"], "voucher_fully_paid")
         self.assertEqual(classify_cancellation({"status": "cancelled"})["likely_reason"], "order_cancelled_or_returned")
         csv_text = "SubID,Commission,Orders,Status,Reason,Category,Buyer\n" \
@@ -193,7 +210,11 @@ class FullSpecTests(unittest.TestCase):
         level = self.store.record_video_level(WORKSPACE, level=0, active_days=10, qualifying_clips=4)
         self.assertEqual(level["next_threshold"]["level"], 1)
         self.assertEqual(level["refresh_day"], "tuesday")
+        self.assertEqual(level["refresh_day_evidence"], "cited")
+        self.assertIsNone(level["min_clip_seconds"])
+        self.assertEqual(level["quantitative_thresholds"], "unverified")
         self.assertTrue(level["rules_are_assumptions"])
+        self.assertIn("203761", level["refresh_day_citation"])
         old = (datetime.now(timezone.utc) - timedelta(days=160)).isoformat(timespec="seconds")
         earnings = self.store.record_earnings(WORKSPACE, pending="10.00", validated="5.00", paid="1.00", kyc_status="verified", as_of=old)
         self.assertEqual(earnings["expiring"][0]["kind"], "six_month_window")
@@ -211,6 +232,10 @@ class FullSpecTests(unittest.TestCase):
         budget = self.store.posting_budget(WORKSPACE, "tiktok")
         self.assertEqual(budget["today"], 1)
         self.assertFalse(budget["ok_to_post"])
+        self.assertEqual(budget["cap_evidence"], "owner_set")
+        guessed = self.store.posting_budget(WORKSPACE, "ig")
+        self.assertEqual(guessed["cap"], 30)
+        self.assertEqual(guessed["cap_evidence"], "unverified_local")
         exported = self.store.export_data(WORKSPACE, "links", format="csv")
         self.assertTrue(exported["formula_neutralized"])
         self.assertIn("Budget1", exported["body"])

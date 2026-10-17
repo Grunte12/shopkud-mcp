@@ -46,7 +46,7 @@
     const channels=[];
     for(const table of [...main.querySelectorAll("table")].slice(0,10)) {
       if(!eligible(table))continue;
-      const headers=[...table.querySelectorAll("thead th")];
+      const headers=[...table.querySelectorAll("thead th")].length?[...table.querySelectorAll("thead th")]:[...table.querySelectorAll("[role=columnheader]")];
       const extraLayout=headers.length===4 && headers[0].textContent.includes("ประเภทช่องทาง") && headers[2].textContent.includes("ค่าคอมช้อปปี้") && headers[3].textContent.includes("โดยประมาณ") && Boolean(headers[1].querySelector(".seller-comm-title"));
       const shopeeOnly=headers.length===3 && clip(headers[0])==="ประเภทช่องทาง" && clip(headers[1])==="ค่าคอมช้อปปี้" && clip(headers[2])==="ค่าคอมมิชชั่นโดยประมาณ" && !table.querySelector("thead .seller-comm-title");
       if(!extraLayout && !shopeeOnly)continue;
@@ -96,7 +96,7 @@
     if(attempted.has(context.url))return fail("link_dialog_attempt_unconfirmed",true);
     const visible=node=>{const style=doc.defaultView.getComputedStyle(node);return node.getClientRects().length && style.display!=="none" && style.visibility!=="hidden";};
     if([...doc.querySelectorAll('[role="dialog"]')].some(visible))return fail("other_dialog_open");
-    const buttons=[...doc.querySelectorAll("main .detail-info button")].filter(node=>visible(node) && !node.disabled && node.getAttribute("aria-disabled")!=="true" && /^(?:รับลิงก์|เอา\s*ลิงก์|get\s*link)$/iu.test(node.innerText.trim()));
+    const buttons=[...doc.querySelectorAll("main .detail-info button, main .detail-info [role=button]")].filter(node=>visible(node) && !node.disabled && node.getAttribute("aria-disabled")!=="true" && /^(?:รับลิงก์|เอา\s*ลิงก์|get\s*link)$/iu.test(((node.getAttribute("aria-label") || node.innerText || "")).replace(/\s+/gu," ").trim()));
     if(buttons.length!==1)return {...fail("link_button_unavailable"),link_button_evidence:[...doc.querySelectorAll("main .detail-info button")].filter(visible).slice(0,8).map(node=>({label:node.innerText.trim().slice(0,80),disabled:node.disabled}))};
     const check=read(doc,value,Core);
     if(!stillCurrent() || !check.ok || check.product_id!==initial.product_id || check.shop_id!==initial.shop_id)return fail("page_changed");

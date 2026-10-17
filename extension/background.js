@@ -269,7 +269,7 @@ function connect(automatic=false) {
         });return;
       }
       const page=pages.get(message.page_id);
-      if(!page || !["snapshot","detail","selections","prepare","apply","export","clear","pagination","navigate","scan","scan_read","review","search_scan"].includes(message.operation)) {
+      if(!page || !["snapshot","detail","selections","prepare","apply","export","clear","pagination","navigate","scan","scan_read","review","search_scan","selector_health","create_link_with_subids","batch_create_links","verify_link"].includes(message.operation)) {
         channel.postMessage({type:"result",id:message.id,result:{ok:false,error:"page_or_operation_unavailable"}});return;
       }
       inFlight.set(message.id,{page,channel});

@@ -48,6 +48,7 @@ Python 3.11+ with the package installed (`pip install -e .`):
 python3 -m unittest discover -s tests -p 'test_*.py'
 node tests/test_subid.cjs
 node tests/test_linkcapture.cjs
+node tests/test_selector_health.cjs
 node tests/test_surfaces.cjs
 node tests/background-reconnect.cjs
 node tests/entry-reuse.cjs
@@ -73,10 +74,10 @@ No test calls Shopee or opens an affiliate short link.
 3. Ownership is true only when the short code is visible on a My Links-style page or matches a creation receipt. The page URL and row markup must be confirmed.
 4. Commission tables are the ones `extension/detail.js` already parses (`โซเชียลมีเดีย`, `ช้อปปี้ไลฟ์`, `ช้อปปี้วีดีโอ`). A layout change needs a fixture before the parser changes.
 5. Earnings, mission, and video-level labels in `extension/surfaces.js` are Thai/English guesses. The content script is injected only on `https://affiliate.shopee.co.th/*`. The Shopee Video creator host is not added until the owner confirms it.
-6. Video level steps above "15 active days and 15 clips of at least 15 seconds", and the Tuesday refresh, are local placeholders in `shopkud_mcp/spec_ops.py` (`VIDEO_LEVEL_RULES`, `VIDEO_REFRESH_DAY`).
-7. The excluded-category list (voucher, gift card, คูปอง, บัตรกำนัล, ตั๋ว) is a local warning list, not Shopee's official exclusion table.
-8. The 180-day earnings warning is a local assumption (`EARNINGS_EXPIRY_DAYS`).
-9. Daily posting caps default to tiktok 50, ig 30, fb 40, x 100, yt 20, spv 20, and can be changed with `set_posting_cap`.
+6. Creator levels are 0, 1, and 2, and the refresh day is Tuesday, from TH help article 203761. The numeric day, order, and clip thresholds did not extract and stay unverified (`quantitative_thresholds`, `min_clip_seconds`). Singapore article 199073 is cited and not applied.
+7. The excluded-category warning uses the prohibited list in TH help article 132895 (jewelry, weapons, tobacco, live animals, services, infant formula, including the printed spelling `Utilites`). Voucher and gift-card strings are not in that article and are not applied. A `voucher` reason hint still classifies a cancellation.
+8. The 180-day earnings warning is still a local assumption. TH payout article 142437 confirms the 100 baht minimum, `ยืนยัน (Valid)`, and the twice-a-week / twice-a-month schedule. It does not state a 180-day expiry.
+9. Daily posting caps default to tiktok 50, ig 30, fb 40, x 100, yt 20, spv 20. Those numbers are unverified. `set_posting_cap` stores an owner-set cap.
 10. `account` separates rows in the local database. It does not switch Chrome profiles. The extension still uses whichever affiliate session is open.
 11. Replacement search, price history, and product media use stored extension snapshots only. There is no live catalog crawl and no Open API `productOfferV2`.
 12. Cancellation classes use aggregate status plus a closed hint vocabulary (`self`, `household`, `another_link`, `voucher`, `excluded_category`, `indirect`, `shop_cancel`, `seller_cancel`, `payment_failed`, `buyer_cancel`). Free-text reason cells are stored as `unrecognized`, not as the original text. Order ids and buyer names are not stored.

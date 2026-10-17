@@ -115,6 +115,13 @@
     return false;
   }
   async function execute(operation,args,command) {
+    if(operation==="selector_health") {
+      if(args && typeof args==="object" && !Array.isArray(args) && Object.keys(args).length===0 && window.ShopKudDiagnose) {
+        return window.ShopKudDiagnose.diagnose(document);
+      }
+      if(!window.ShopKudDiagnose)return fail("diagnose_module_not_loaded");
+      return fail("invalid_input");
+    }
     if(operation==="read_earnings" || operation==="read_video_level" || operation==="plan_video_draft" || operation==="plan_cart_swap") {
       if(!args || typeof args!=="object" || Array.isArray(args))return fail("invalid_input");
       if(!window.ShopKudSurfaces)return fail("surfaces_module_not_loaded");

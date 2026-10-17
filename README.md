@@ -156,10 +156,19 @@ node tests/background-reconnect.cjs
 node tests/entry-reuse.cjs
 node tests/listing-entry.cjs
 node tests/offer-link-entry.cjs
+node tests/test_subid.cjs
+node tests/test_create_guard.cjs
+node tests/test_surfaces.cjs
+node tests/test_linkcapture.cjs
+node tests/test_selector_health.cjs
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python evals/broker-cancellation.py
 ```
 
-DOM parser suites such as `tests/detail-evals.cjs` and `tests/listing-evals.cjs`
+DOM parser suites (`tests/detail-evals.cjs`, `tests/listing-evals.cjs`,
+`tests/hidden-link-evals.cjs`, `tests/offer-link-evals.cjs`,
+`tests/pagination-evals.cjs`, `tests/purchase-evals.cjs`,
+`tests/review-evals.cjs`, `tests/review-data-evals.cjs`, `tests/search-evals.cjs`,
+and `tests/selector-health-evals.cjs`)
 require Playwright with its Chromium installed in the development environment.
 They use synthetic HTML and block external requests. The native-messaging
 integration fixtures also require `SHOPKUD_TEST_PYTHON` pointing to a Python

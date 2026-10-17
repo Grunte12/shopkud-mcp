@@ -8,6 +8,10 @@ assert.equal(earnings.pending, "1200.50");
 assert.equal(earnings.validated, "80.00");
 assert.equal(earnings.paid, "10");
 assert.equal(earnings.opens_links, false);
+assert.equal(earnings.kyc_status, "unknown");
+const verified = surfaces.readEarnings("ยืนยัน (Valid)\nรอบการจ่ายถัดไป");
+assert.equal(verified.kyc_status, "verified");
+assert.equal(verified.opens_links, false);
 
 const level = surfaces.readVideoLevel("เลเวล 2\nวันใช้งาน 16\nคลิปผ่านเกณฑ์ 18");
 assert.equal(level.level, 2);

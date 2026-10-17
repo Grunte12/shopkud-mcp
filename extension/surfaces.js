@@ -5,8 +5,8 @@
     pending: ["รอดำเนินการ", "Pending"],
     validated: ["ตรวจสอบแล้ว", "Validated"],
     paid: ["จ่ายแล้ว", "Paid"],
-    kyc: ["KYC", "การยืนยันตัวตน"],
-    next_payout: ["วันจ่ายถัดไป", "Next payout"],
+    kyc: ["KYC", "การยืนยันตัวตน", "ยืนยัน (Valid)"],
+    next_payout: ["วันจ่ายถัดไป", "Next payout", "รอบการจ่ายถัดไป"],
     level: ["เลเวล", "Level"],
     active_days: ["วันใช้งาน", "Active days"],
     qualifying_clips: ["คลิปผ่านเกณฑ์", "Qualifying clips"],
@@ -33,18 +33,18 @@
   }
 
   function readEarnings(text, labels) {
-    const found = readLabeledAmounts(text, labels || DEFAULT_LABELS);
-    const kycRaw = found.kyc;
+    const source = String(text || "");
+    const found = readLabeledAmounts(source, labels || DEFAULT_LABELS);
     return {
       ok: true,
       pending: found.pending || null,
       validated: found.validated || null,
       paid: found.paid || null,
       next_payout: null,
-      kyc_status: kycRaw ? "unknown" : "unknown",
+      kyc_status: /ยืนยัน\s*\(\s*Valid\s*\)/u.test(source) ? "verified" : "unknown",
       source: "ext",
       opens_links: false,
-      assumptions: ["earnings_labels"],
+      assumptions: ["earnings_labels_mixed"],
     };
   }
 

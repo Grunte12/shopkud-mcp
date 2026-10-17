@@ -64,8 +64,24 @@
       input.getAttribute && input.getAttribute("name"),
       input.getAttribute && input.getAttribute("id")
     ];
+    const id = input.getAttribute && input.getAttribute("id");
+    const labelledby = new Set(String((input.getAttribute && input.getAttribute("aria-labelledby")) || "").split(/\s+/u).filter(Boolean));
+    if (id || labelledby.size) {
+      let root = input;
+      while (root && root.parentElement) root = root.parentElement;
+      const visit = node => {
+        for (const child of node && node.children ? [...node.children] : []) {
+          const childId = child.getAttribute && child.getAttribute("id");
+          const childTag = (child.tagName || "").toUpperCase();
+          if (id && childTag === "LABEL" && child.getAttribute && child.getAttribute("for") === id) parts.push(child.textContent || "");
+          if (childId && labelledby.has(childId)) parts.push(child.textContent || "");
+          visit(child);
+        }
+      };
+      visit(root);
+    }
     let node = input.parentElement;
-    while (node) {
+    while (node && node !== dialog && !(node.getAttribute && node.getAttribute("role") === "dialog")) {
       const children = node.children ? [...node.children] : [];
       for (const child of children) {
         const tag = (child.tagName || "").toUpperCase();
@@ -73,7 +89,6 @@
           parts.push(child.textContent || "");
         }
       }
-      if (node === dialog || (node.getAttribute && node.getAttribute("role") === "dialog")) break;
       node = node.parentElement;
     }
     return parts.filter(Boolean).join(" ");
@@ -184,9 +199,10 @@
   }
 
   function findCreateButton(dialog) {
-    const buttons = [...dialog.querySelectorAll("button")].filter(button => {
+    const buttons = [...dialog.querySelectorAll("button, [role=button]")].filter(button => {
       if (button.disabled || !button.getClientRects().length) return false;
-      const text = (button.innerText || button.textContent || "").trim();
+      const named = (button.getAttribute && button.getAttribute("aria-label")) || button.innerText || button.textContent || "";
+      const text = String(named).replace(/\s+/gu, " ").trim();
       return config.create_button_text.some(pattern => new RegExp(`^${pattern}$`, "iu").test(text));
     });
     if (buttons.length === 0) return {ok: false, error: "create_button_not_found", status: "not_attempted"};

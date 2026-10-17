@@ -19,7 +19,7 @@ The requirement-by-requirement checklist, test commands, and live-UI assumptions
 
 ## Tests
 
-`python3 -m unittest discover -s tests -p 'test_*.py'` — 198 tests, passing.
+`python3 -m unittest discover -s tests -p 'test_*.py'` — 199 tests, passing.
 
 Node checks: `tests/test_subid.cjs`, `tests/test_create_guard.cjs`, `tests/test_linkcapture.cjs`, `tests/test_surfaces.cjs`, `tests/background-reconnect.cjs`, `tests/entry-reuse.cjs`, `tests/listing-entry.cjs`, `tests/offer-link-entry.cjs`.
 
@@ -41,6 +41,12 @@ Node checks: `tests/test_subid.cjs`, `tests/test_create_guard.cjs`, `tests/test_
 
 With Playwright Chromium: `tests/hidden-link-evals.cjs`, `tests/offer-link-evals.cjs`, `tests/detail-evals.cjs`, `tests/listing-evals.cjs`.
 
+## Selector health and public sources
+
+`extension/diagnose.js` reports which catalog patterns matched. It does not click, open short links, or return field values. The Mac steps are in [LIVE_TEST.md](LIVE_TEST.md). Citations and the remaining guesses are in [SELECTOR_EVIDENCE.md](SELECTOR_EVIDENCE.md).
+
+Evidence-backed and now applied: TH prohibited categories (article 132895), the SG Get Link / Convert / Copy Link / five-Sub-ID words (article 191696), the TH payout facts and `ยืนยัน (Valid)` (article 142437), and creator levels 0–2 with a Tuesday refresh (article 203761). Quantitative TH level cells, the 15-second clip rule, the 180-day expiry, posting caps, My Links markup, and the TH SubID input names remain unverified. Singapore creator numbers are cited and not used as the TH ladder.
+
 ## Owner verification
 
-Confirm the Get Link SubID selectors, My Links markup, commission table labels, earnings/mission/video labels, and whether a Shopee Video creator page exists on a host other than `affiliate.shopee.co.th`. The level ladder above 15 active days / 15 clips, the excluded-category list, the 180-day payout warning, and the default posting caps are local assumptions in `shopkud_mcp/spec_ops.py` and `extension/surfaces.js`.
+Run [LIVE_TEST.md](LIVE_TEST.md) and return the redacted diagnostic JSON. That is what can promote a `repo_fixture` or `unverified` pattern. Do not send page HTML, cookies, or an unredacted short link.

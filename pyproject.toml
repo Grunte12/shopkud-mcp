@@ -23,4 +23,4 @@ namespaces = false
 shopkud_mcp = ["workflows/affiliate.json", "skills/shopkud-affiliate/SKILL.md", "skills/shopkud-affiliate/references/workflow.md"]
 
 [tool.setuptools.data-files]
-"share/shopkud-mcp/extension" = ["extension/manifest.json", "extension/core.js", "extension/linkcapture.js", "extension/detail.js", "extension/pagination.js", "extension/search.js", "extension/review-data.js", "extension/review.js", "extension/content.js", "extension/background.js", "extension/listing.js", "extension/listing-access.html", "extension/listing-access.js", "extension/subid.js", "extension/verify.js", "extension/surfaces.js"]
+"share/shopkud-mcp/extension" = ["extension/manifest.json", "extension/core.js", "extension/linkcapture.js", "extension/detail.js", "extension/pagination.js", "extension/search.js", "extension/review-data.js", "extension/review.js", "extension/content.js", "extension/background.js", "extension/listing.js", "extension/listing-access.html", "extension/listing-access.js", "extension/subid.js", "extension/verify.js", "extension/surfaces.js", "extension/selectors.js", "extension/diagnose.js"]

@@ -96,10 +96,41 @@ class PaginationToolsTests(unittest.IsolatedAsyncioTestCase):
         schema=self.tools['get_scan_products'].parameters['properties']
         self.assertEqual(schema['query']['maxLength'],120)
         self.assertEqual(schema['view']['enum'],['full','brief'])
-        self.assertEqual(len(self.tools),54)
+        self.assertEqual(len(self.tools),55)
+        self.assertIn("selector_health", self.tools)
         self.assertIn("get_offer", self.tools)
         self.assertIn("find_link", self.tools)
         self.assertIn("suggest_replacement", self.tools)
+
+    async def test_selector_health_strips_values_and_does_not_click(self):
+        self.broker.response={
+            "ok":True,
+            "opens_links":False,
+            "clicked":False,
+            "pii":False,
+            "page_kind":"detail",
+            "checks":[{
+                "id":"create_button","status":"matched","count":1,"method":"accessible_name",
+                "evidence":"cited","pattern_ids":["sg_get_link"],"label":"buyer@example.com",
+            }],
+            "short_link_count":2,
+            "href":"https://s.shopee.co.th/SecretCode1",
+            "buyer_email":"buyer@example.com",
+        }
+        result=await self.tool("selector_health")(PAGE_ID)
+        encoded=json.dumps(result)
+        self.assertNotIn("buyer@example.com", encoded)
+        self.assertNotIn("SecretCode1", encoded)
+        self.assertEqual(result["opens_links"], False)
+        self.assertEqual(result["clicked"], False)
+        self.assertEqual(result["pii"], False)
+        self.assertEqual(result["checks"][0]["pattern_ids"], ["sg_get_link"])
+        self.assertEqual(self.broker.calls, [(PAGE_ID, "selector_health", {}, 15)])
+        self.broker.calls.clear()
+        self.broker.response={"ok":True,"clicked":True,"opens_links":False,"buyer_email":"buyer@example.com"}
+        refused=await self.tool("selector_health")(PAGE_ID)
+        self.assertEqual(refused["error"], "diagnostic_not_read_only")
+        self.assertNotIn("buyer@example.com", json.dumps(refused))
 
     async def test_review_schema_is_strict_bounded_and_defaults_to_brief(self):
         schema=self.tools['get_review_plan'].parameters['properties']

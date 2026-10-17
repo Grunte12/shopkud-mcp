@@ -126,6 +126,67 @@ class BearerAuth:
         return await self.app(scope, receive, send)
 
 
+_HEALTH_KINDS = frozenset({"detail", "list", "affiliate_other", "other", "unknown"})
+_HEALTH_EVIDENCE = frozenset({"cited", "repo_fixture", "unverified", "mixed"})
+_HEALTH_TOKEN = re.compile(r"[a-z0-9_]{1,64}\Z")
+
+
+def sanitize_selector_health(result: dict) -> dict:
+    """Keep selector ids and counts. Drop values, URLs, and any other field."""
+    if not isinstance(result, dict):
+        return {"ok": False, "error": "invalid_extension_result", "opens_links": False, "clicked": False, "pii": False}
+    if result.get("clicked") is True or result.get("opens_links") is True:
+        return {"ok": False, "error": "diagnostic_not_read_only", "opens_links": False, "clicked": bool(result.get("clicked")), "pii": False}
+    if result.get("ok") is False:
+        error = result.get("error")
+        if type(error) is not str or not _HEALTH_TOKEN.fullmatch(error):
+            error = "invalid_extension_result"
+        return {"ok": False, "error": error, "opens_links": False, "clicked": False, "pii": False}
+    checks = []
+    for row in result.get("checks") if type(result.get("checks")) is list else []:
+        if type(row) is not dict or len(checks) >= 40:
+            continue
+        ident = row.get("id")
+        status = row.get("status")
+        method = row.get("method")
+        evidence = row.get("evidence")
+        count = row.get("count")
+        if type(ident) is not str or not _HEALTH_TOKEN.fullmatch(ident) or status not in {"matched", "missed"}:
+            continue
+        if type(count) is not int or not 0 <= count <= 1000:
+            count = 0
+        if type(method) is not str or not _HEALTH_TOKEN.fullmatch(method):
+            method = "unknown"
+        if evidence not in _HEALTH_EVIDENCE:
+            evidence = "unverified"
+        patterns = []
+        raw_patterns = row.get("pattern_ids") if type(row.get("pattern_ids")) is list else []
+        for item in raw_patterns:
+            if type(item) is str and _HEALTH_TOKEN.fullmatch(item) and item not in patterns and len(patterns) < 8:
+                patterns.append(item)
+        checks.append({
+            "id": ident,
+            "status": status,
+            "count": count,
+            "method": method,
+            "evidence": evidence,
+            "pattern_ids": patterns,
+        })
+    kind = result.get("page_kind") if result.get("page_kind") in _HEALTH_KINDS else "unknown"
+    short_count = result.get("short_link_count")
+    if type(short_count) is not int or not 0 <= short_count <= 1000:
+        short_count = 0
+    return {
+        "ok": True,
+        "opens_links": False,
+        "clicked": False,
+        "pii": False,
+        "page_kind": kind,
+        "checks": checks,
+        "short_link_count": short_count,
+    }
+
+
 def create_service(config, broker=None, workspace_store=None, campaign_store=None):
     broker = broker or Broker(Path(config["socket_path"]), config["allowed_origins"])
     enabled=config.get("workspace_enabled",False) or workspace_store is not None
@@ -703,6 +764,13 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
             check_target=check_target,
             check_ownership=check_ownership,
         )
+
+    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False,
+                                            idempotentHint=True, openWorldHint=False))
+    async def selector_health(page_id: _PageId) -> dict:
+        """ตรวจว่าตัวเลือกบนหน้า affiliate ตรงหรือไม่ โดยไม่อ่านค่าในช่อง ไมคลิก และไม่เปิดลิงก์."""
+        result = await call(page_id, "selector_health", {}, timeout=15)
+        return sanitize_selector_health(result)
 
     @server.tool()
     async def batch_create_links(
@@ -1336,7 +1404,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         workspace_id: str,
         account: Annotated[str | None, Field(strict=True, max_length=64)] = None,
     ) -> dict:
-        """Video level, active days, qualifying clips, and the next local threshold. Tuesday refresh and level numbers above the spec's 15/15 rule are assumptions."""
+        """Video level from an extension snapshot. Tuesday refresh is cited; TH day and clip thresholds are unverified."""
         known = local("workspace", "get_workspace", workspace_id, "brief")
         if known.get("ok") is False:
             return known
