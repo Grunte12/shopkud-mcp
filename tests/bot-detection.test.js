@@ -11,7 +11,11 @@ async function testBotDetection() {
 
   let browser;
   try {
-    browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+    const cdpUrl = process.env.CHROME_CDP_URL || '';
+    if (!cdpUrl || /:9222(\/|$)/.test(cdpUrl)) {
+      throw new Error('Set CHROME_CDP_URL to a throwaway Chrome. Refusing port 9222, the dedicated affiliate profile.');
+    }
+    browser = await chromium.connectOverCDP(cdpUrl, { noDefaults: true });
     const context = browser.contexts()[0];
     const page = await context.newPage();
 

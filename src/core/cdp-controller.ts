@@ -33,7 +33,12 @@ export class CDPController {
 
   async connect(): Promise<void> {
     try {
-      this.browser = await chromium.connectOverCDP(this.cdpUrl);
+      this.browser = await Promise.race([
+        chromium.connectOverCDP(this.cdpUrl, { noDefaults: true }),
+        new Promise<never>((_, reject) => {
+          setTimeout(() => reject(new Error('CDP connect timed out')), 10000);
+        }),
+      ]);
       const contexts = this.browser.contexts();
       
       if (contexts.length === 0) {
@@ -74,15 +79,14 @@ export class CDPController {
   }
 
   async disconnect(): Promise<void> {
-    if (this.browser) {
-      try {
-        await this.browser.close();
-      } catch (error) {
-        console.error('Error closing browser:', error);
-      }
-      this.browser = null;
-      this.page = null;
-      this.browserFlows = null;
+    // connectOverCDP browser.close() drops this client's socket. It does not
+    // quit Chrome, so the dedicated affiliate window stays open.
+    const browser = this.browser;
+    this.browser = null;
+    this.page = null;
+    this.browserFlows = null;
+    if (browser) {
+      await browser.close().catch(() => {});
     }
   }
 

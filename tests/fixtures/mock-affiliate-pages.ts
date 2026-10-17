@@ -8,13 +8,53 @@
  */
 
 import express from 'express';
+import type { Server } from 'http';
+import { pathToFileURL } from 'url';
 
-export function createMockAffiliateServer(port: number = 3002) {
+export interface MockAffiliateState {
+  createCalls: number;
+  offerDetailCalls: number;
+  reportExportCalls: number;
+  reportListCalls: number;
+}
+
+export function createMockAffiliateServer() {
   const app = express();
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
 
+  const state: MockAffiliateState = {
+    createCalls: 0,
+    offerDetailCalls: 0,
+    reportExportCalls: 0,
+    reportListCalls: 0,
+  };
   const links = new Map<string, any>();
+
+  app.get('/fixture/captcha', (_req, res) => {
+    res.send(`<!DOCTYPE html><html><body>
+      <h1>Verify</h1>
+      <iframe src="/captcha/frame" title="captcha" style="width:320px;height:120px;display:block"></iframe>
+    </body></html>`);
+  });
+
+  app.get('/captcha/frame', (_req, res) => {
+    res.send('<html><body>captcha</body></html>');
+  });
+
+  app.get('/fixture/empty', (_req, res) => {
+    res.send('<!DOCTYPE html><html><body><h1>Empty</h1></body></html>');
+  });
+
+  app.get('/fixture/login', (_req, res) => {
+    res.send(`<!DOCTYPE html><html><body>
+      <form class="login-form">
+        <input type="text" name="loginKey">
+        <input type="password" name="password">
+        <button type="button">เข้าสู่ระบบ</button>
+      </form>
+    </body></html>`);
+  });
 
   // Custom Link page
   app.get('/linkmanage/customlink', (req, res) => {
@@ -87,8 +127,8 @@ export function createMockAffiliateServer(port: number = 3002) {
       errorEl.style.display = 'none';
       errorEl.textContent = '';
 
-      // Validate product URL
-      if (!data.productUrl || !data.productUrl.match(/shopee\\.co\\.th\\/.*-i\\.\\d+\\.\\d+/)) {
+      // Validate product URL (slug -i.shop.item or /product/shop/item)
+      if (!data.productUrl || !data.productUrl.match(/shopee\\.co\\.th\\/(?:.*-i\\.\\d+\\.\\d+|product\\/\\d+\\/\\d+)/)) {
         errorEl.textContent = 'Invalid product URL format';
         errorEl.style.display = 'block';
         return;
@@ -124,14 +164,17 @@ export function createMockAffiliateServer(port: number = 3002) {
 
   // API endpoint for custom link creation
   app.post('/api/v4/affiliate/custom_link/create', (req, res) => {
+    state.createCalls += 1;
     const { productUrl, subId1, subId2, subId3, subId4, subId5 } = req.body;
 
-    if (!productUrl || !productUrl.match(/shopee\.co\.th\/.*-i\.(\d+)\.(\d+)/)) {
+    const slug = String(productUrl || '').match(/shopee\.co\.th\/.*-i\.(\d+)\.(\d+)/);
+    const product = String(productUrl || '').match(/shopee\.co\.th\/product\/(\d+)\/(\d+)/);
+    const match = slug || product;
+    if (!match) {
       return res.json({ ok: false, error: 'Invalid product URL' });
     }
 
-    const match = productUrl.match(/i\.(\d+)\.(\d+)/);
-    const [, shopId, itemId] = match!;
+    const [, shopId, itemId] = match;
     const linkId = `${Date.now()}-${Math.random().toString(36).substring(7)}`;
     const shortLink = `https://s.shopee.co.th/${Math.random().toString(36).substring(2, 10)}`;
 
@@ -153,7 +196,7 @@ export function createMockAffiliateServer(port: number = 3002) {
         short_link: shortLink,
         data: link,
       });
-    }, 1000); // Simulate network delay
+    }, 50);
   });
 
   // Product Offer detail page
@@ -235,11 +278,11 @@ export function createMockAffiliateServer(port: number = 3002) {
       document.querySelector('[role="dialog"]').classList.add('visible');
       document.querySelector('.overlay').classList.add('visible');
 
-      // Simulate API response
-      await fetch('/api/v4/affiliate/offer/detail/${itemId}', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      });
+    });
+
+    fetch('/api/v4/affiliate/offer/detail/${itemId}', {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' }
     });
   </script>
 </body>
@@ -249,6 +292,7 @@ export function createMockAffiliateServer(port: number = 3002) {
 
   // API endpoint for offer detail
   app.get('/api/v4/affiliate/offer/detail/:itemId', (req, res) => {
+    state.offerDetailCalls += 1;
     const { itemId } = req.params;
     
     res.json({
@@ -323,14 +367,21 @@ export function createMockAffiliateServer(port: number = 3002) {
       const end = document.getElementById('date-end').value;
       window.location.href = \`/api/v4/affiliate/report/export?start=\${start}&end=\${end}\`;
     }
+    fetch('/api/v4/affiliate/report/summary');
   </script>
 </body>
 </html>
     `);
   });
 
+  app.get('/api/v4/affiliate/report/summary', (_req, res) => {
+    state.reportListCalls += 1;
+    res.json({ ok: true, data: { rows: 1 } });
+  });
+
   // API endpoint for report export
   app.get('/api/v4/affiliate/report/export', (req, res) => {
+    state.reportExportCalls += 1;
     const csv = `Sub ID,Clicks,Orders,Commission,Status
 tiktok,123,5,150.00,estimated
 ig,89,3,95.50,validated
@@ -341,16 +392,27 @@ fb,67,2,45.00,paid`;
     res.send(csv);
   });
 
-  return app;
+  return { app, state };
 }
 
-// Start server if run directly
-if (require.main === module) {
-  const app = createMockAffiliateServer(3002);
-  app.listen(3002, () => {
-    console.log('Mock Shopee Affiliate server running on http://localhost:3002');
-    console.log('  Custom Link: http://localhost:3002/linkmanage/customlink');
-    console.log('  Offer Detail: http://localhost:3002/offer/product_offer/123');
-    console.log('  Reports: http://localhost:3002/report');
+export function listenMockAffiliate(port = 0): Promise<{ server: Server; state: MockAffiliateState; baseUrl: string }> {
+  const { app, state } = createMockAffiliateServer();
+  return new Promise((resolve) => {
+    const server = app.listen(port, '127.0.0.1', () => {
+      const address = server.address();
+      const bound = typeof address === 'object' && address ? address.port : port;
+      resolve({ server, state, baseUrl: `http://127.0.0.1:${bound}` });
+    });
+  });
+}
+
+const isDirect = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isDirect) {
+  const { app } = createMockAffiliateServer();
+  app.listen(3002, '127.0.0.1', () => {
+    console.log('Mock Shopee Affiliate server running on http://127.0.0.1:3002');
+    console.log('  Custom Link: http://127.0.0.1:3002/linkmanage/customlink');
+    console.log('  Offer Detail: http://127.0.0.1:3002/offer/product_offer/123');
+    console.log('  Reports: http://127.0.0.1:3002/report');
   });
 }

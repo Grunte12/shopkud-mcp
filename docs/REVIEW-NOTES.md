@@ -3,7 +3,54 @@
 **For:** Engineering code review (later inspection by another engineer)  
 **Date:** 2026-10-17  
 **Branch:** `shopkud-core-cdp-prototype-a825`  
-**Status:** Prototype complete, all P0 features implemented and tested
+**Status:** Dry-run is implemented. The dedicated profile is not logged in, so authenticated pages were not checked.
+
+## Real-site smoke (2026-10-17)
+
+The dedicated Chrome profile at `~/shopkud-chrome-profile` was launched headful with remote debugging bound to `127.0.0.1:9222`. It is **not logged in**. The window was left on the Shopee buyer login page (`/buyer/login`). No password was typed, no CAPTCHA was solved, and no `s.shopee.co.th` link was opened.
+
+| Step | Result |
+|---|---|
+| `get_connection_status` | Chrome connected. The first look at the affiliate home did not yet show a password field. |
+| `get_offer` | **Stopped.** The offer navigation redirected to the login page. No commission was captured. |
+| `create_link --dry-run` | **Not run** on the live site. The profile was already logged out. |
+| Reports page | **Not run** on the live site. |
+
+Page loads on the affiliate/Shopee hosts: 3, under the limit of about 20.
+
+Logged-out responses used `/api/v3`, not the old `/api/v4/affiliate/...` guesses. Paths seen, with no response bodies stored:
+
+- `GET /api/v3/config/website`
+- `GET /api/v3/user/profile`
+- `GET /api/v3/user/status`
+- `GET /api/v3/not_login/config/website`
+- `POST /api/v3/gql`
+- `POST /api/v2/authentication/get_active_login_page`
+
+The custom-link, offer-detail, and report selectors are still the mock-based ones. They were not compared with a logged-in page. The login page itself has `input[name="loginKey"]`, `input[type="password"]`, and an "เข้าสู่ระบบ" button, and those selectors matched.
+
+`create-link` without `--dry-run` now refuses to submit. Dry-run fills the product URL and Sub IDs, checks each selector, and does not click submit. Mock tests cover that, plus offer capture, the report page without export, and CAPTCHA/login stops.
+
+### Tests
+
+- TypeScript: 20/20 passed (`npm test`), including 8 new browser-flow tests.
+- Python: 19/19 passed (`tests.test_campaigns` and `tests.test_product_history`).
+
+CDP and bot checks do not use port 9222. Set `CHROME_CDP_URL` to a throwaway Chrome. This run used a headful throwaway profile under `/tmp` on port 9345 because port 9333 was already taken by another Chrome (`~/.shopkud-chrome-alias`). That other Chrome was not killed. Before the port guard existed, one CDP test connected to 9333 and replaced the HTML of its first tab with a local captcha fixture. Reload that tab. No cookies or profile files were copied.
+
+### Headful bot check (throwaway profile)
+
+| Site | Result |
+|---|---|
+| bot.sannysoft.com | `navigator.webdriver` is false. The checker found 0 rows whose text said bot or suspicious. |
+| CreepJS | `navigator.webdriver` is false. 0 lie markers. The trust text was still "unknown" after the short wait. |
+| rebrowser-bot-detector | Page loaded. `navigator.webdriver` is false. The status element did not expose a pass/fail grade. |
+
+### Still needs the owner
+
+1. Log in once, by hand, in the dedicated Chrome window that is sitting on the login page.
+2. Reload the first tab of the Chrome on port 9333 if that tab looks blank or shows only a captcha fixture.
+3. After login, re-run `npx tsx src/cli.ts smoke --product-url <product url>` so offer, dry-run create, and reports can be checked. Do not drop `--dry-run`.
 
 ## What Was Built
 

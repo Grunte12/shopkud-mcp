@@ -22,7 +22,7 @@ async function setup() {
   await new Promise(resolve => setTimeout(resolve, 3000));
 
   console.log('Launching browser...');
-  browser = await chromium.launch({ headless: true });
+  browser = await chromium.launch({ headless: true, channel: 'chrome' });
   page = await browser.newPage();
   
   console.log('Console ready at http://localhost:3033');
@@ -37,7 +37,7 @@ async function teardown() {
   }
 }
 
-test('Console UI smoke tests with screenshots', async () => {
+test('Console UI smoke tests with screenshots', { timeout: 30000 }, async () => {
   await setup();
 
   try {

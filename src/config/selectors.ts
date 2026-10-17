@@ -91,6 +91,7 @@ export const SHOPEE_SELECTORS: SelectorConfig = {
 
   loginRequired: [
     'input[type="password"]',
+    'input[name="loginKey"]',
     'button:has-text("เข้าสู่ระบบ")',
     'button:has-text("Login")',
     '.login-form',
@@ -108,11 +109,25 @@ export interface EndpointConfig {
  * Known API endpoints that may be captured from network traffic
  * These are network-capture targets, not direct API calls
  */
+/**
+ * Authenticated create/offer/report paths are still unconfirmed.
+ * A logged-out affiliate session used /api/v3 (profile, status, not_login, gql),
+ * not the older /api/v4/affiliate guesses. Do not invent those paths here.
+ */
 export const SHOPEE_ENDPOINTS: EndpointConfig = {
-  customLinkApi: '/api/v4/affiliate/custom_link/create',
-  offerDetailApi: '/api/v4/affiliate/offer/detail',
-  reportsApi: '/api/v4/affiliate/report/export',
+  customLinkApi: undefined,
+  offerDetailApi: undefined,
+  reportsApi: undefined,
 };
+
+export const OBSERVED_LOGGED_OUT_ENDPOINTS = [
+  'GET /api/v3/config/website',
+  'GET /api/v3/user/profile',
+  'GET /api/v3/user/status',
+  'GET /api/v3/not_login/config/website',
+  'POST /api/v3/gql',
+  'POST /api/v2/authentication/get_active_login_page',
+];
 
 /**
  * Timeout configurations (in milliseconds)
@@ -148,18 +163,33 @@ export function isShortLink(url: string): boolean {
   return SHORT_LINK_PATTERN.test(url);
 }
 
+export interface ParsedProductUrl {
+  shopId: string;
+  itemId: string;
+}
+
+/**
+ * Accept both public product URL shapes:
+ * - https://shopee.co.th/slug-i.{shop}.{item}
+ * - https://shopee.co.th/product/{shop}/{item}
+ */
+export function parseProductUrl(url: string): ParsedProductUrl | null {
+  try {
+    const u = new URL(url);
+    if (u.protocol !== 'https:' || u.hostname !== 'shopee.co.th') return null;
+    const slug = u.pathname.match(/-i\.(\d+)\.(\d+)(?:\/|$)/);
+    if (slug) return { shopId: slug[1], itemId: slug[2] };
+    const product = u.pathname.match(/^\/product\/(\d+)\/(\d+)(?:\/|$)/);
+    if (product) return { shopId: product[1], itemId: product[2] };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Validate product URL format
  */
 export function isValidProductUrl(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return (
-      u.protocol === 'https:' &&
-      u.hostname === 'shopee.co.th' &&
-      /^\/[^/]+-i\.\d+\.\d+/.test(u.pathname)
-    );
-  } catch {
-    return false;
-  }
+  return parseProductUrl(url) !== null;
 }

@@ -1,12 +1,26 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { CDPController, CaptchaDetectedError } from '../src/core/cdp-controller.js';
-import { chromium } from 'patchright';
 
-test('CDP Controller connects and handles queue', async () => {
-  console.log('Testing CDP controller (requires Chrome with --remote-debugging-port=9222)...');
+const CDP_URL = process.env.CHROME_CDP_URL || '';
+const testOptions = { timeout: 20000 };
+
+function affiliatePortBlocked(): boolean {
+  if (!CDP_URL) {
+    console.log('Skipping CDP test. Set CHROME_CDP_URL to a throwaway Chrome. Port 9222 is the dedicated affiliate profile.');
+    return true;
+  }
+  return /:9222(\/|$)/.test(CDP_URL);
+}
+
+test('CDP Controller connects and handles queue', testOptions, async () => {
+  if (affiliatePortBlocked()) {
+    console.log('Refusing CDP test against port 9222 (dedicated affiliate profile).');
+    return;
+  }
+  console.log(`Testing CDP controller at ${CDP_URL}...`);
   
-  const cdp = new CDPController('http://127.0.0.1:9222');
+  const cdp = new CDPController(CDP_URL);
 
   try {
     await cdp.connect();
@@ -21,15 +35,17 @@ test('CDP Controller connects and handles queue', async () => {
     assert.ok(!cdp.isConnected(), 'Should disconnect');
     console.log('✅ Disconnected successfully');
   } catch (error) {
-    console.log('⚠️  Test skipped: Chrome not available on port 9222');
-    console.log('   To run this test, start Chrome with: chrome --remote-debugging-port=9222');
+    console.log(`⚠️  Test skipped: Chrome not available at ${CDP_URL}`);
+  } finally {
+    await cdp.disconnect();
   }
 });
 
-test('CDP Controller detects CAPTCHA', async () => {
+test('CDP Controller detects CAPTCHA', testOptions, async () => {
+  if (affiliatePortBlocked()) return;
   console.log('Testing CAPTCHA detection...');
   
-  const cdp = new CDPController('http://127.0.0.1:9222');
+  const cdp = new CDPController(CDP_URL);
 
   try {
     await cdp.connect();
@@ -63,12 +79,15 @@ test('CDP Controller detects CAPTCHA', async () => {
 
     await cdp.disconnect();
   } catch (error) {
-    console.log('⚠️  Test skipped: Chrome not available on port 9222');
+    console.log(`⚠️  Test skipped: Chrome not available at ${CDP_URL}`);
+  } finally {
+    await cdp.disconnect();
   }
 });
 
-test('CDP Controller queues tasks per origin', async () => {
-  const cdp = new CDPController('http://127.0.0.1:9222');
+test('CDP Controller queues tasks per origin', testOptions, async () => {
+  if (affiliatePortBlocked()) return;
+  const cdp = new CDPController(CDP_URL);
 
   try {
     await cdp.connect();
@@ -93,12 +112,15 @@ test('CDP Controller queues tasks per origin', async () => {
 
     await cdp.disconnect();
   } catch (error) {
-    console.log('⚠️  Test skipped: Chrome not available on port 9222');
+    console.log(`⚠️  Test skipped: Chrome not available at ${CDP_URL}`);
+  } finally {
+    await cdp.disconnect();
   }
 });
 
-test('CDP Controller reconnects after disconnect', async () => {
-  const cdp = new CDPController('http://127.0.0.1:9222');
+test('CDP Controller reconnects after disconnect', testOptions, async () => {
+  if (affiliatePortBlocked()) return;
+  const cdp = new CDPController(CDP_URL);
 
   try {
     await cdp.connect();
@@ -113,6 +135,8 @@ test('CDP Controller reconnects after disconnect', async () => {
 
     await cdp.disconnect();
   } catch (error) {
-    console.log('⚠️  Test skipped: Chrome not available on port 9222');
+    console.log(`⚠️  Test skipped: Chrome not available at ${CDP_URL}`);
+  } finally {
+    await cdp.disconnect();
   }
 });

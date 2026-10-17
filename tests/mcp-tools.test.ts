@@ -8,7 +8,7 @@ const TEST_DB = './test-mcp.db';
 test('MCP find_link tool returns links from registry', async () => {
   if (existsSync(TEST_DB)) unlinkSync(TEST_DB);
 
-  const server = new ShopkudMCPServer(TEST_DB, 'http://127.0.0.1:9222');
+  const server = new ShopkudMCPServer(TEST_DB, process.env.CHROME_CDP_URL || 'http://127.0.0.1:9');
   
   (server as any).db.createLink({
     product_id: 'P1-123',
@@ -42,7 +42,7 @@ test('MCP find_link tool returns links from registry', async () => {
 test('MCP create_link tool is idempotent', async () => {
   if (existsSync(TEST_DB)) unlinkSync(TEST_DB);
 
-  const server = new ShopkudMCPServer(TEST_DB, 'http://127.0.0.1:9222');
+  const server = new ShopkudMCPServer(TEST_DB, process.env.CHROME_CDP_URL || 'http://127.0.0.1:9');
 
   const params = {
     product_url: 'https://shopee.co.th/product-i.456.123',
@@ -77,7 +77,7 @@ test('MCP create_link tool is idempotent', async () => {
 test('MCP create_links_batch validates all before processing', async () => {
   if (existsSync(TEST_DB)) unlinkSync(TEST_DB);
 
-  const server = new ShopkudMCPServer(TEST_DB, 'http://127.0.0.1:9222');
+  const server = new ShopkudMCPServer(TEST_DB, process.env.CHROME_CDP_URL || 'http://127.0.0.1:9');
 
   const invalidParams = {
     items: [
@@ -112,7 +112,7 @@ test('MCP create_links_batch validates all before processing', async () => {
 test('MCP create_links_batch processes all items with per-item results', async () => {
   if (existsSync(TEST_DB)) unlinkSync(TEST_DB);
 
-  const server = new ShopkudMCPServer(TEST_DB, 'http://127.0.0.1:9222');
+  const server = new ShopkudMCPServer(TEST_DB, process.env.CHROME_CDP_URL || 'http://127.0.0.1:9');
 
   const params = {
     items: [
@@ -165,7 +165,7 @@ test('MCP create_links_batch processes all items with per-item results', async (
 test('MCP get_offer returns cached data within TTL', async () => {
   if (existsSync(TEST_DB)) unlinkSync(TEST_DB);
 
-  const server = new ShopkudMCPServer(TEST_DB, 'http://127.0.0.1:9222');
+  const server = new ShopkudMCPServer(TEST_DB, process.env.CHROME_CDP_URL || 'http://127.0.0.1:9');
 
   (server as any).db.saveProduct({
     item_id: '123',
@@ -202,7 +202,7 @@ test('MCP get_offer returns cached data within TTL', async () => {
 test('MCP get_connection_status returns status', async () => {
   if (existsSync(TEST_DB)) unlinkSync(TEST_DB);
 
-  const server = new ShopkudMCPServer(TEST_DB, 'http://127.0.0.1:9222');
+  const server = new ShopkudMCPServer(TEST_DB, process.env.CHROME_CDP_URL || 'http://127.0.0.1:9');
 
   const result = await (server as any).getConnectionStatus();
   const data = JSON.parse(result.content[0].text);

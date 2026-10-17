@@ -1,12 +1,15 @@
 /**
  * Browser automation flows for Shopee Affiliate operations
- * 
+ *
  * All flows go through the logged-in Chrome (patchright over CDP).
  * No Open API calls - everything via browser automation.
+ *
+ * createCustomLink({ dryRun: true }) fills the custom-link form and stops
+ * before submit. It never clicks the submit control.
  */
 
-import { Page } from 'patchright';
-import { SHOPEE_SELECTORS, SHOPEE_ENDPOINTS, TIMEOUTS, DELAYS, isShortLink } from '../config/selectors.js';
+import { Page, type Response } from 'patchright';
+import { SHOPEE_SELECTORS, TIMEOUTS, DELAYS, isShortLink, parseProductUrl } from '../config/selectors.js';
 import type { SubIds } from './database.js';
 
 export interface BrowserFlowResult<T = any> {
@@ -40,41 +43,137 @@ export interface CreateLinkResult {
   };
 }
 
+export interface SelectorCheck {
+  name: string;
+  selector: string;
+  count: number;
+  resolved: boolean;
+}
+
+export interface CreateLinkDryRunData {
+  dry_run: true;
+  submitted: false;
+  message: string;
+  product_url: string;
+  sub_ids: SubIds;
+  filled: Record<string, boolean>;
+  selectors: SelectorCheck[];
+  all_required_resolved: boolean;
+  create_request_seen: boolean;
+  endpoints: string[];
+}
+
+export interface BrowserFlowOptions {
+  /** Rewrite affiliate.shopee.co.th page URLs onto a mock origin. */
+  affiliateBase?: string;
+  /** Skip human-paced delays. Tests only. */
+  fast?: boolean;
+  customLinkPage?: string;
+  reportsPage?: string;
+  offerPage?: string;
+}
+
+const REQUIRED_CUSTOM_LINK_SELECTORS = [
+  'productUrlInput',
+  'subId1Input',
+  'subId2Input',
+  'subId3Input',
+  'subId4Input',
+  'subId5Input',
+  'submitButton',
+] as const;
+
 export class BrowserFlows {
-  constructor(private page: Page) {}
+  constructor(private page: Page, private options: BrowserFlowOptions = {}) {}
 
-  /**
-   * Check for CAPTCHA or login requirements
-   */
-  async checkForBlockers(): Promise<{ captcha: boolean; login: boolean }> {
-    const captchaSelectors = SHOPEE_SELECTORS.captcha.join(', ');
-    const loginSelectors = SHOPEE_SELECTORS.loginRequired.join(', ');
+  private async pause(kind: keyof typeof DELAYS): Promise<void> {
+    if (this.options.fast) return;
+    await this.page.waitForTimeout(DELAYS[kind]());
+  }
 
-    const [captcha, login] = await Promise.all([
-      this.page.locator(captchaSelectors).first().isVisible().catch(() => false),
-      this.page.locator(loginSelectors).first().isVisible().catch(() => false),
-    ]);
+  private resolveUrl(absolute: string): string {
+    if (!this.options.affiliateBase) return absolute;
+    const target = new URL(absolute);
+    const base = new URL(this.options.affiliateBase);
+    return new URL(`${target.pathname}${target.search}`, base).toString();
+  }
 
-    return { captcha, login };
+  private async checkSelector(name: string, selector: string): Promise<SelectorCheck> {
+    const count = await this.page.locator(selector).count().catch(() => 0);
+    return { name, selector, count, resolved: count > 0 };
+  }
+
+  private startEndpointLog(): { paths: string[]; stop: () => void } {
+    const paths: string[] = [];
+    const handler = (response: Response) => {
+      try {
+        const url = new URL(response.url());
+        const path = url.pathname;
+        const method = response.request().method();
+        const interesting = path.includes('/api/') || path.includes('custom_link') || path.includes('create_link') || path.includes('/offer/') || path.includes('/report');
+        if (!interesting) return;
+        const line = `${method} ${path}`;
+        if (!paths.includes(line)) paths.push(line);
+      } catch {
+        // Ignore non-URL responses.
+      }
+    };
+    this.page.on('response', handler);
+    return {
+      paths,
+      stop: () => this.page.off('response', handler),
+    };
   }
 
   /**
-   * Create custom link via the custom link page form
-   * 
-   * This is the primary method: navigate to the custom link page,
-   * fill in product URL + Sub IDs, submit, and capture the result.
+   * Check for CAPTCHA or login requirements.
+   * Login is a password field or a login/verify URL, not a stray button label.
    */
-  async createCustomLink(params: CreateLinkParams, options: { dryRun?: boolean } = {}): Promise<BrowserFlowResult<CreateLinkResult>> {
+  async checkForBlockers(): Promise<{ captcha: boolean; login: boolean }> {
+    const captchaSelectors = SHOPEE_SELECTORS.captcha.join(', ');
+    const url = this.page.url();
+    const loginUrl = /\/login(?:\/|$|\?)|\/signin(?:\/|$|\?)|\/verify\/traffic/i.test(url);
+
+    const [captcha, passwordVisible] = await Promise.all([
+      this.page.locator(captchaSelectors).first().isVisible().catch(() => false),
+      this.page.locator('input[type="password"]').first().isVisible().catch(() => false),
+    ]);
+
+    return { captcha, login: captcha ? false : (loginUrl || passwordVisible) };
+  }
+
+  /**
+   * Create custom link via the custom link page form.
+   *
+   * dryRun walks the page, checks every configured selector, fills the
+   * product URL and Sub IDs, and returns before the submit click.
+   */
+  async createCustomLink(params: CreateLinkParams, options: { dryRun?: boolean } = {}): Promise<BrowserFlowResult<CreateLinkResult | CreateLinkDryRunData>> {
+    const endpointLog = this.startEndpointLog();
+    let createRequestSeen = false;
+    const onCreate = (response: Response) => {
+      try {
+        const path = new URL(response.url()).pathname;
+        const method = response.request().method();
+        if (method !== 'POST') return;
+        if (path.includes('custom_link') || path.includes('create_link')) {
+          createRequestSeen = true;
+        }
+      } catch {
+        // Ignore non-URL responses.
+      }
+    };
+    this.page.on('response', onCreate);
+
     try {
       const submittedAt = new Date().toISOString();
+      const pageUrl = this.options.customLinkPage || this.resolveUrl(SHOPEE_SELECTORS.customLink.page);
 
-      // Navigate to custom link page
-      await this.page.goto(SHOPEE_SELECTORS.customLink.page, {
-        waitUntil: 'networkidle',
+      await this.page.goto(pageUrl, {
+        waitUntil: 'domcontentloaded',
         timeout: TIMEOUTS.navigation,
       });
 
-      // Check for blockers
       const blockers = await this.checkForBlockers();
       if (blockers.captcha) {
         return { ok: false, error: 'CAPTCHA detected', status: 'captcha_detected' };
@@ -83,48 +182,117 @@ export class BrowserFlows {
         return { ok: false, error: 'Login required', status: 'login_required' };
       }
 
-      // Fill product URL
-      const productUrlInput = this.page.locator(SHOPEE_SELECTORS.customLink.productUrlInput).first();
-      await productUrlInput.waitFor({ state: 'visible', timeout: TIMEOUTS.elementVisible });
-      await productUrlInput.fill(params.product_url);
-      await this.page.waitForTimeout(DELAYS.betweenFields());
+      const selectorMap: Record<string, string> = {
+        productUrlInput: SHOPEE_SELECTORS.customLink.productUrlInput,
+        subId1Input: SHOPEE_SELECTORS.customLink.subId1Input,
+        subId2Input: SHOPEE_SELECTORS.customLink.subId2Input,
+        subId3Input: SHOPEE_SELECTORS.customLink.subId3Input,
+        subId4Input: SHOPEE_SELECTORS.customLink.subId4Input,
+        subId5Input: SHOPEE_SELECTORS.customLink.subId5Input,
+        submitButton: SHOPEE_SELECTORS.customLink.submitButton,
+        resultDialog: SHOPEE_SELECTORS.customLink.resultDialog,
+        resultLinkTextarea: SHOPEE_SELECTORS.customLink.resultLinkTextarea,
+        errorMessage: SHOPEE_SELECTORS.customLink.errorMessage,
+      };
 
-      // Fill Sub IDs
-      const subIdInputs = [
-        { selector: SHOPEE_SELECTORS.customLink.subId1Input, value: params.sub_ids.sub_id1 },
-        { selector: SHOPEE_SELECTORS.customLink.subId2Input, value: params.sub_ids.sub_id2 },
-        { selector: SHOPEE_SELECTORS.customLink.subId3Input, value: params.sub_ids.sub_id3 },
-        { selector: SHOPEE_SELECTORS.customLink.subId4Input, value: params.sub_ids.sub_id4 },
-        { selector: SHOPEE_SELECTORS.customLink.subId5Input, value: params.sub_ids.sub_id5 },
-      ];
-
-      for (const { selector, value } of subIdInputs) {
-        if (value) {
-          const input = this.page.locator(selector).first();
-          const exists = await input.count() > 0;
-          if (exists) {
-            await input.fill(value);
-            await this.page.waitForTimeout(DELAYS.betweenFields());
-          }
-        }
+      const selectors: SelectorCheck[] = [];
+      for (const [name, selector] of Object.entries(selectorMap)) {
+        selectors.push(await this.checkSelector(name, selector));
       }
 
-      if (options.dryRun) {
+      const resolved = new Map(selectors.map((item) => [item.name, item.resolved]));
+      const allRequiredResolved = REQUIRED_CUSTOM_LINK_SELECTORS.every((name) => resolved.get(name));
+
+      const productUrlInput = this.page.locator(SHOPEE_SELECTORS.customLink.productUrlInput).first();
+      if (!options.dryRun) {
+        await productUrlInput.waitFor({ state: 'visible', timeout: TIMEOUTS.elementVisible });
+      } else if (!resolved.get('productUrlInput')) {
         return {
-          ok: true,
-          status: 'success',
+          ok: false,
+          status: 'uncertain',
+          error: 'Dry run: one or more required selectors did not resolve',
           data: {
+            dry_run: true,
+            submitted: false,
             message: 'Dry run: stopped before submit',
             product_url: params.product_url,
             sub_ids: params.sub_ids,
-          } as any,
+            filled: {},
+            selectors,
+            all_required_resolved: false,
+            create_request_seen: createRequestSeen,
+            endpoints: endpointLog.paths,
+          },
         };
       }
 
-      // Wait before submit
-      await this.page.waitForTimeout(DELAYS.beforeSubmit());
+      const filled: Record<string, boolean> = {};
+      if (resolved.get('productUrlInput') || !options.dryRun) {
+        await productUrlInput.fill(params.product_url);
+        filled.product_url = true;
+        await this.pause('betweenFields');
+      }
 
-      // Set up network response capture
+      const subIdInputs = [
+        { name: 'sub_id1', selector: SHOPEE_SELECTORS.customLink.subId1Input, value: params.sub_ids.sub_id1 },
+        { name: 'sub_id2', selector: SHOPEE_SELECTORS.customLink.subId2Input, value: params.sub_ids.sub_id2 },
+        { name: 'sub_id3', selector: SHOPEE_SELECTORS.customLink.subId3Input, value: params.sub_ids.sub_id3 },
+        { name: 'sub_id4', selector: SHOPEE_SELECTORS.customLink.subId4Input, value: params.sub_ids.sub_id4 },
+        { name: 'sub_id5', selector: SHOPEE_SELECTORS.customLink.subId5Input, value: params.sub_ids.sub_id5 },
+      ];
+
+      for (const { name, selector, value } of subIdInputs) {
+        if (!value) continue;
+        const input = this.page.locator(selector).first();
+        const exists = await input.count() > 0;
+        if (!exists) continue;
+        await input.fill(value);
+        filled[name] = true;
+        await this.pause('betweenFields');
+      }
+
+      if (options.dryRun) {
+        if (createRequestSeen) {
+          return {
+            ok: false,
+            status: 'uncertain',
+            error: 'Dry run observed a create request before submit',
+            data: {
+              dry_run: true,
+              submitted: false,
+              message: 'Dry run: stopped before submit',
+              product_url: params.product_url,
+              sub_ids: params.sub_ids,
+              filled,
+              selectors,
+              all_required_resolved: allRequiredResolved,
+              create_request_seen: true,
+              endpoints: endpointLog.paths,
+            },
+          };
+        }
+
+        return {
+          ok: allRequiredResolved,
+          status: allRequiredResolved ? 'success' : 'uncertain',
+          error: allRequiredResolved ? undefined : 'Dry run: one or more required selectors did not resolve',
+          data: {
+            dry_run: true,
+            submitted: false,
+            message: 'Dry run: stopped before submit',
+            product_url: params.product_url,
+            sub_ids: params.sub_ids,
+            filled,
+            selectors,
+            all_required_resolved: allRequiredResolved,
+            create_request_seen: false,
+            endpoints: endpointLog.paths,
+          },
+        };
+      }
+
+      await this.pause('beforeSubmit');
+
       let networkResponse: any = null;
       const responsePromise = this.page.waitForResponse(
         (response) => {
@@ -140,19 +308,16 @@ export class BrowserFlows {
         }
       }).catch(() => {});
 
-      // Submit form
       const submitButton = this.page.locator(SHOPEE_SELECTORS.customLink.submitButton).first();
       await submitButton.click();
 
-      // Wait for response
       await Promise.race([
         responsePromise,
         this.page.waitForTimeout(TIMEOUTS.formSubmit),
       ]);
 
-      await this.page.waitForTimeout(DELAYS.afterSubmit());
+      await this.pause('afterSubmit');
 
-      // Check for error message
       const errorMsg = await this.page.locator(SHOPEE_SELECTORS.customLink.errorMessage).first().textContent().catch(() => null);
       if (errorMsg && errorMsg.trim().length > 0) {
         return {
@@ -162,14 +327,12 @@ export class BrowserFlows {
         };
       }
 
-      // Look for result dialog
       const resultDialog = this.page.locator(SHOPEE_SELECTORS.customLink.resultDialog).first();
       const dialogVisible = await resultDialog.isVisible({ timeout: TIMEOUTS.dialogOpen }).catch(() => false);
 
       let shortLink: string | null = null;
 
       if (dialogVisible) {
-        // Try to capture short link from dialog
         const linkTextarea = resultDialog.locator(SHOPEE_SELECTORS.customLink.resultLinkTextarea).first();
         const linkValue = await linkTextarea.inputValue().catch(() => null);
         if (linkValue && isShortLink(linkValue)) {
@@ -177,7 +340,6 @@ export class BrowserFlows {
         }
       }
 
-      // Try to extract from network response if not found in DOM
       if (!shortLink && networkResponse) {
         const extracted = this.extractShortLinkFromResponse(networkResponse);
         if (extracted) {
@@ -199,9 +361,9 @@ export class BrowserFlows {
         };
       }
 
-      // Extract item_id and shop_id from product URL
-      const productMatch = params.product_url.match(/i\.(\d+)\.(\d+)/);
-      const [shop_id, item_id] = productMatch ? [productMatch[1], productMatch[2]] : ['', ''];
+      const parsed = parseProductUrl(params.product_url);
+      const shop_id = parsed?.shopId || '';
+      const item_id = parsed?.itemId || '';
 
       return {
         ok: true,
@@ -229,44 +391,65 @@ export class BrowserFlows {
         error: error.message || String(error),
         status: 'network_error',
       };
+    } finally {
+      this.page.off('response', onCreate);
+      endpointLog.stop();
     }
   }
 
   /**
-   * Get offer/commission data from product offer page
-   * 
+   * Get offer/commission data from product offer page.
+   *
    * Navigate to the offer detail page and capture commission data
-   * from the network response or DOM.
+   * from the network response or DOM. Does not click Get Link.
    */
   async getOfferData(itemId: string, options: { dryRun?: boolean } = {}): Promise<BrowserFlowResult<any>> {
+    if (!/^[0-9]{1,20}$/.test(itemId)) {
+      return { ok: false, error: 'Invalid item id', status: 'uncertain' };
+    }
+
+    const endpointLog = this.startEndpointLog();
     try {
-      const offerUrl = `https://affiliate.shopee.co.th/offer/product_offer/${itemId}`;
+      const offerUrl = this.options.offerPage || this.resolveUrl(`https://affiliate.shopee.co.th/offer/product_offer/${itemId}`);
 
-      // Set up network capture before navigation
       let networkData: any = null;
-      const responsePromise = this.page.waitForResponse(
-        (response) => {
-          const url = response.url();
-          return url.includes('/offer/detail') || url.includes(`/product_offer/${itemId}`);
-        },
-        { timeout: TIMEOUTS.navigation }
-      ).then(async (response) => {
-        try {
-          networkData = await response.json();
-        } catch {
-          networkData = await response.text();
-        }
-      }).catch(() => {});
+      let matchedPath: string | null = null;
+      const capture = new Promise<void>((resolve) => {
+        const timer = setTimeout(() => {
+          this.page.off('response', handler);
+          resolve();
+        }, this.options.fast ? 2000 : 8000);
 
-      // Navigate to offer page
+        const handler = async (response: Response) => {
+          try {
+            const type = response.request().resourceType();
+            if (type !== 'xhr' && type !== 'fetch') return;
+            const contentType = response.headers()['content-type'] || '';
+            if (!contentType.includes('json')) return;
+            const url = response.url();
+            if (!url.includes('offer') && !url.includes(itemId)) return;
+            const json = await response.json();
+            const extracted = this.extractOfferFromResponse(json);
+            if (!extracted || extracted.commission_rate == null) return;
+            networkData = json;
+            matchedPath = new URL(url).pathname;
+            clearTimeout(timer);
+            this.page.off('response', handler);
+            resolve();
+          } catch {
+            // Keep waiting for a commission payload.
+          }
+        };
+        this.page.on('response', handler);
+      });
+
       await this.page.goto(offerUrl, {
-        waitUntil: 'networkidle',
+        waitUntil: 'domcontentloaded',
         timeout: TIMEOUTS.navigation,
       });
 
-      await responsePromise;
+      await capture;
 
-      // Check for blockers
       const blockers = await this.checkForBlockers();
       if (blockers.captcha) {
         return { ok: false, error: 'CAPTCHA detected', status: 'captcha_detected' };
@@ -280,14 +463,16 @@ export class BrowserFlows {
           ok: true,
           status: 'success',
           data: {
+            dry_run: true,
             message: 'Dry run: navigated to offer page',
             item_id: itemId,
             network_captured: !!networkData,
+            endpoint_path: matchedPath,
+            endpoints: endpointLog.paths,
           },
         };
       }
 
-      // Extract from network response if available
       if (networkData) {
         const offerData = this.extractOfferFromResponse(networkData);
         if (offerData) {
@@ -298,12 +483,13 @@ export class BrowserFlows {
               ...offerData,
               item_id: itemId,
               source: 'network_capture',
+              endpoint_path: matchedPath,
+              endpoints: endpointLog.paths,
             },
           };
         }
       }
 
-      // Fallback: parse from DOM
       const domData = await this.extractOfferFromDOM();
       if (domData) {
         return {
@@ -313,6 +499,8 @@ export class BrowserFlows {
             ...domData,
             item_id: itemId,
             source: 'dom_parse',
+            endpoint_path: matchedPath,
+            endpoints: endpointLog.paths,
           },
         };
       }
@@ -321,6 +509,11 @@ export class BrowserFlows {
         ok: false,
         error: 'Could not extract offer data',
         status: 'uncertain',
+        data: {
+          item_id: itemId,
+          endpoint_path: matchedPath,
+          endpoints: endpointLog.paths,
+        },
       };
     } catch (error: any) {
       return {
@@ -328,16 +521,73 @@ export class BrowserFlows {
         error: error.message || String(error),
         status: 'network_error',
       };
+    } finally {
+      endpointLog.stop();
     }
   }
 
   /**
-   * Extract short link from API response
+   * Open the reports page and check selectors plus endpoints.
+   * Does not set a date range, click download, or export.
    */
+  async inspectReports(): Promise<BrowserFlowResult<{
+    selectors: SelectorCheck[];
+    endpoints: string[];
+    download_clicked: false;
+    export_request_seen: boolean;
+  }>> {
+    const endpointLog = this.startEndpointLog();
+    try {
+      const pageUrl = this.options.reportsPage || this.resolveUrl(SHOPEE_SELECTORS.reports.page);
+      await this.page.goto(pageUrl, {
+        waitUntil: 'domcontentloaded',
+        timeout: TIMEOUTS.navigation,
+      });
+      await this.pause('betweenFields');
+
+      const blockers = await this.checkForBlockers();
+      if (blockers.captcha) {
+        return { ok: false, error: 'CAPTCHA detected', status: 'captcha_detected' };
+      }
+      if (blockers.login) {
+        return { ok: false, error: 'Login required', status: 'login_required' };
+      }
+
+      const selectors = await Promise.all([
+        this.checkSelector('dateRangeStart', SHOPEE_SELECTORS.reports.dateRangeStart),
+        this.checkSelector('dateRangeEnd', SHOPEE_SELECTORS.reports.dateRangeEnd),
+        this.checkSelector('downloadButton', SHOPEE_SELECTORS.reports.downloadButton),
+        this.checkSelector('reportTable', SHOPEE_SELECTORS.reports.reportTable),
+      ]);
+
+      const exportRequestSeen = endpointLog.paths.some((line) => /export|download/i.test(line));
+      const allResolved = selectors.every((item) => item.resolved);
+
+      return {
+        ok: allResolved,
+        status: allResolved ? 'success' : 'uncertain',
+        error: allResolved ? undefined : 'One or more report selectors did not resolve',
+        data: {
+          selectors,
+          endpoints: endpointLog.paths,
+          download_clicked: false,
+          export_request_seen: exportRequestSeen,
+        },
+      };
+    } catch (error: any) {
+      return {
+        ok: false,
+        error: error.message || String(error),
+        status: 'network_error',
+      };
+    } finally {
+      endpointLog.stop();
+    }
+  }
+
   private extractShortLinkFromResponse(response: any): string | null {
     if (!response) return null;
 
-    // Try common response structures
     const candidates = [
       response.data?.short_link,
       response.data?.link,
@@ -356,9 +606,6 @@ export class BrowserFlows {
     return null;
   }
 
-  /**
-   * Extract offer data from API response
-   */
   private extractOfferFromResponse(response: any): any | null {
     if (!response || !response.data) return null;
 
@@ -372,9 +619,6 @@ export class BrowserFlows {
     };
   }
 
-  /**
-   * Extract offer data from DOM (fallback)
-   */
   private async extractOfferFromDOM(): Promise<any | null> {
     try {
       const name = await this.page.locator(SHOPEE_SELECTORS.offerDetail.productName).first().textContent();
