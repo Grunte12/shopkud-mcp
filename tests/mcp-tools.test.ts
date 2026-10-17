@@ -94,13 +94,12 @@ test('MCP create_links_batch validates all before processing', async () => {
     ],
   };
 
-  try {
-    await (server as any).createLinksBatch(invalidParams);
-    assert.fail('Should throw error for invalid URL');
-  } catch (error) {
-    assert.ok(error instanceof Error, 'Should throw Error');
-    assert.ok(error.message.includes('Invalid product URL'), 'Error should mention invalid URL');
-  }
+  const result = await (server as any).createLinksBatch(invalidParams);
+  const data = JSON.parse(result.content[0].text);
+
+  assert.strictEqual(data.ok, false, 'Should return ok: false for validation failure');
+  assert.strictEqual(data.error, 'validation_failed', 'Should return validation_failed error');
+  assert.ok(data.validation_errors.length > 0, 'Should have validation errors');
 
   const links = (server as any).db.findLinks({});
   assert.strictEqual(links.length, 0, 'No links should be created if validation fails');
@@ -108,6 +107,59 @@ test('MCP create_links_batch validates all before processing', async () => {
   await server.stop();
   if (existsSync(TEST_DB)) unlinkSync(TEST_DB);
   console.log('✅ create_links_batch validation test passed');
+});
+
+test('MCP create_links_batch processes all items with per-item results', async () => {
+  if (existsSync(TEST_DB)) unlinkSync(TEST_DB);
+
+  const server = new ShopkudMCPServer(TEST_DB, 'http://127.0.0.1:9222');
+
+  const params = {
+    items: [
+      {
+        product_url: 'https://shopee.co.th/product-i.456.123',
+        channel: 'tiktok' as const,
+        sub_ids: { sub_id1: 'tiktok', sub_id2: 'P1', sub_id3: null, sub_id4: null, sub_id5: null },
+      },
+      {
+        product_url: 'https://shopee.co.th/product-i.456.789',
+        channel: 'ig' as const,
+        sub_ids: { sub_id1: 'ig', sub_id2: 'P2', sub_id3: null, sub_id4: null, sub_id5: null },
+      },
+      {
+        product_url: 'https://shopee.co.th/product-i.456.456',
+        channel: 'fb' as const,
+        sub_ids: { sub_id1: 'fb', sub_id2: 'P3', sub_id3: null, sub_id4: null, sub_id5: null },
+      },
+    ],
+  };
+
+  const result = await (server as any).createLinksBatch(params);
+  const data = JSON.parse(result.content[0].text);
+
+  assert.strictEqual(data.ok, true, 'Should return ok: true');
+  assert.strictEqual(data.total, 3, 'Should have 3 total items');
+  assert.strictEqual(data.successful, 3, 'All 3 should succeed');
+  assert.strictEqual(data.failed, 0, 'None should fail');
+  assert.strictEqual(data.results.length, 3, 'Should have 3 results');
+
+  data.results.forEach((r: any, i: number) => {
+    assert.strictEqual(r.index, i, `Result ${i} should have correct index`);
+    assert.strictEqual(r.status, 'success', `Result ${i} should be success`);
+  });
+
+  // Test idempotence - retry should not create duplicates
+  const result2 = await (server as any).createLinksBatch(params);
+  const data2 = JSON.parse(result2.content[0].text);
+
+  assert.strictEqual(data2.successful, 3, 'All 3 should still succeed on retry');
+  data2.results.forEach((r: any) => {
+    assert.strictEqual(r.created, false, 'Links should not be created again (idempotent)');
+  });
+
+  await server.stop();
+  if (existsSync(TEST_DB)) unlinkSync(TEST_DB);
+  console.log('✅ create_links_batch per-item results and idempotence test passed');
 });
 
 test('MCP get_offer returns cached data within TTL', async () => {

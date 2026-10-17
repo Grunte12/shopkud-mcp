@@ -9,7 +9,62 @@ package declares **0.8.11** and the extension manifest declares **0.8.9**. Packa
 and extension versions are separate. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
-## Current capabilities
+---
+
+## 🚀 ShopKud Core (NEW - Branch: `shopkud-core-cdp-prototype-a825`)
+
+**ShopKud Core** is a CDP-based MCP server prototype that replaces the extension-heavy
+approach with direct Chrome control via patchright (patched Playwright). It includes:
+
+- Node.js MCP server with CDP controller
+- SQLite registry with **5 Sub ID slots** (migrates from single `sub_id`)
+- Local web console UI (http://localhost:3000)
+- Comprehensive testing suite (database migration, CDP, MCP tools, bot detection)
+
+### Quick Start
+
+See **[docs/SHOPKUD-CORE-SETUP.md](docs/SHOPKUD-CORE-SETUP.md)** for complete setup instructions.
+
+```bash
+# 1. Install dependencies
+npm install
+
+# 2. Start dedicated Chrome (NEVER use personal profile)
+chrome --remote-debugging-port=9222 --user-data-dir=~/shopkud-chrome-profile
+
+# 3. Build and start MCP server
+npm run build
+SHOPKUD_DB_PATH=./shopkud.db node dist/mcp/server.js
+
+# 4. Start web console (optional)
+SHOPKUD_DB_PATH=./shopkud.db npm run console
+
+# 5. Run tests
+npm test
+npm run test:bot  # bot detection tests (requires Chrome on :9222)
+```
+
+### What's Implemented (P0)
+
+- ✅ `find_link`: Search registry by product/channel/clip/item
+- ✅ `create_link`: Idempotent link creation with 5 Sub IDs per channel
+- ✅ `create_links_batch`: Batch creation with validation-first approach
+- ✅ `verify_link`: Ownership + target verification WITHOUT following redirects
+- ✅ `get_offer`: Commission rates (cached 6h, CDP fallback)
+- ✅ `get_connection_status`: Chrome/CDP connection and queue monitor
+- ✅ Database migration: single `sub_id` → 5 slots (preserves old data)
+- ✅ Local web console with links registry, batch mode, job queue
+- ✅ Mock Shopee site for testing (signed API calls)
+- ✅ Bot detection tests (bot.sannysoft.com, rebrowser, CreepJS)
+
+### Documentation
+
+- **Setup Guide:** [docs/SHOPKUD-CORE-SETUP.md](docs/SHOPKUD-CORE-SETUP.md)
+- **Code Review Notes:** [docs/REVIEW-NOTES.md](docs/REVIEW-NOTES.md)
+
+---
+
+## Current capabilities (Python MCP + Extension)
 
 - Bounded product search, pagination, snapshots and cached-result reads.
 - Product-detail observations, including displayed channel-specific commissions.

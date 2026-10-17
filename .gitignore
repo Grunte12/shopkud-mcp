@@ -33,4 +33,5 @@ shopkud.db
 shopkud-chrome-profile/
 test-results/
 screenshots/
+!docs/screenshots/
 *.log

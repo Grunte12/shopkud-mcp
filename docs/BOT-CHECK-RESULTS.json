@@ -1,0 +1,32 @@
+{
+  "timestamp": "2026-10-17T03:56:16.248Z",
+  "bot.sannysoft.com": {
+    "status": "completed",
+    "total_checks": 56,
+    "suspicious_count": 0,
+    "webdriver": false,
+    "runtime_enable_leak": "not detected",
+    "key_checks": {
+      "User-Agent": "unknown",
+      "WebDriver": "unknown",
+      "Chrome": "unknown",
+      "Permissions": "unknown",
+      "Plugins Length": "unknown",
+      "Languages": "unknown"
+    },
+    "screenshot": "docs/screenshots/bot-sannysoft.png"
+  },
+  "rebrowser-bot-detector": {
+    "status": "failed",
+    "error": "page.evaluate: ReferenceError: __name is not defined\n    at eval (eval at evaluate (:403:30), <anonymous>:1:27)\n    at UtilityScript.evaluate (<anonymous>:405:16)\n    at UtilityScript.<anonymous> (<anonymous>:1:44)"
+  },
+  "creepjs": {
+    "status": "completed",
+    "trust_score": "unknown",
+    "lies_detected": 0,
+    "grade": "moderate",
+    "webdriver": false,
+    "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safa",
+    "screenshot": "docs/screenshots/creepjs.png"
+  }
+}

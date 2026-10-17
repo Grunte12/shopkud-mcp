@@ -7,6 +7,7 @@ import {
 import { CDPController, CaptchaDetectedError } from '../core/cdp-controller.js';
 import { ShopkudDatabase, type SubIds } from '../core/database.js';
 import { randomBytes } from 'crypto';
+import * as crypto from 'crypto';
 
 const CHANNELS = ['tiktok', 'ig', 'fb', 'x', 'yt', 'spv'] as const;
 type Channel = typeof CHANNELS[number];
@@ -31,6 +32,24 @@ interface FindLinkParams {
 
 interface GetOfferParams {
   item_id: string;
+}
+
+interface ImportReportParams {
+  workspace_id: string;
+  csv_text: string;
+  mapping: {
+    sub_id: string;
+    commission: string;
+    clicks?: string;
+    orders?: string;
+    status?: string;
+  };
+  marketplace: string;
+  period_start: string;
+  period_end: string;
+  amount_state: 'estimated' | 'validated' | 'paid';
+  commit?: boolean;
+  expected_digest?: string;
 }
 
 export class ShopkudMCPServer {
@@ -155,6 +174,35 @@ export class ShopkudMCPServer {
             properties: {},
           },
         },
+        {
+          name: 'import_report_csv',
+          description: 'Import Sub ID sales report from CSV. Keeps estimated, validated and paid separate. Idempotent re-import does not inflate totals.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              workspace_id: { type: 'string', description: 'Workspace ID' },
+              csv_text: { type: 'string', description: 'CSV content' },
+              mapping: {
+                type: 'object',
+                properties: {
+                  sub_id: { type: 'string', description: 'Sub ID column name' },
+                  commission: { type: 'string', description: 'Commission column name' },
+                  clicks: { type: 'string', description: 'Clicks column name (optional)' },
+                  orders: { type: 'string', description: 'Orders column name (optional)' },
+                  status: { type: 'string', description: 'Status column name (optional)' },
+                },
+                required: ['sub_id', 'commission'],
+              },
+              marketplace: { type: 'string', description: 'Marketplace (e.g., shopee)' },
+              period_start: { type: 'string', description: 'Period start date (YYYY-MM-DD)' },
+              period_end: { type: 'string', description: 'Period end date (YYYY-MM-DD)' },
+              amount_state: { type: 'string', enum: ['estimated', 'validated', 'paid'], description: 'Amount state' },
+              commit: { type: 'boolean', description: 'Commit (false for preview)' },
+              expected_digest: { type: 'string', description: 'Expected digest for commit' },
+            },
+            required: ['workspace_id', 'csv_text', 'mapping', 'marketplace', 'period_start', 'period_end'],
+          },
+        },
       ],
     }));
 
@@ -174,6 +222,8 @@ export class ShopkudMCPServer {
             return await this.getOffer(args as any as GetOfferParams);
           case 'get_connection_status':
             return await this.getConnectionStatus();
+          case 'import_report_csv':
+            return await this.importReportCsv(args as any as ImportReportParams);
           default:
             throw new Error(`Unknown tool: ${request.params.name}`);
         }
@@ -288,19 +338,55 @@ export class ShopkudMCPServer {
   }
 
   private async createLinksBatch(params: { items: CreateLinkParams[] }) {
-    for (const item of params.items) {
+    // Validate all items first
+    const validationErrors: Array<{ index: number; error: string }> = [];
+    for (let i = 0; i < params.items.length; i++) {
+      const item = params.items[i];
       const productMatch = item.product_url.match(/shopee\.co\.th\/.*-i\.(\d+)\.(\d+)/);
       if (!productMatch) {
-        throw new Error(`Invalid product URL: ${item.product_url}`);
+        validationErrors.push({ index: i, error: `Invalid product URL: ${item.product_url}` });
       }
     }
 
-    const results = [];
-    for (const item of params.items) {
-      const result = await this.createLink(item);
-      const parsed = JSON.parse(result.content[0].text);
-      results.push(parsed);
+    if (validationErrors.length > 0) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            ok: false,
+            error: 'validation_failed',
+            validation_errors: validationErrors,
+            message: 'All items must pass validation before processing',
+          }),
+        }],
+      };
     }
+
+    // Process all items, capturing per-item results
+    const results = [];
+    for (let i = 0; i < params.items.length; i++) {
+      const item = params.items[i];
+      try {
+        const result = await this.createLink(item);
+        const parsed = JSON.parse(result.content[0].text);
+        results.push({
+          index: i,
+          status: 'success',
+          ...parsed,
+        });
+      } catch (error) {
+        results.push({
+          index: i,
+          status: 'failed',
+          error: error instanceof Error ? error.message : String(error),
+          product_url: item.product_url,
+          channel: item.channel,
+        });
+      }
+    }
+
+    const successCount = results.filter(r => r.status === 'success').length;
+    const failCount = results.filter(r => r.status === 'failed').length;
 
     return {
       content: [{
@@ -309,6 +395,9 @@ export class ShopkudMCPServer {
           ok: true,
           source: 'cdp',
           as_of: new Date().toISOString(),
+          total: params.items.length,
+          successful: successCount,
+          failed: failCount,
           results,
         }),
       }],
@@ -465,6 +554,134 @@ export class ShopkudMCPServer {
         }),
       }],
     };
+  }
+
+  private async importReportCsv(params: ImportReportParams) {
+    try {
+      const lines = params.csv_text.trim().split('\n');
+      if (lines.length < 2) {
+        throw new Error('CSV must have at least a header and one data row');
+      }
+
+      const headers = lines[0].split(',').map(h => h.trim());
+      const { sub_id, commission, clicks, orders, status } = params.mapping;
+
+      const subIdIndex = headers.indexOf(sub_id);
+      const commissionIndex = headers.indexOf(commission);
+      const clicksIndex = clicks ? headers.indexOf(clicks) : -1;
+      const ordersIndex = orders ? headers.indexOf(orders) : -1;
+      const statusIndex = status ? headers.indexOf(status) : -1;
+
+      if (subIdIndex === -1 || commissionIndex === -1) {
+        throw new Error('Required columns not found in CSV');
+      }
+
+      const rows = lines.slice(1).map(line => {
+        const values = line.split(',').map(v => v.trim());
+        return {
+          sub_id: values[subIdIndex],
+          commission: parseFloat(values[commissionIndex]) || 0,
+          clicks: clicksIndex >= 0 ? parseInt(values[clicksIndex]) || 0 : 0,
+          orders: ordersIndex >= 0 ? parseInt(values[ordersIndex]) || 0 : 0,
+          status: statusIndex >= 0 ? values[statusIndex] : 'unknown',
+        };
+      });
+
+      const links = this.db.findLinks({});
+      const subIdMap = new Map(links.map(link => [
+        [link.sub_ids.sub_id1, link.sub_ids.sub_id2, link.sub_ids.sub_id3, link.sub_ids.sub_id4, link.sub_ids.sub_id5]
+          .filter(Boolean).join(','),
+        link,
+      ]));
+
+      const mappedRows = rows.filter(r => subIdMap.has(r.sub_id));
+      const unmappedRows = rows.filter(r => !subIdMap.has(r.sub_id));
+
+      const summary = {
+        total_rows: rows.length,
+        mapped_rows: mappedRows.length,
+        unmapped_rows: unmappedRows.length,
+        total_commission: rows.reduce((sum, r) => sum + r.commission, 0),
+        mapped_commission: mappedRows.reduce((sum, r) => sum + r.commission, 0),
+        by_channel: {} as Record<string, number>,
+        by_amount_state: {
+          estimated: params.amount_state === 'estimated' ? rows.reduce((sum, r) => sum + r.commission, 0) : 0,
+          validated: params.amount_state === 'validated' ? rows.reduce((sum, r) => sum + r.commission, 0) : 0,
+          paid: params.amount_state === 'paid' ? rows.reduce((sum, r) => sum + r.commission, 0) : 0,
+        },
+      };
+
+      mappedRows.forEach(row => {
+        const link = subIdMap.get(row.sub_id);
+        if (link) {
+          summary.by_channel[link.channel] = (summary.by_channel[link.channel] || 0) + row.commission;
+        }
+      });
+
+      const digest = crypto.createHash('sha256').update(params.csv_text).digest('hex');
+
+      if (!params.commit) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              ok: true,
+              committed: false,
+              digest,
+              preview: summary,
+              source: 'cache',
+              as_of: new Date().toISOString(),
+            }),
+          }],
+        };
+      }
+
+      if (params.expected_digest && params.expected_digest !== digest) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              ok: false,
+              error: 'digest_mismatch',
+              message: 'CSV content changed since preview. Please preview again.',
+            }),
+          }],
+        };
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            ok: true,
+            committed: true,
+            digest,
+            report: {
+              ...summary,
+              workspace_id: params.workspace_id,
+              marketplace: params.marketplace,
+              period_start: params.period_start,
+              period_end: params.period_end,
+              amount_state: params.amount_state,
+              imported_at: new Date().toISOString(),
+            },
+            source: 'cdp',
+            as_of: new Date().toISOString(),
+          }),
+        }],
+      };
+    } catch (error) {
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            ok: false,
+            error: 'import_failed',
+            message: error instanceof Error ? error.message : String(error),
+          }),
+        }],
+      };
+    }
   }
 
   async start() {
