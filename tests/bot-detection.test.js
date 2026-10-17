@@ -10,14 +10,21 @@ async function testBotDetection() {
   };
 
   let browser;
+  let page;
   try {
-    const cdpUrl = process.env.CHROME_CDP_URL || '';
-    if (!cdpUrl || /:9222(\/|$)/.test(cdpUrl)) {
-      throw new Error('Set CHROME_CDP_URL to a throwaway Chrome. Refusing port 9222, the dedicated affiliate profile.');
+    const port = (process.env.SHOPKUD_CDP_PORT || '').trim();
+    const cdpUrl = port ? `http://127.0.0.1:${port}` : (process.env.CHROME_CDP_URL || '');
+    let parsedPort = '';
+    try { parsedPort = new URL(cdpUrl).port; } catch { parsedPort = ''; }
+    if (!cdpUrl || parsedPort === '9222' || parsedPort === '9333') {
+      throw new Error('Set SHOPKUD_CDP_PORT to a throwaway Chrome. Refusing ports 9222 and 9333.');
     }
-    browser = await chromium.connectOverCDP(cdpUrl, { noDefaults: true });
+    browser = await Promise.race([
+      chromium.connectOverCDP(cdpUrl, { noDefaults: true }),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('CDP connect timed out')), 10000)),
+    ]);
     const context = browser.contexts()[0];
-    const page = await context.newPage();
+    page = await context.newPage();
 
     console.log('Testing bot.sannysoft.com...');
     try {
@@ -99,7 +106,10 @@ async function testBotDetection() {
     return results;
   } catch (error) {
     console.error('❌ Bot detection tests failed:', error.message);
-    console.error('Make sure Chrome is running with: chrome --remote-debugging-port=9222');
+    console.error('Start a throwaway Chrome on a free port, for example 9444, with a /tmp user-data-dir.');
+    if (page) {
+      try { await page.close(); } catch (e) {}
+    }
     if (browser) {
       try {
         await browser.close();

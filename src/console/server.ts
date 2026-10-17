@@ -3,6 +3,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { ShopkudDatabase } from '../core/database.js';
 import { CDPController } from '../core/cdp-controller.js';
+import { resolveCdpUrl } from '../config/cdp.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -12,7 +13,8 @@ const port = parseInt(process.env.CONSOLE_PORT || '3000', 10);
 
 const dbPath = process.env.SHOPKUD_DB_PATH || './shopkud.db';
 const db = new ShopkudDatabase(dbPath);
-const cdp = new CDPController(process.env.CHROME_CDP_URL);
+const cdpUrl = resolveCdpUrl();
+const cdp = new CDPController(cdpUrl);
 
 app.use(express.json());
 app.use(express.static(join(__dirname, 'public')));
@@ -134,7 +136,7 @@ app.get('/api/status', async (req, res) => {
     res.json({
       ok: true,
       chrome_connected: connected,
-      cdp_url: 'http://127.0.0.1:9222',
+      cdp_url: cdpUrl,
       queue_status: queueStatus,
       queued_jobs: jobs,
       as_of: new Date().toISOString(),

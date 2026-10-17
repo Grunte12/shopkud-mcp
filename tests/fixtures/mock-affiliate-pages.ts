@@ -57,7 +57,7 @@ export function createMockAffiliateServer() {
   });
 
   // Custom Link page
-  app.get('/linkmanage/customlink', (req, res) => {
+  app.get('/offer/custom_link', (req, res) => {
     res.send(`
 <!DOCTYPE html>
 <html lang="th">
@@ -83,31 +83,31 @@ export function createMockAffiliateServer() {
   <h1>ลิงก์ที่กำหนดเอง (Custom Link)</h1>
   <form id="custom-link-form">
     <div class="form-group">
-      <label for="product-url">Product URL *</label>
-      <input type="text" id="product-url" name="productUrl" placeholder="https://shopee.co.th/product-i.shop.item" required>
+      <label for="product-url">ลิงก์สินค้า</label>
+      <textarea id="product-url" placeholder="https://shopee.co.th/" required></textarea>
     </div>
     <div class="form-group">
-      <label for="sub-id-1">Sub ID 1</label>
-      <input type="text" id="sub-id-1" name="subId1" placeholder="Sub ID 1">
+      <label for="customLink_sub_id1">Sub_id 1</label>
+      <input type="text" id="customLink_sub_id1" placeholder="ตัวอย่าง: SportShoes">
     </div>
     <div class="form-group">
-      <label for="sub-id-2">Sub ID 2</label>
-      <input type="text" id="sub-id-2" name="subId2" placeholder="Sub ID 2">
+      <label for="customLink_sub_id2">Sub_id 2</label>
+      <input type="text" id="customLink_sub_id2" placeholder="ตัวอย่าง: InstagramFeed">
     </div>
     <div class="form-group">
-      <label for="sub-id-3">Sub ID 3</label>
-      <input type="text" id="sub-id-3" name="subId3" placeholder="Sub ID 3">
+      <label for="customLink_sub_id3">Sub_id 3</label>
+      <input type="text" id="customLink_sub_id3" placeholder="ตัวอย่าง: 1212BirthdaySale">
     </div>
     <div class="form-group">
-      <label for="sub-id-4">Sub ID 4</label>
-      <input type="text" id="sub-id-4" name="subId4" placeholder="Sub ID 4">
+      <label for="customLink_sub_id4">Sub_id 4</label>
+      <input type="text" id="customLink_sub_id4" placeholder="กรุณายืนยัน">
     </div>
     <div class="form-group">
-      <label for="sub-id-5">Sub ID 5</label>
-      <input type="text" id="sub-id-5" name="subId5" placeholder="Sub ID 5">
+      <label for="customLink_sub_id5">Sub_id 5</label>
+      <input type="text" id="customLink_sub_id5" placeholder="กรุณายืนยัน">
     </div>
     <div class="error-message"></div>
-    <button type="submit">สร้างลิงก์ (Create Link)</button>
+    <button type="submit">เอา ลิงก์</button>
   </form>
 
   <div class="overlay"></div>
@@ -120,8 +120,14 @@ export function createMockAffiliateServer() {
   <script>
     document.getElementById('custom-link-form').addEventListener('submit', async (e) => {
       e.preventDefault();
-      const formData = new FormData(e.target);
-      const data = Object.fromEntries(formData);
+      const data = {
+        productUrl: document.getElementById('product-url').value,
+        subId1: document.getElementById('customLink_sub_id1').value,
+        subId2: document.getElementById('customLink_sub_id2').value,
+        subId3: document.getElementById('customLink_sub_id3').value,
+        subId4: document.getElementById('customLink_sub_id4').value,
+        subId5: document.getElementById('customLink_sub_id5').value,
+      };
       
       const errorEl = document.querySelector('.error-message');
       errorEl.style.display = 'none';
@@ -259,7 +265,7 @@ export function createMockAffiliateServer() {
         </tbody>
       </table>
 
-      <button id="get-link">รับลิงก์ (Get Link)</button>
+      <button id="get-link">เอา ลิงก์</button>
     </div>
 
     <div class="overlay"></div>
@@ -280,7 +286,7 @@ export function createMockAffiliateServer() {
 
     });
 
-    fetch('/api/v4/affiliate/offer/detail/${itemId}', {
+    fetch('/api/v3/offer/product?item_id=${itemId}', {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' }
     });
@@ -291,26 +297,36 @@ export function createMockAffiliateServer() {
   });
 
   // API endpoint for offer detail
-  app.get('/api/v4/affiliate/offer/detail/:itemId', (req, res) => {
+  app.get('/api/v3/offer/product', (req, res) => {
     state.offerDetailCalls += 1;
-    const { itemId } = req.params;
-    
+    const itemId = String(req.query.item_id || '');
+
     res.json({
-      ok: true,
+      code: 0,
+      msg: 'success',
       data: {
         item_id: itemId,
-        product_name: `Mock Product ${itemId}`,
-        commission_rate: 10,
-        commission_pct: 10,
-        price: '299.00-599.00',
-        shop_id: '12345',
-        stock: 100,
+        commission_rate: {
+          default_commission_rate: '10',
+          max_commission_rate: '10',
+        },
+        commission_rate_detail: {
+          default_commission_rate: 10,
+          seller_commission_rate: 0,
+          shopee_commission_rate: 10,
+        },
+        batch_item_for_item_card_full: {
+          name: `Mock Product ${itemId}`,
+          price: '299.00-599.00',
+          shopid: '12345',
+          stock: 100,
+        },
       },
     });
   });
 
   // Reports page
-  app.get('/report', (req, res) => {
+  app.get('/report/conversion_report', (req, res) => {
     res.send(`
 <!DOCTYPE html>
 <html lang="th">
@@ -329,16 +345,16 @@ export function createMockAffiliateServer() {
   </style>
 </head>
 <body>
-  <h1>รายงาน (Reports)</h1>
+  <h1>รายงานคำสั่งซื้อ</h1>
   <div class="form-group">
-    <label for="date-start">Start Date</label>
-    <input type="date" id="date-start" name="start">
+    <label for="date-start">เวลาที่สั่งซื้อ</label>
+    <input id="date-start" placeholder="วันเริ่มต้น">
   </div>
   <div class="form-group">
-    <label for="date-end">End Date</label>
-    <input type="date" id="date-end" name="end">
+    <label for="date-end">เวลาที่สั่งซื้อ</label>
+    <input id="date-end" placeholder="วันสิ้นสุด">
   </div>
-  <button onclick="downloadReport()">ดาวน์โหลด (Download)</button>
+  <button onclick="downloadReport()">ดาวน์โหลดรายงาน</button>
 
   <table class="report-table">
     <thead>
@@ -367,16 +383,26 @@ export function createMockAffiliateServer() {
       const end = document.getElementById('date-end').value;
       window.location.href = \`/api/v4/affiliate/report/export?start=\${start}&end=\${end}\`;
     }
-    fetch('/api/v4/affiliate/report/summary');
+    fetch('/api/v3/gql', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ operationName: 'conversionReportUpdateTime' }),
+    });
+    fetch('/api/v3/goods/categoryList');
   </script>
 </body>
 </html>
     `);
   });
 
-  app.get('/api/v4/affiliate/report/summary', (_req, res) => {
+  app.post('/api/v3/gql', (_req, res) => {
     state.reportListCalls += 1;
-    res.json({ ok: true, data: { rows: 1 } });
+    res.json({ data: { conversionReportUpdateTime: '0' } });
+  });
+
+  app.get('/api/v3/goods/categoryList', (_req, res) => {
+    state.reportListCalls += 1;
+    res.json({ code: 0, data: { category_list: [] } });
   });
 
   // API endpoint for report export
@@ -411,8 +437,8 @@ if (isDirect) {
   const { app } = createMockAffiliateServer();
   app.listen(3002, '127.0.0.1', () => {
     console.log('Mock Shopee Affiliate server running on http://127.0.0.1:3002');
-    console.log('  Custom Link: http://127.0.0.1:3002/linkmanage/customlink');
+    console.log('  Custom Link: http://127.0.0.1:3002/offer/custom_link');
     console.log('  Offer Detail: http://127.0.0.1:3002/offer/product_offer/123');
-    console.log('  Reports: http://127.0.0.1:3002/report');
+    console.log('  Reports: http://127.0.0.1:3002/report/conversion_report');
   });
 }

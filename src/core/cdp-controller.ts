@@ -1,5 +1,6 @@
 import { chromium, type Browser, type Page, type CDPSession } from 'patchright';
 import { BrowserFlows } from './browser-flows.js';
+import { resolveCdpUrl } from '../config/cdp.js';
 
 export interface CaptureOptions {
   urlPattern: string | RegExp;
@@ -29,33 +30,45 @@ export class CDPController {
   private reconnectAttempts = 0;
   private maxReconnectAttempts = 3;
 
-  constructor(private cdpUrl: string = 'http://127.0.0.1:9222') {}
+  constructor(cdpUrl?: string) {
+    this.cdpUrl = resolveCdpUrl(cdpUrl);
+  }
+
+  private cdpUrl: string;
+
+  getCdpUrl(): string {
+    return this.cdpUrl;
+  }
 
   async connect(): Promise<void> {
+    let browser: Browser | null = null;
+    let page: Page | null = null;
     try {
-      this.browser = await Promise.race([
+      browser = await Promise.race([
         chromium.connectOverCDP(this.cdpUrl, { noDefaults: true }),
         new Promise<never>((_, reject) => {
           setTimeout(() => reject(new Error('CDP connect timed out')), 10000);
         }),
       ]);
-      const contexts = this.browser.contexts();
-      
+      const contexts = browser.contexts();
+
       if (contexts.length === 0) {
         throw new Error('No browser contexts found. Is Chrome running with remote debugging?');
       }
 
-      const pages = contexts[0].pages();
-      if (pages.length > 0) {
-        this.page = pages[0];
-      } else {
-        this.page = await contexts[0].newPage();
-      }
-
+      // Always a new tab. Never reuse, navigate, or overwrite an existing tab.
+      page = await contexts[0].newPage();
+      this.browser = browser;
+      this.page = page;
       this.browserFlows = new BrowserFlows(this.page);
       this.reconnectAttempts = 0;
       console.log('Connected to Chrome via CDP');
     } catch (error) {
+      if (page) await page.close().catch(() => {});
+      if (browser) await browser.close().catch(() => {});
+      this.browser = null;
+      this.page = null;
+      this.browserFlows = null;
       console.error('Failed to connect to Chrome:', error);
       throw new Error(`CDP connection failed: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -79,15 +92,15 @@ export class CDPController {
   }
 
   async disconnect(): Promise<void> {
-    // connectOverCDP browser.close() drops this client's socket. It does not
-    // quit Chrome, so the dedicated affiliate window stays open.
+    // Close only the tab this client opened. browser.close() then drops the
+    // DevTools socket and does not quit Chrome.
+    const page = this.page;
     const browser = this.browser;
     this.browser = null;
     this.page = null;
     this.browserFlows = null;
-    if (browser) {
-      await browser.close().catch(() => {});
-    }
+    if (page) await page.close().catch(() => {});
+    if (browser) await browser.close().catch(() => {});
   }
 
   async captureNetworkResponse(options: CaptureOptions): Promise<any> {

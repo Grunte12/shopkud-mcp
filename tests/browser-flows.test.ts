@@ -91,9 +91,9 @@ test('createCustomLink dry-run resolves selectors, fills fields, and does not su
       assert.ok(check?.resolved, `${name} should resolve`);
     }
 
-    assert.strictEqual(await page.locator('#product-url').inputValue(), PRODUCT_URL);
-    assert.strictEqual(await page.locator('#sub-id-1').inputValue(), 'test');
-    assert.strictEqual(await page.locator('#sub-id-2').inputValue(), 'smoke');
+    assert.strictEqual(await page.locator('textarea[placeholder*="shopee.co.th"]').inputValue(), PRODUCT_URL);
+    assert.strictEqual(await page.locator('#customLink_sub_id1').inputValue(), 'test');
+    assert.strictEqual(await page.locator('#customLink_sub_id2').inputValue(), 'smoke');
     assert.strictEqual(await page.locator('[role="dialog"]').isVisible(), false);
     assert.ok(!page.url().includes('s.shopee.co.th'));
   } finally {
@@ -152,7 +152,7 @@ test('getOfferData reads commission from the offer JSON and does not open a shor
     assert.strictEqual(result.ok, true, result.error);
     assert.strictEqual(result.data.commission_rate, 10);
     assert.strictEqual(result.data.source, 'network_capture');
-    assert.strictEqual(result.data.endpoint_path, '/api/v4/affiliate/offer/detail/67890');
+    assert.strictEqual(result.data.endpoint_path, '/api/v3/offer/product');
     assert.ok(state.offerDetailCalls >= 1);
     assert.strictEqual(await page.locator('[role="dialog"]').isVisible(), false);
     assert.ok(!page.url().includes('s.shopee.co.th'));
@@ -175,7 +175,7 @@ test('inspectReports checks selectors and does not export', async () => {
       const check = result.data?.selectors.find((item) => item.name === name);
       assert.ok(check?.resolved, `${name} should resolve`);
     }
-    assert.ok(result.data?.endpoints.some((line) => line.includes('/api/v4/affiliate/report/summary')));
+    assert.ok(result.data?.endpoints.some((line) => line.includes('/api/v3/gql') || line.includes('/api/v3/goods/categoryList')));
   } finally {
     await context.close();
   }

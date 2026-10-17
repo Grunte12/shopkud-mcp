@@ -5,6 +5,7 @@ import {
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import { CDPController, CaptchaDetectedError } from '../core/cdp-controller.js';
+import { resolveCdpUrl } from '../config/cdp.js';
 import { ShopkudDatabase, type SubIds } from '../core/database.js';
 import { randomBytes } from 'crypto';
 import * as crypto from 'crypto';
@@ -547,7 +548,7 @@ export class ShopkudMCPServer {
         text: JSON.stringify({
           ok: true,
           chrome_connected: connected,
-          cdp_url: 'http://127.0.0.1:9222',
+          cdp_url: this.cdp.getCdpUrl(),
           queue_status: queueStatus,
           queued_jobs: queuedJobs,
           as_of: new Date().toISOString(),
@@ -699,7 +700,7 @@ export class ShopkudMCPServer {
 
 async function main() {
   const dbPath = process.env.SHOPKUD_DB_PATH || './shopkud.db';
-  const cdpUrl = process.env.CHROME_CDP_URL || 'http://127.0.0.1:9222';
+  const cdpUrl = resolveCdpUrl();
 
   const server = new ShopkudMCPServer(dbPath, cdpUrl);
 

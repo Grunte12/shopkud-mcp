@@ -15,9 +15,12 @@ async function runBotDetection() {
   try {
     mkdirSync('docs/screenshots', { recursive: true });
     
-    const cdpUrl = process.env.CHROME_CDP_URL || '';
-    if (!cdpUrl || /:9222(\/|$)/.test(cdpUrl)) {
-      throw new Error('Set CHROME_CDP_URL to a throwaway Chrome. Refusing port 9222, the dedicated affiliate profile.');
+    const port = (process.env.SHOPKUD_CDP_PORT || '').trim();
+    const cdpUrl = port ? `http://127.0.0.1:${port}` : (process.env.CHROME_CDP_URL || '');
+    let parsedPort = '';
+    try { parsedPort = new URL(cdpUrl).port; } catch { parsedPort = ''; }
+    if (!cdpUrl || parsedPort === '9222' || parsedPort === '9333') {
+      throw new Error('Set SHOPKUD_CDP_PORT to a throwaway Chrome. Refusing ports 9222 and 9333.');
     }
     console.log(`Connecting to Chrome via CDP at ${cdpUrl}...`);
     browser = await chromium.connectOverCDP(cdpUrl, { noDefaults: true });
@@ -181,7 +184,7 @@ function generateMarkdown(results: any): string {
 
 **Test Date:** ${results.timestamp}  
 **Chrome Version:** Headless Chrome via CDP (patchright)  
-**CDP Port:** 127.0.0.1:9222
+**CDP Port:** throwaway profile (not 9222 or 9333)
 
 ## Summary
 

@@ -182,6 +182,10 @@ export class BrowserFlows {
         return { ok: false, error: 'Login required', status: 'login_required' };
       }
 
+      await this.page.locator(SHOPEE_SELECTORS.customLink.productUrlInput).first()
+        .waitFor({ state: 'attached', timeout: this.options.fast ? 500 : 8000 })
+        .catch(() => {});
+
       const selectorMap: Record<string, string> = {
         productUrlInput: SHOPEE_SELECTORS.customLink.productUrlInput,
         subId1Input: SHOPEE_SELECTORS.customLink.subId1Input,
@@ -553,6 +557,10 @@ export class BrowserFlows {
         return { ok: false, error: 'Login required', status: 'login_required' };
       }
 
+      await this.page.locator(SHOPEE_SELECTORS.reports.dateRangeStart).first()
+        .waitFor({ state: 'attached', timeout: this.options.fast ? 500 : 8000 })
+        .catch(() => {});
+
       const selectors = await Promise.all([
         this.checkSelector('dateRangeStart', SHOPEE_SELECTORS.reports.dateRangeStart),
         this.checkSelector('dateRangeEnd', SHOPEE_SELECTORS.reports.dateRangeEnd),
@@ -606,16 +614,37 @@ export class BrowserFlows {
     return null;
   }
 
-  private extractOfferFromResponse(response: any): any | null {
-    if (!response || !response.data) return null;
+  private readRate(value: unknown): number | null {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+    if (typeof value === 'string') {
+      const trimmed = value.trim().replace(/%$/, '');
+      if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
+    }
+    return null;
+  }
 
-    const data = response.data;
+  private extractOfferFromResponse(response: any): any | null {
+    const data = response?.data;
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
+
+    // Live JSON: commission_rate_detail.default_commission_rate is a number.
+    // commission_rate.* values are strings. The site's scale is not a plain percent.
+    const detail = data.commission_rate_detail;
+    const rates = data.commission_rate;
+    const commission_rate = this.readRate(detail?.default_commission_rate)
+      ?? this.readRate(rates?.default_commission_rate)
+      ?? this.readRate(rates?.max_commission_rate)
+      ?? this.readRate(rates)
+      ?? this.readRate(data.commission_pct);
+    if (commission_rate == null) return null;
+
+    const card = data.batch_item_for_item_card_full;
     return {
-      commission_rate: data.commission_rate || data.commission_pct || null,
-      price: data.price || null,
-      product_name: data.product_name || data.name || null,
-      shop_id: data.shop_id || null,
-      stock: data.stock || null,
+      commission_rate,
+      price: card?.price || data.price || null,
+      product_name: card?.name || data.product_name || data.name || null,
+      shop_id: card?.shopid || data.shop_id || null,
+      stock: card?.stock ?? data.stock ?? null,
     };
   }
 

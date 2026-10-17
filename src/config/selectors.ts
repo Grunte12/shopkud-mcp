@@ -49,14 +49,14 @@ export interface SelectorConfig {
 
 export const SHOPEE_SELECTORS: SelectorConfig = {
   customLink: {
-    page: 'https://affiliate.shopee.co.th/linkmanage/customlink',
-    productUrlInput: 'input[placeholder*="URL"], input[name="productUrl"], #product-url, [data-testid="product-url-input"]',
-    subId1Input: 'input[placeholder*="Sub ID 1"], input[name="subId1"], #sub-id-1',
-    subId2Input: 'input[placeholder*="Sub ID 2"], input[name="subId2"], #sub-id-2',
-    subId3Input: 'input[placeholder*="Sub ID 3"], input[name="subId3"], #sub-id-3',
-    subId4Input: 'input[placeholder*="Sub ID 4"], input[name="subId4"], #sub-id-4',
-    subId5Input: 'input[placeholder*="Sub ID 5"], input[name="subId5"], #sub-id-5',
-    submitButton: 'button:has-text("สร้างลิงก์"), button:has-text("Create Link"), button[type="submit"]',
+    page: 'https://affiliate.shopee.co.th/offer/custom_link',
+    productUrlInput: 'textarea[placeholder*="shopee.co.th"], input[placeholder*="URL"], input[name="productUrl"], #product-url',
+    subId1Input: '#customLink_sub_id1, input[name="subId1"], #sub-id-1',
+    subId2Input: '#customLink_sub_id2, input[name="subId2"], #sub-id-2',
+    subId3Input: '#customLink_sub_id3, input[name="subId3"], #sub-id-3',
+    subId4Input: '#customLink_sub_id4, input[name="subId4"], #sub-id-4',
+    subId5Input: '#customLink_sub_id5, input[name="subId5"], #sub-id-5',
+    submitButton: 'button:has-text("เอา ลิงก์"), button:has-text("สร้างลิงก์"), button:has-text("Create Link"), button[type="submit"]',
     resultDialog: '[role="dialog"]:has-text("ลิงก์"), [role="dialog"]:has-text("Link"), .link-result-dialog',
     resultLinkTextarea: 'textarea[readonly], input[readonly][type="text"]',
     errorMessage: '.error-message, [class*="error"], [class*="Error"]',
@@ -64,7 +64,7 @@ export const SHOPEE_SELECTORS: SelectorConfig = {
 
   offerDetail: {
     pagePattern: /^\/offer\/product_offer\/[1-9][0-9]{0,19}\/?$/,
-    getLinkButton: 'button:has-text("รับลิงก์"), button:has-text("เอา ลิงก์"), button:has-text("Get Link")',
+    getLinkButton: 'button:has-text("เอา ลิงก์"), button:has-text("รับลิงก์"), button:has-text("Get Link")',
     linkDialog: '[role="dialog"]:has-text("ลิงก์ข้อเสนอสินค้า")',
     linkDialogHeader: 'h4:has-text("ลิงก์ข้อเสนอสินค้า")',
     linkTextarea: 'textarea[disabled], input[disabled][type="text"]',
@@ -74,11 +74,11 @@ export const SHOPEE_SELECTORS: SelectorConfig = {
   },
 
   reports: {
-    page: 'https://affiliate.shopee.co.th/report',
-    dateRangeStart: 'input[type="date"][name="start"], #date-start',
-    dateRangeEnd: 'input[type="date"][name="end"], #date-end',
-    downloadButton: 'button:has-text("Download"), button:has-text("ดาวน์โหลด")',
-    reportTable: 'table.report-table, [class*="ReportTable"]',
+    page: 'https://affiliate.shopee.co.th/report/conversion_report',
+    dateRangeStart: 'input[placeholder="วันเริ่มต้น"], input[type="date"][name="start"], #date-start',
+    dateRangeEnd: 'input[placeholder="วันสิ้นสุด"], input[type="date"][name="end"], #date-end',
+    downloadButton: 'button:has-text("ดาวน์โหลดรายงาน"), button:has-text("ดาวน์โหลด"), button:has-text("Download")',
+    reportTable: 'table',
   },
 
   captcha: [
@@ -110,15 +110,24 @@ export interface EndpointConfig {
  * These are network-capture targets, not direct API calls
  */
 /**
- * Authenticated create/offer/report paths are still unconfirmed.
- * A logged-out affiliate session used /api/v3 (profile, status, not_login, gql),
- * not the older /api/v4/affiliate guesses. Do not invent those paths here.
+ * Paths seen on a logged-in affiliate session. The custom-link create call
+ * is still unknown because dry-run stops before submit.
  */
 export const SHOPEE_ENDPOINTS: EndpointConfig = {
   customLinkApi: undefined,
-  offerDetailApi: undefined,
-  reportsApi: undefined,
+  offerDetailApi: '/api/v3/offer/product',
+  reportsApi: '/api/v3/gql',
 };
+
+export const OBSERVED_AUTHENTICATED_ENDPOINTS = [
+  'GET /api/v3/offer/product',
+  'GET /api/v3/user/profile',
+  'GET /api/v3/user/status',
+  'GET /api/v3/user/check_program_permission',
+  'GET /api/v3/offer/checkInAmsWhiteList',
+  'GET /api/v3/goods/categoryList',
+  'POST /api/v3/gql',
+];
 
 export const OBSERVED_LOGGED_OUT_ENDPOINTS = [
   'GET /api/v3/config/website',

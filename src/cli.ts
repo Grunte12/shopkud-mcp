@@ -5,17 +5,20 @@
  * create-link refuses to submit unless --dry-run is set. This CLI never
  * clicks a short link (s.shopee.co.th) and never types a password.
  */
-import { chromium, type Page, type Response } from 'patchright';
+import { chromium, type Browser, type Page, type Response } from 'patchright';
 import { BrowserFlows } from './core/browser-flows.js';
 import { parseProductUrl } from './config/selectors.js';
+import { resolveCdpUrl } from './config/cdp.js';
 
-const CDP_URL = process.env.CHROME_CDP_URL || 'http://127.0.0.1:9222';
+const CDP_URL = resolveCdpUrl();
 const PAGE_LOAD_BUDGET = 20;
 
 interface EndpointHit {
   method: string;
   host: string;
   path: string;
+  operation?: string;
+  query_keys?: string[];
 }
 
 function arg(name: string): string | undefined {
@@ -45,13 +48,23 @@ async function humanPause() {
   await new Promise((resolve) => setTimeout(resolve, delay));
 }
 
-async function connect() {
-  const browser = await chromium.connectOverCDP(CDP_URL, { noDefaults: true });
-  const context = browser.contexts()[0];
-  if (!context) throw new Error('No browser context. Is the dedicated Chrome running?');
-  const pages = context.pages();
-  const page = pages.find((item) => /shopee\.co\.th/.test(item.url())) || pages[pages.length - 1] || await context.newPage();
-  return { browser, page };
+async function withOwnedPage<T>(fn: (page: Page) => Promise<T>): Promise<T> {
+  const browser: Browser = await Promise.race([
+    chromium.connectOverCDP(CDP_URL, { noDefaults: true }),
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('CDP connect timed out')), 10000);
+    }),
+  ]);
+  let page: Page | null = null;
+  try {
+    const context = browser.contexts()[0];
+    if (!context) throw new Error('No browser context. Is Chrome running with remote debugging?');
+    page = await context.newPage();
+    return await fn(page);
+  } finally {
+    if (page) await page.close().catch(() => {});
+    await browser.close().catch(() => {});
+  }
 }
 
 function watch(page: Page) {
@@ -63,8 +76,22 @@ function watch(page: Page) {
       const type = response.request().resourceType();
       if (type !== 'xhr' && type !== 'fetch') return;
       const url = new URL(response.url());
-      const hit = { method: response.request().method(), host: url.host, path: url.pathname };
-      if (!endpoints.some((item) => item.method === hit.method && item.host === hit.host && item.path === hit.path)) {
+      const hit: EndpointHit = { method: response.request().method(), host: url.host, path: url.pathname };
+      const queryKeys = [...url.searchParams.keys()].filter((key) => key.length > 0 && key.length < 40);
+      if (queryKeys.length > 0) hit.query_keys = queryKeys;
+      const post = response.request().postData();
+      if (post) {
+        try {
+          const body = JSON.parse(post);
+          const name = typeof body?.operationName === 'string'
+            ? body.operationName
+            : (Array.isArray(body) ? body.find((item) => typeof item?.operationName === 'string')?.operationName : undefined);
+          if (typeof name === 'string' && name.length > 0 && name.length < 80) hit.operation = name;
+        } catch {
+          // Non-JSON bodies stay path-only.
+        }
+      }
+      if (!endpoints.some((item) => item.method === hit.method && item.host === hit.host && item.path === hit.path && item.operation === hit.operation && JSON.stringify(item.query_keys || []) === JSON.stringify(hit.query_keys || []))) {
         endpoints.push(hit);
       }
     } catch {
@@ -127,7 +154,7 @@ function requireProductUrl(): { productUrl: string; shopId: string; itemId: stri
 }
 
 async function commandConnectionStatus() {
-  const { page } = await connect();
+  return withOwnedPage(async (page) => {
   const flows = new BrowserFlows(page);
   const verdict = await pageVerdict(page, flows);
   print({
@@ -140,11 +167,12 @@ async function commandConnectionStatus() {
   if (verdict === 'login') return 2;
   if (verdict !== 'ok') return 3;
   return 0;
+  });
 }
 
 async function commandGetOffer() {
   const { itemId } = requireProductUrl();
-  const { page } = await connect();
+  return withOwnedPage(async (page) => {
   const flows = new BrowserFlows(page);
   const result = await flows.getOfferData(itemId);
   print({
@@ -160,6 +188,7 @@ async function commandGetOffer() {
     console.log(`SENSITIVE commission_rate=${result.data.commission_rate}`);
   }
   return result.ok ? 0 : 1;
+  });
 }
 
 async function commandCreateLink() {
@@ -172,7 +201,7 @@ async function commandCreateLink() {
     return 1;
   }
   const { productUrl } = requireProductUrl();
-  const { page } = await connect();
+  return withOwnedPage(async (page) => {
   const flows = new BrowserFlows(page);
   const result = await flows.createCustomLink({
     product_url: productUrl,
@@ -203,10 +232,11 @@ async function commandCreateLink() {
     console.log(`OUTLINE ${JSON.stringify(await outline(page))}`);
   }
   return result.ok ? 0 : 1;
+  });
 }
 
 async function commandReports() {
-  const { page } = await connect();
+  return withOwnedPage(async (page) => {
   const flows = new BrowserFlows(page);
   const result = await flows.inspectReports();
   print({
@@ -223,24 +253,20 @@ async function commandReports() {
     console.log(`OUTLINE ${JSON.stringify(await outline(page))}`);
   }
   return result.ok ? 0 : 1;
+  });
 }
 
 async function commandSmoke() {
   const { productUrl, itemId } = requireProductUrl();
-  const { page } = await connect();
+  return withOwnedPage(async (page) => {
   const flows = new BrowserFlows(page);
   const seen = watch(page);
 
-  if (!/shopee\.co\.th/.test(page.url())) {
-    if (seen.loads() >= PAGE_LOAD_BUDGET) throw new Error('page load budget exceeded');
-    await page.goto('https://affiliate.shopee.co.th/', { waitUntil: 'domcontentloaded', timeout: 30000 });
-  } else {
-    await page.waitForLoadState('domcontentloaded', { timeout: 30000 }).catch(() => {});
-  }
+  if (seen.loads() >= PAGE_LOAD_BUDGET) throw new Error('page load budget exceeded');
+  await page.goto('https://affiliate.shopee.co.th/', { waitUntil: 'domcontentloaded', timeout: 30000 });
 
   await page.waitForTimeout(2500);
-  const sawLoggedOutApi = seen.endpoints.some((item) => /not_login|get_active_login_page|\/buyer\/login/.test(item.path));
-  const initial = sawLoggedOutApi ? 'login' : await pageVerdict(page, flows);
+  const initial = await pageVerdict(page, flows);
   const connection = {
     ok: initial === 'ok',
     chrome_connected: true,
@@ -250,14 +276,19 @@ async function commandSmoke() {
   };
   print({ step: 'get_connection_status', ...connection });
   if (initial === 'login') {
-    console.log('LOGIN_REQUIRED: the dedicated profile is not logged in to affiliate.shopee.co.th. Chrome was left open on the login page.');
+    console.log('LOGIN_REQUIRED: this Chrome is not logged in to affiliate.shopee.co.th. The new tab was closed. Existing tabs were left as they were.');
     return 2;
   }
   if (initial !== 'ok') {
     console.log(`STOPPED: ${initial}`);
     return 3;
   }
+  if (seen.blockedShortLink()) {
+    console.log('STOPPED: a short link host was opened');
+    return 3;
+  }
 
+  let failed = false;
   await humanPause();
   const offer = await flows.getOfferData(itemId);
   const offerVerdict = await pageVerdict(page, flows);
@@ -275,10 +306,14 @@ async function commandSmoke() {
   if (offer.data?.commission_rate != null) {
     console.log(`SENSITIVE commission_rate=${offer.data.commission_rate}`);
   }
-  if (!offer.ok || offerVerdict !== 'ok') {
+  if (offerVerdict !== 'ok' || seen.blockedShortLink() || seen.loads() > PAGE_LOAD_BUDGET) {
     console.log(`OUTLINE ${JSON.stringify(await outline(page))}`);
-    if (offerVerdict !== 'ok') console.log(`STOPPED: ${offerVerdict}`);
-    return offerVerdict === 'ok' ? 1 : 3;
+    console.log(`STOPPED: ${seen.blockedShortLink() ? 'short_link' : offerVerdict !== 'ok' ? offerVerdict : 'page_budget'}`);
+    return 3;
+  }
+  if (!offer.ok) {
+    console.log(`OUTLINE ${JSON.stringify(await outline(page))}`);
+    failed = true;
   }
 
   await humanPause();
@@ -301,10 +336,14 @@ async function commandSmoke() {
     endpoints: seen.endpoints,
     page_loads: seen.loads(),
   });
-  if (!created.ok || createVerdict !== 'ok') {
+  if (createVerdict !== 'ok' || seen.blockedShortLink() || seen.loads() > PAGE_LOAD_BUDGET) {
     console.log(`OUTLINE ${JSON.stringify(await outline(page))}`);
-    if (createVerdict !== 'ok') console.log(`STOPPED: ${createVerdict}`);
-    return createVerdict === 'ok' ? 1 : 3;
+    console.log(`STOPPED: ${seen.blockedShortLink() ? 'short_link' : createVerdict !== 'ok' ? createVerdict : 'page_budget'}`);
+    return 3;
+  }
+  if (!created.ok || createdData?.submitted !== false) {
+    console.log(`OUTLINE ${JSON.stringify(await outline(page))}`);
+    failed = true;
   }
 
   await humanPause();
@@ -332,7 +371,8 @@ async function commandSmoke() {
     console.log('STOPPED: page load budget exceeded');
     return 3;
   }
-  return reports.ok && reportVerdict === 'ok' ? 0 : 1;
+  return !failed && reports.ok && reportVerdict === 'ok' ? 0 : 1;
+  });
 }
 
 async function main() {

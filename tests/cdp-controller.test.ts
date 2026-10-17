@@ -1,23 +1,21 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { CDPController, CaptchaDetectedError } from '../src/core/cdp-controller.js';
+import { throwawayCdpUrl } from '../src/config/cdp.js';
 
-const CDP_URL = process.env.CHROME_CDP_URL || '';
+const CDP_URL = throwawayCdpUrl() || '';
 const testOptions = { timeout: 20000 };
 
 function affiliatePortBlocked(): boolean {
   if (!CDP_URL) {
-    console.log('Skipping CDP test. Set CHROME_CDP_URL to a throwaway Chrome. Port 9222 is the dedicated affiliate profile.');
+    console.log('Skipping CDP test. Set SHOPKUD_CDP_PORT to a throwaway Chrome. Ports 9222 and 9333 are live affiliate windows.');
     return true;
   }
-  return /:9222(\/|$)/.test(CDP_URL);
+  return false;
 }
 
 test('CDP Controller connects and handles queue', testOptions, async () => {
-  if (affiliatePortBlocked()) {
-    console.log('Refusing CDP test against port 9222 (dedicated affiliate profile).');
-    return;
-  }
+  if (affiliatePortBlocked()) return;
   console.log(`Testing CDP controller at ${CDP_URL}...`);
   
   const cdp = new CDPController(CDP_URL);

@@ -3,7 +3,7 @@
 **For:** Engineering code review (later inspection by another engineer)  
 **Date:** 2026-10-17  
 **Branch:** `shopkud-core-cdp-prototype-a825`  
-**Status:** Dry-run is implemented. The dedicated profile is not logged in, so authenticated pages were not checked.
+**Status:** Dry-run is implemented. A logged-in smoke ran on the existing Chrome at port 9333. The dedicated profile on port 9222 is still logged out and was left alone.
 
 ## Real-site smoke (2026-10-17)
 
@@ -46,11 +46,64 @@ CDP and bot checks do not use port 9222. Set `CHROME_CDP_URL` to a throwaway Chr
 | CreepJS | `navigator.webdriver` is false. 0 lie markers. The trust text was still "unknown" after the short wait. |
 | rebrowser-bot-detector | Page loaded. `navigator.webdriver` is false. The status element did not expose a pass/fail grade. |
 
+## Logged-in smoke (2026-10-17, port 9333)
+
+The owner pointed this run at the existing Chrome on `127.0.0.1:9333` (`~/.shopkud-chrome-alias`). That process was not killed or restarted. The logged-out window on port 9222 was not touched. Every check opened a new tab and closed only that tab. No password was typed, no CAPTCHA was solved, no short link was opened, and the custom-link form was not submitted.
+
+`SHOPKUD_CDP_PORT` selects the DevTools port (default 9222). This smoke set it to 9333. Automated tests refuse both 9222 and 9333.
+
+| Step | Result |
+|---|---|
+| Connection | **Pass.** The affiliate home loaded with no password field and no login URL. Profile and status calls returned, which is the logged-in shape. |
+| Offer | **Pass.** `GET /api/v3/offer/product` (query key `item_id`) returned a commission number. Source was the network JSON. The Get Link button was not clicked. |
+| Custom link dry-run | **Pass after a wait.** The first attempt checked the form before the page had rendered, so every selector missed. After waiting for the form, the product URL field and all five Sub ID fields resolved. Sub IDs `test` and `smoke` were filled. Submit was not clicked, and no create request was seen. |
+| Reports | **Pass after the same wait.** `/report/conversion_report` showed the start date, end date, download button, and tables. Download was not clicked and no export request was seen. |
+
+The old guesses `/linkmanage/customlink` and `/report` are 404s. The live pages are `/offer/custom_link` and `/report/conversion_report`. The offer page path `/offer/product_offer/{id}` was already right.
+
+Selectors that matched:
+
+- Product URL: `textarea[placeholder*="shopee.co.th"]`
+- Sub IDs: `#customLink_sub_id1` through `#customLink_sub_id5`
+- Custom-link button text is "เอา ลิงก์" (same label as Get Link on the offer page). Dry-run does not click it.
+- Report dates: `input[placeholder="วันเริ่มต้น"]` and `input[placeholder="วันสิ้นสุด"]`
+- Report download: button text "ดาวน์โหลดรายงาน"
+- Report table: `table`
+
+Affiliate API paths seen, with no bodies, ids, or amounts stored:
+
+- `GET /api/v3/offer/product`
+- `GET /api/v3/user/profile`
+- `GET /api/v3/user/status`
+- `GET /api/v3/user/check_program_permission`
+- `GET /api/v3/offer/checkInAmsWhiteList`
+- `GET /api/v3/dashboard/latest_report_date`
+- `GET /api/v3/dashboard/detail`
+- `POST /api/v3/gql` (operation names included `isAffiliateHasNoImpressionCampaign`, `productsRankList`, and `conversionReportUpdateTime`)
+
+The offer payload keeps the commission on `data.commission_rate_detail.default_commission_rate` (a number) and on string fields under `data.commission_rate`. The number is not a plain percent. The create-link POST path is still unknown because dry-run stops before submit.
+
+Nav paths seen on the logged-in home, as pathnames only: `/dashboard`, `/offer/shopee_offer`, `/offer/brand_offer`, `/offer/product_offer`, `/offer/offer_for_me`, `/offer/custom_link`, `/report/conversion_report`, `/report/click_report`.
+
+### Tests
+
+- TypeScript: 20/20 passed, with `SHOPKUD_CDP_PORT=9444` on a headful throwaway profile under `/tmp`. That Chrome was then stopped. Ports 9222 and 9333 were still listening afterward.
+- Python: 19/19 passed (`tests.test_campaigns` and `tests.test_product_history`).
+
+### Headful bot check (throwaway profile on 9444)
+
+| Site | Result |
+|---|---|
+| bot.sannysoft.com | `navigator.webdriver` is false. 0 of 57 checks were marked suspicious. |
+| CreepJS | `navigator.webdriver` is false. 0 lie markers. Trust text was still "unknown" after the short wait. |
+| rebrowser-bot-detector | Page loaded. `navigator.webdriver` is false. No pass/fail grade was shown. |
+
 ### Still needs the owner
 
-1. Log in once, by hand, in the dedicated Chrome window that is sitting on the login page.
-2. Reload the first tab of the Chrome on port 9333 if that tab looks blank or shows only a captcha fixture.
-3. After login, re-run `npx tsx src/cli.ts smoke --product-url <product url>` so offer, dry-run create, and reports can be checked. Do not drop `--dry-run`.
+1. Decide how to display the offer commission number. The live field is a scaled integer, not a percent.
+2. A real custom-link submit is still refused, so the create API path is not confirmed.
+3. The dedicated window on port 9222 is still on the buyer login page. Log in there by hand only if that profile should replace the 9333 window.
+4. If an older tab on port 9333 still shows a captcha fixture from the earlier test mistake, reload that tab. This run did not close existing tabs.
 
 ## What Was Built
 
