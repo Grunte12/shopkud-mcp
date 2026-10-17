@@ -2,7 +2,7 @@
 
 **For:** Engineering code review (later inspection by another engineer)  
 **Date:** 2026-10-17  
-**Branch:** `shopkud-core-cdp-prototype-a825`  
+**Branch:** `cursor/shopkud-core-cdp-prototype-a825`  
 **Status:** Dry-run is implemented. A logged-in smoke ran on the existing Chrome at port 9333. The dedicated profile on port 9222 is still logged out and was left alone.
 
 ## Real-site smoke (2026-10-17)
@@ -81,7 +81,7 @@ Affiliate API paths seen, with no bodies, ids, or amounts stored:
 - `GET /api/v3/dashboard/detail`
 - `POST /api/v3/gql` (operation names included `isAffiliateHasNoImpressionCampaign`, `productsRankList`, and `conversionReportUpdateTime`)
 
-The offer payload keeps the commission on `data.commission_rate_detail.default_commission_rate` (a number) and on string fields under `data.commission_rate`. The number is not a plain percent. The create-link POST path is still unknown because dry-run stops before submit.
+The store rate is `data.commission_rate_detail.seller_commission_rate`. Divide that integer by 1000 to get the percent. Divide the price integer by 100000 to get baht. Commission baht is price times that percent. No sample prices or amounts are written here. The custom-link script names `POST /api/v3/gql?q=batchCustomLink`. Dry-run does not call it.
 
 Nav paths seen on the logged-in home, as pathnames only: `/dashboard`, `/offer/shopee_offer`, `/offer/brand_offer`, `/offer/product_offer`, `/offer/offer_for_me`, `/offer/custom_link`, `/report/conversion_report`, `/report/click_report`.
 
@@ -98,12 +98,15 @@ Nav paths seen on the logged-in home, as pathnames only: `/dashboard`, `/offer/s
 | CreepJS | `navigator.webdriver` is false. 0 lie markers. Trust text was still "unknown" after the short wait. |
 | rebrowser-bot-detector | Page loaded. `navigator.webdriver` is false. No pass/fail grade was shown. |
 
-### Still needs the owner
+### Follow-up
 
-1. Decide how to display the offer commission number. The live field is a scaled integer, not a percent.
-2. A real custom-link submit is still refused, so the create API path is not confirmed.
-3. The dedicated window on port 9222 is still on the buyer login page. Log in there by hand only if that profile should replace the 9333 window.
-4. If an older tab on port 9333 still shows a captcha fixture from the earlier test mistake, reload that tab. This run did not close existing tabs.
+The offer result now shows the store's commission percent and the baht amount for the product price, including the min and max when the price is a range.
+
+The create operation named in the page script is `batchCustomLink` on `POST /api/v3/gql`. It is not confirmed by a submit, and this tool still will not submit.
+
+Port 9222 stays on the buyer login page. The logged-in browser is port 9333, so nobody needs to log in on 9222.
+
+The captcha-fixture tab on port 9333 is gone. The open pages are ordinary sites plus the offer tab that was already there. Nothing was closed.
 
 ## What Was Built
 

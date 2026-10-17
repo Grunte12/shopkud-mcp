@@ -617,34 +617,86 @@ export class BrowserFlows {
   private readRate(value: unknown): number | null {
     if (typeof value === 'number' && Number.isFinite(value)) return value;
     if (typeof value === 'string') {
-      const trimmed = value.trim().replace(/%$/, '');
+      const trimmed = value.trim().replace(/,/g, '').replace(/%$/, '');
       if (/^-?\d+(\.\d+)?$/.test(trimmed)) return Number(trimmed);
     }
     return null;
+  }
+
+  /** "12%" or "12.5 %" → 12 or 12.5. */
+  private readPercentText(value: unknown): number | null {
+    if (typeof value !== 'string' || !value.includes('%')) return null;
+    const match = value.replace(/,/g, '').match(/(\d+(?:\.\d+)?)\s*%/);
+    return match ? Number(match[1]) : null;
+  }
+
+  /**
+   * Live offer integers are percent × 1000 (12000 → 12%).
+   * A value that is already a percent, such as 10 or "10%", stays as-is.
+   */
+  private asPercent(raw: unknown, text?: unknown): number | null {
+    const rate = this.readRate(raw);
+    if (rate != null) {
+      const percent = Math.abs(rate) >= 1000 ? rate / 1000 : rate;
+      return Math.round(percent * 100) / 100;
+    }
+    return this.readPercentText(text);
+  }
+
+  /** Live prices are baht × 100000. A normal baht value stays as-is. */
+  private asBaht(value: unknown): number | null {
+    if (typeof value === 'string' && value.includes('-') && !value.trim().startsWith('-')) {
+      return this.asBaht(value.split('-')[0]);
+    }
+    const amount = this.readRate(value);
+    if (amount == null) return null;
+    const baht = Math.abs(amount) >= 100000 ? amount / 100000 : amount;
+    return Math.round(baht * 100) / 100;
+  }
+
+  private bahtFromPercent(price: number | null, percent: number | null): number | null {
+    if (price == null || percent == null) return null;
+    return Math.round(price * percent) / 100;
   }
 
   private extractOfferFromResponse(response: any): any | null {
     const data = response?.data;
     if (!data || typeof data !== 'object' || Array.isArray(data)) return null;
 
-    // Live JSON: commission_rate_detail.default_commission_rate is a number.
-    // commission_rate.* values are strings. The site's scale is not a plain percent.
-    const detail = data.commission_rate_detail;
-    const rates = data.commission_rate;
-    const commission_rate = this.readRate(detail?.default_commission_rate)
-      ?? this.readRate(rates?.default_commission_rate)
-      ?? this.readRate(rates?.max_commission_rate)
-      ?? this.readRate(rates)
-      ?? this.readRate(data.commission_pct);
-    if (commission_rate == null) return null;
+    const detail = data.commission_rate_detail || {};
+    const rates = (data.commission_rate && typeof data.commission_rate === 'object') ? data.commission_rate : {};
+    const flatRate = typeof data.commission_rate === 'number' || typeof data.commission_rate === 'string'
+      ? data.commission_rate
+      : null;
+    const storePercent = [
+      this.asPercent(detail.seller_commission_rate, rates.seller_commission_rate),
+      this.asPercent(detail.default_commission_rate, rates.default_commission_rate),
+      this.asPercent(rates.max_commission_rate),
+      this.asPercent(flatRate),
+      this.asPercent(data.commission_pct),
+    ].find((item) => item != null && item > 0);
+    if (storePercent == null) return null;
+    return this.finishOffer(data, storePercent);
+  }
 
-    const card = data.batch_item_for_item_card_full;
+  private finishOffer(data: any, storePercent: number): any {
+    const card = data.batch_item_for_item_card_full || {};
+    const priceBaht = this.asBaht(card.price) ?? this.asBaht(data.price);
+    const priceMin = this.asBaht(card.price_min) ?? priceBaht;
+    const priceMax = this.asBaht(card.price_max) ?? priceBaht;
     return {
-      commission_rate,
-      price: card?.price || data.price || null,
-      product_name: card?.name || data.product_name || data.name || null,
-      shop_id: card?.shopid || data.shop_id || null,
-      stock: card?.stock ?? data.stock ?? null,
+      commission_rate: storePercent,
+      store_commission_percent: storePercent,
+      price: priceBaht,
+      price_baht: priceBaht,
+      price_min_baht: priceMin,
+      price_max_baht: priceMax,
+      commission_baht: this.bahtFromPercent(priceBaht, storePercent),
+      commission_min_baht: this.bahtFromPercent(priceMin, storePercent),
+      commission_max_baht: this.bahtFromPercent(priceMax, storePercent),
+      product_name: card.name || data.product_name || data.name || null,
+      shop_id: card.shopid || data.shop_id || null,
+      stock: card.stock ?? data.stock ?? null,
     };
   }
 

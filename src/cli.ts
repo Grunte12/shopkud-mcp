@@ -184,8 +184,12 @@ async function commandGetOffer() {
     source: result.data?.source || null,
     commission_captured: result.data?.commission_rate != null,
   });
-  if (result.data?.commission_rate != null) {
-    console.log(`SENSITIVE commission_rate=${result.data.commission_rate}`);
+  if (result.data?.store_commission_percent != null) {
+    console.log(`SENSITIVE store_commission_percent=${result.data.store_commission_percent}`);
+    console.log(`SENSITIVE price_baht=${result.data.price_baht}`);
+    console.log(`SENSITIVE commission_baht=${result.data.commission_baht}`);
+    console.log(`SENSITIVE commission_min_baht=${result.data.commission_min_baht}`);
+    console.log(`SENSITIVE commission_max_baht=${result.data.commission_max_baht}`);
   }
   return result.ok ? 0 : 1;
   });
@@ -300,11 +304,15 @@ async function commandSmoke() {
     endpoint_path: offer.data?.endpoint_path || null,
     endpoints: seen.endpoints,
     source: offer.data?.source || null,
-    commission_captured: offer.data?.commission_rate != null,
+    commission_captured: offer.data?.store_commission_percent != null,
     page_loads: seen.loads(),
   });
-  if (offer.data?.commission_rate != null) {
-    console.log(`SENSITIVE commission_rate=${offer.data.commission_rate}`);
+  if (offer.data?.store_commission_percent != null) {
+    console.log(`SENSITIVE store_commission_percent=${offer.data.store_commission_percent}`);
+    console.log(`SENSITIVE price_baht=${offer.data.price_baht}`);
+    console.log(`SENSITIVE commission_baht=${offer.data.commission_baht}`);
+    console.log(`SENSITIVE commission_min_baht=${offer.data.commission_min_baht}`);
+    console.log(`SENSITIVE commission_max_baht=${offer.data.commission_max_baht}`);
   }
   if (offerVerdict !== 'ok' || seen.blockedShortLink() || seen.loads() > PAGE_LOAD_BUDGET) {
     console.log(`OUTLINE ${JSON.stringify(await outline(page))}`);

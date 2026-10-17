@@ -150,7 +150,11 @@ test('getOfferData reads commission from the offer JSON and does not open a shor
   try {
     const result = await flows.getOfferData('67890');
     assert.strictEqual(result.ok, true, result.error);
+    assert.strictEqual(result.data.store_commission_percent, 10);
     assert.strictEqual(result.data.commission_rate, 10);
+    assert.strictEqual(result.data.price_baht, 299);
+    assert.strictEqual(result.data.commission_baht, 29.9);
+    assert.strictEqual(result.data.commission_max_baht, 59.9);
     assert.strictEqual(result.data.source, 'network_capture');
     assert.strictEqual(result.data.endpoint_path, '/api/v3/offer/product');
     assert.ok(state.offerDetailCalls >= 1);

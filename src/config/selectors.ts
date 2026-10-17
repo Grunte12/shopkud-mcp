@@ -110,11 +110,12 @@ export interface EndpointConfig {
  * These are network-capture targets, not direct API calls
  */
 /**
- * Paths seen on a logged-in affiliate session. The custom-link create call
- * is still unknown because dry-run stops before submit.
+ * Paths seen on a logged-in affiliate session.
+ * batchCustomLink is the gql operation named in the custom-link page script.
+ * Dry-run does not call it.
  */
 export const SHOPEE_ENDPOINTS: EndpointConfig = {
-  customLinkApi: undefined,
+  customLinkApi: 'POST /api/v3/gql?q=batchCustomLink',
   offerDetailApi: '/api/v3/offer/product',
   reportsApi: '/api/v3/gql',
 };

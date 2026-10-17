@@ -472,6 +472,8 @@ export class ShopkudMCPServer {
                 item_id: params.item_id,
                 price: cachedOffer.price,
                 commission_rate_social: cachedOffer.commission_rate_social,
+                store_commission_percent: cachedOffer.commission_rate_social,
+                commission_baht: Math.round(cachedOffer.price * cachedOffer.commission_rate_social) / 100,
                 commission_rate_video: cachedOffer.commission_rate_video,
                 extra_comm: cachedOffer.extra_comm,
                 stock_available: cachedOffer.stock_available,
@@ -499,20 +501,25 @@ export class ShopkudMCPServer {
     try {
       await this.cdp.ensureConnected();
       
-      const offerUrl = `https://affiliate.shopee.co.th/offer/product_offer/${params.item_id}`;
-      const data = await this.cdp.navigateAndCapture(
-        offerUrl,
-        /api\/v4/,
-        15000
-      );
+      const result = await this.cdp.getBrowserFlows().getOfferData(params.item_id);
+      if (!result.ok || !result.data) {
+        throw new Error(result.error || 'Could not read the offer');
+      }
+      const data = result.data;
+      const price = Number(data.price_baht ?? 0);
+      const storePercent = Number(data.store_commission_percent ?? 0);
 
       const offer = {
         item_id: params.item_id,
-        price: data.price || 0,
-        commission_rate_social: data.commission?.social || 0,
-        commission_rate_video: data.commission?.video || null,
-        extra_comm: data.extra_comm || false,
-        stock_available: data.stock > 0,
+        price,
+        commission_rate_social: storePercent,
+        store_commission_percent: storePercent,
+        commission_baht: data.commission_baht ?? null,
+        commission_min_baht: data.commission_min_baht ?? null,
+        commission_max_baht: data.commission_max_baht ?? null,
+        commission_rate_video: null,
+        extra_comm: false,
+        stock_available: Number(data.stock ?? 0) > 0,
       };
 
       this.db.saveOffer({

@@ -307,17 +307,19 @@ export function createMockAffiliateServer() {
       data: {
         item_id: itemId,
         commission_rate: {
-          default_commission_rate: '10',
-          max_commission_rate: '10',
+          seller_commission_rate: '10%',
+          default_commission_rate: '10%',
         },
         commission_rate_detail: {
-          default_commission_rate: 10,
-          seller_commission_rate: 0,
-          shopee_commission_rate: 10,
+          default_commission_rate: 10000,
+          seller_commission_rate: 10000,
+          shopee_commission_rate: 0,
         },
         batch_item_for_item_card_full: {
           name: `Mock Product ${itemId}`,
-          price: '299.00-599.00',
+          price: '29900000',
+          price_min: '29900000',
+          price_max: '59900000',
           shopid: '12345',
           stock: 100,
         },

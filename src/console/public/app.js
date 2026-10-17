@@ -228,7 +228,8 @@ async function getOffer() {
           <h3>Offer for Item ${data.offer.item_id}</h3>
           <div class="link-meta">
             <div><strong>Price:</strong> ฿${data.offer.price.toFixed(2)}</div>
-            <div><strong>Social Rate:</strong> ${data.offer.commission_rate_social}%</div>
+            <div><strong>Store commission:</strong> ${data.offer.commission_rate_social}%</div>
+            <div><strong>Commission on this price:</strong> ฿${(data.offer.price * data.offer.commission_rate_social / 100).toFixed(2)}</div>
             <div><strong>Video Rate:</strong> ${data.offer.commission_rate_video ? data.offer.commission_rate_video + '%' : 'N/A'}</div>
             <div><strong>Extra Comm:</strong> ${data.offer.extra_comm ? 'Yes' : 'No'}</div>
             <div><strong>In Stock:</strong> ${data.offer.stock_available ? 'Yes' : 'No'}</div>
