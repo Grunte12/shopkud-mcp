@@ -165,7 +165,7 @@ npm test tests/database-migration.test.ts
 ## Security Notes
 
 1. **Dedicated Profile:** Never use your personal Chrome profile
-2. **No Credentials:** Never commit cookies, tokens, or API keys
+2. **No Credentials:** Never commit cookies, tokens, browser profiles, or any authentication data
 3. **Localhost Only:** CDP port 9222 binds to 127.0.0.1
 4. **No Auto-Captcha:** The system stops on CAPTCHA and requires manual intervention
 5. **No Tracking Clicks:** Link verification does NOT follow affiliate redirects

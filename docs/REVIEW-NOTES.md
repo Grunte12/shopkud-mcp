@@ -92,7 +92,7 @@ The requirements state "Detect CAPTCHA or verify pages and stop cleanly with a c
 
 ## What's NOT Implemented (Out of Scope for P0)
 
-- Affiliate Open API live calls (stub only; env-var configured, no real requests)
+- Affiliate Open API: **NOT USED** - removed completely, browser automation only
 - Actual Sub ID entry during link creation (mock short links returned)
 - CSV report import (this is in the existing Python MCP; not migrated)
 - Missions tracker
@@ -199,7 +199,7 @@ npm run test:bot  # requires Chrome on :9222
 ## Migration Path (from Current Extension-Based Approach)
 
 1. **Phase 1 (This Prototype):** Prove CDP + patchright works; test bot detection; validate P0 tools
-2. **Phase 2:** Add real Affiliate Open API integration (requires App ID + secret)
+2. **Phase 2:** Test against real account with owner's credentials (--dry-run mode available)
 3. **Phase 3:** Implement link creation via CDP (click "Get Link" dialog, capture short link)
 4. **Phase 4:** Add extension network-relay fallback (content script forwards XHR to MCP)
 5. **Phase 5:** Migrate CSV report import from Python MCP
@@ -231,7 +231,7 @@ The prototype is feature-complete for P0 and demonstrates that CDP + patchright 
 
 The code is ready for review. The main risks are:
 1. No real Shopee account testing yet
-2. The Affiliate Open API stub is not implemented
+2. The Affiliate Open API is NOT USED (by design - browser automation only)
 3. Bot detection may still flag aggressive checkers
 
 All existing Python tests pass; no regressions introduced.
