@@ -38,6 +38,7 @@ SHOPKUD_DB_PATH=./shopkud.db node dist/mcp/server.js
 
 # 4. Start web console (optional)
 SHOPKUD_DB_PATH=./shopkud.db npm run console
+# or try it with demo data (no real Chrome/Shopee): npm run console:demo  (see docs/CONSOLE.md)
 
 # 5. Run tests
 npm test

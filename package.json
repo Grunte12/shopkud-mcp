@@ -11,7 +11,9 @@
     "cli": "tsx src/cli.ts",
     "test:bot": "node tests/bot-detection.test.js",
     "console": "tsx src/console/server.ts",
-    "mock-shopee": "tsx tests/fixtures/mock-shopee.ts"
+    "mock-shopee": "tsx tests/fixtures/mock-shopee.ts",
+    "console:demo": "tsx tests/fixtures/console-demo.ts",
+    "test:console": "tsx --test tests/console-logic.test.ts tests/console-e2e.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
