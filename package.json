@@ -1,0 +1,32 @@
+{
+  "name": "shopkud-core",
+  "version": "0.9.0",
+  "description": "ShopKud Core CDP-based MCP server + local console",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/server.ts",
+    "test": "tsx --test tests/*.test.ts",
+    "test:bot": "node tests/bot-detection.test.js",
+    "console": "tsx src/console/server.ts",
+    "mock-shopee": "tsx tests/fixtures/mock-shopee.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "better-sqlite3": "^11.5.0",
+    "express": "^4.21.1",
+    "patchright": "^1.49.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.9.0",
+    "playwright": "^1.49.1",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
