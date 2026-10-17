@@ -92,6 +92,19 @@ node dist/mcp/server.js
 
 The MCP server will connect to Chrome via CDP and expose tools over stdio.
 
+`SHOPKUD_CDP_PORT` selects the DevTools port when you want a port other than 9222. The CLI opens a new tab for browser commands and closes only that tab.
+
+```bash
+export SHOPKUD_DB_PATH=./shopkud.db
+export SHOPKUD_CDP_PORT=9222
+
+npx tsx src/cli.ts get-conversions --from 2026-01-01 --to 2026-10-17
+npx tsx src/cli.ts sales-by --dim platform --from 2026-01-01 --to 2026-10-17
+npx tsx src/cli.ts verify-link --url 'https://s.shopee.co.th/example'
+```
+
+`get-conversions` reads `GET /api/v3/report/list` from `/report/conversion_report`. It clicks download only if that list never arrives. `sales-by` reads the stored rows and does not open Chrome. `verify-link` sends HEAD and does not follow the redirect. Run `get-conversions` once before `verify-link`, so the account marker exists. Do not open `s.shopee.co.th` links in the browser.
+
 ## 5. Start the Local Web Console
 
 In another terminal:
@@ -168,7 +181,7 @@ npm test tests/database-migration.test.ts
 2. **No Credentials:** Never commit cookies, tokens, browser profiles, or any authentication data
 3. **Localhost Only:** CDP port 9222 binds to 127.0.0.1
 4. **No Auto-Captcha:** The system stops on CAPTCHA and requires manual intervention
-5. **No Tracking Clicks:** Link verification does NOT follow affiliate redirects
+5. **No Tracking Clicks:** Link verification sends HEAD and does not follow the redirect or open the short link in Chrome
 
 ## Troubleshooting
 

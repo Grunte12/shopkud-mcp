@@ -7,6 +7,8 @@ import {
 import { CDPController, CaptchaDetectedError } from '../core/cdp-controller.js';
 import { resolveCdpUrl } from '../config/cdp.js';
 import { ShopkudDatabase, type SubIds } from '../core/database.js';
+import { parseMappedCsv, salesBy, type SalesDim } from '../core/conversions.js';
+import { headNoRedirect, ownershipFromLocation } from '../core/verify-link.js';
 import { randomBytes } from 'crypto';
 import * as crypto from 'crypto';
 
@@ -146,8 +148,35 @@ export class ShopkudMCPServer {
           },
         },
         {
+          name: 'get_conversions',
+          description: 'Read the Shopee conversion report for a date range and store the rows. Does not open short links.',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              from: { type: 'string', description: 'Start date YYYY-MM-DD' },
+              to: { type: 'string', description: 'End date YYYY-MM-DD' },
+              status: { type: 'string', description: 'Optional status text to keep' },
+            },
+            required: ['from', 'to'],
+          },
+        },
+        {
+          name: 'sales_by',
+          description: 'Aggregate stored conversions by sub_id, platform (s1), product (s2), or clip (s3).',
+          inputSchema: {
+            type: 'object',
+            properties: {
+              dim: { type: 'string', enum: ['sub_id', 'platform', 'clip', 'product'] },
+              from: { type: 'string', description: 'Start date YYYY-MM-DD' },
+              to: { type: 'string', description: 'End date YYYY-MM-DD' },
+              status: { type: 'string', description: 'Optional status text to keep' },
+            },
+            required: ['dim', 'from', 'to'],
+          },
+        },
+        {
           name: 'verify_link',
-          description: 'Verify affiliate link ownership and target WITHOUT following redirects (no tracking clicks). Reports ownership_verified and target_verified separately.',
+          description: 'HEAD a Shopee short link with redirects disabled. Ownership compares the Location utm_source with the logged-in affiliate id. It does not open the link.',
           inputSchema: {
             type: 'object',
             properties: {
@@ -217,6 +246,10 @@ export class ShopkudMCPServer {
             return await this.createLink(args as any as CreateLinkParams);
           case 'create_links_batch':
             return await this.createLinksBatch(args as any as { items: CreateLinkParams[] });
+          case 'get_conversions':
+            return await this.getConversions(args as any as { from: string; to: string; status?: string });
+          case 'sales_by':
+            return await this.salesByTool(args as any as { dim: SalesDim; from: string; to: string; status?: string });
           case 'verify_link':
             return await this.verifyLink(args as any as VerifyLinkParams);
           case 'get_offer':
@@ -405,54 +438,101 @@ export class ShopkudMCPServer {
     };
   }
 
-  private async verifyLink(params: VerifyLinkParams) {
-    if (!params.url.includes('s.shopee.co.th/')) {
-      throw new Error('Only Shopee short links (s.shopee.co.th) can be verified');
-    }
-
+  private async getConversions(params: { from: string; to: string; status?: string }) {
+    await this.cdp.ensureConnected();
+    let result;
     try {
-      await this.cdp.ensureConnected();
-      
-      const response = await this.cdp.navigateAndCapture(
-        params.url,
-        /affiliate\.shopee\.co\.th/,
-        10000
-      );
-
-      const itemIdMatch = response?.url?.match(/item\.(\d+)/);
-      const itemId = itemIdMatch ? itemIdMatch[1] : null;
-
-      const existing = this.db.findLinks({ item_id: itemId || undefined });
-      const ownedByUs = existing.some(link => link.short_link === params.url);
-
-      if (existing.length > 0) {
-        this.db.updateLinkVerification(
-          existing[0].link_id,
-          ownedByUs ? 'true' : 'false',
-          itemId ? 'true' : 'unknown'
-        );
-      }
-
+      result = await this.cdp.getBrowserFlows().getConversions(params.from, params.to);
+    } finally {
+      await this.cdp.disconnect();
+    }
+    if (!result.ok || !result.data) {
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify({
-            ok: true,
-            source: 'cdp',
-            as_of: new Date().toISOString(),
-            resolves_to: {
-              item_id: itemId,
-              title: 'Unknown',
-            },
-            ownership_verified: ownedByUs ? 'true' : 'false',
-            target_verified: itemId ? 'true' : 'unknown',
-            warnings: itemId ? [] : ['Could not extract item ID from redirect'],
-          }),
+          text: JSON.stringify({ ok: false, error: result.error || 'Could not read conversions', status: result.status }),
         }],
       };
-    } catch (error) {
-      throw error;
     }
+    const asOf = new Date().toISOString();
+    let rows = result.data.rows;
+    if (params.status) {
+      const needle = params.status.toLowerCase();
+      rows = rows.filter((row) => row.status.toLowerCase().includes(needle));
+    }
+    this.db.saveConversions(rows, result.data.source, asOf);
+    if (result.data.affiliate_id) this.db.saveAccountMarker(result.data.affiliate_id, asOf);
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          ok: true,
+          source: result.data.source,
+          as_of: asOf,
+          endpoint_path: result.data.endpoint_path,
+          download_clicked: result.data.download_clicked,
+          row_count: rows.length,
+          empty: rows.length === 0,
+        }),
+      }],
+    };
+  }
+
+  private async salesByTool(params: { dim: SalesDim; from: string; to: string; status?: string }) {
+    const dims: SalesDim[] = ['sub_id', 'platform', 'clip', 'product'];
+    if (!dims.includes(params.dim)) {
+      return { content: [{ type: 'text', text: JSON.stringify({ ok: false, error: 'invalid_dim' }) }] };
+    }
+    let rows = this.db.listConversions(params.from, params.to);
+    if (params.status) {
+      const needle = params.status.toLowerCase();
+      rows = rows.filter((row) => row.status.toLowerCase().includes(needle));
+    }
+    return {
+      content: [{
+        type: 'text',
+        text: JSON.stringify({
+          ok: true,
+          source: 'sqlite',
+          as_of: new Date().toISOString(),
+          dim: params.dim,
+          from: params.from,
+          to: params.to,
+          buckets: salesBy(rows, params.dim, params.from, params.to),
+        }),
+      }],
+    };
+  }
+
+  private async verifyLink(params: VerifyLinkParams) {
+    const head = await headNoRedirect(params.url);
+    const decision = ownershipFromLocation(head.location, this.db.getAccountMarker(), head.status);
+    if (decision.item_id) {
+      const existing = this.db.findLinks({ item_id: decision.item_id });
+      if (existing.length > 0) {
+        this.db.updateLinkVerification(
+          existing[0].link_id,
+          decision.ownership_verified,
+          decision.target_verified,
+        );
+      }
+    }
+    return {
+      content: [{
+        type: 'text',
+          text: JSON.stringify({
+          ok: true,
+          source: 'head',
+          as_of: new Date().toISOString(),
+          ownership_verified: decision.ownership_verified,
+          target_verified: decision.target_verified,
+          reason: decision.reason,
+          http_status: decision.http_status,
+          item_id_present: decision.item_id != null,
+          warnings: decision.ownership_verified === 'unknown' ? [decision.reason] : [],
+        }),
+      }],
+    };
   }
 
   private async getOffer(params: GetOfferParams) {
@@ -581,29 +661,7 @@ export class ShopkudMCPServer {
         throw new Error('CSV must have at least a header and one data row');
       }
 
-      const headers = lines[0].split(',').map(h => h.trim());
-      const { sub_id, commission, clicks, orders, status } = params.mapping;
-
-      const subIdIndex = headers.indexOf(sub_id);
-      const commissionIndex = headers.indexOf(commission);
-      const clicksIndex = clicks ? headers.indexOf(clicks) : -1;
-      const ordersIndex = orders ? headers.indexOf(orders) : -1;
-      const statusIndex = status ? headers.indexOf(status) : -1;
-
-      if (subIdIndex === -1 || commissionIndex === -1) {
-        throw new Error('Required columns not found in CSV');
-      }
-
-      const rows = lines.slice(1).map(line => {
-        const values = line.split(',').map(v => v.trim());
-        return {
-          sub_id: values[subIdIndex],
-          commission: parseFloat(values[commissionIndex]) || 0,
-          clicks: clicksIndex >= 0 ? parseInt(values[clicksIndex]) || 0 : 0,
-          orders: ordersIndex >= 0 ? parseInt(values[ordersIndex]) || 0 : 0,
-          status: statusIndex >= 0 ? values[statusIndex] : 'unknown',
-        };
-      });
+      const rows = parseMappedCsv(params.csv_text, params.mapping);
 
       const links = this.db.findLinks({});
       const subIdMap = new Map(links.map(link => [

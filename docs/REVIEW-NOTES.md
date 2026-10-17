@@ -113,6 +113,16 @@ One approved `create-link` run submitted the custom-link form once. The request 
 
 Port 9222 stays on the buyer login page. The logged-in browser is port 9333, so nobody needs to log in on 9222.
 
+### Conversion report, sales, and ownership (2026-10-17)
+
+`get_conversions` and `get-conversions` open one new tab on `/report/conversion_report`, read the JSON the page loads, store the rows, and close that tab. They do not open short links. The live list is `GET /api/v3/report/list` with query keys `page_size`, `page_num`, `purchase_time_s`, `purchase_time_e`, and `version`. `POST /api/v3/gql` operation `conversionReportUpdateTime` is only the last-update timestamp, not the rows. The date inputs (`วันเริ่มต้น`, `วันสิ้นสุด`) and the `ดาวน์โหลดรายงาน` button are the fallback when that list never arrives. The live read used the JSON list, so the download was not clicked and the real CSV export shape is still unknown. An empty list is stored as zero rows.
+
+Each checkout becomes one or more rows. `utm_content` is split on `-` into five slots: platform, product, clip, variant, yyyymm. The row id is a hash, so order and item ids are not stored. `source` and `as_of` are stored with the row. Amounts of 100000 or more are baht × 100000. Smaller amounts stay as baht. Status text is filtered in the tool after the download, not by a status query on the list URL. Re-saving the same rows updates them in place.
+
+`sales_by` reads those stored rows. `sub_id` groups the full slot string. `platform`, `product`, and `clip` use slots 1, 2, and 3. It returns orders, GMV, commission, and a cancelled count. There is no separate dimension for variant or month. A live read found rows, and every Sub ID slot on those rows was empty, so platform, product, and clip all land in `(none)` until a link is created with those slots filled. The custom link from the earlier one-submit run was not in this report.
+
+`verify_link` no longer opens the short link. It sends HEAD with redirects disabled and reads the `Location` header. Ownership is true when the digits in `utm_source` or `mmp_pid` match the numeric `affiliate_id` saved from the report list. The `an_` prefix is ignored. It is false when both markers exist and differ. It is unknown when the header is missing or either marker is missing, so a check before the first report read cannot decide ownership. The product path (`/product/{shop}/{item}` or `/opaanlp/{shop}/{item}`) sets target verified. Two short links from this account can both be owned: the marker says which account created them, not which Sub ID they carry. The tool does not return the Location URL or the marker.
+
 The captcha-fixture tab on port 9333 is gone. The open pages are ordinary sites plus the offer tab that was already there. Nothing was closed.
 
 ## What Was Built
@@ -141,7 +151,9 @@ ShopKud Core is a Chrome-control MCP server using patchright (patched Playwright
      - `find_link`: Filter registry by product/channel/clip/item
      - `create_link`: Idempotent link creation with 5 Sub IDs per channel
      - `create_links_batch`: Validates all first, stops on first error
-     - `verify_link`: Checks ownership and target WITHOUT following redirects
+     - `verify_link`: HEAD with redirects disabled. Ownership compares the Location marker with the saved affiliate id
+     - `get_conversions`: Read `/report/conversion_report` and store rows with source and as_of
+     - `sales_by`: Aggregate stored conversions by sub_id, platform, product, or clip
      - `get_offer`: Commission rates (cached 6h, CDP fallback)
      - `get_connection_status`: Chrome/CDP connection and queue status
    - **NO Open API** - all operations via browser automation
@@ -204,7 +216,7 @@ The requirements state "Detect CAPTCHA or verify pages and stop cleanly with a c
 
 - Affiliate Open API: **NOT USED** - removed completely, browser automation only
 - Actual Sub ID entry during link creation (mock short links returned)
-- CSV report import (this is in the existing Python MCP; not migrated)
+- A captured Shopee CSV export (the JSON list is used; the download fallback parser is tested on a redacted header only)
 - Missions tracker
 - Payout status
 - Product research / history pricing

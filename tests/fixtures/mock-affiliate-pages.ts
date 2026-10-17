@@ -393,10 +393,36 @@ export function createMockAffiliateServer() {
       body: JSON.stringify({ operationName: 'conversionReportUpdateTime' }),
     });
     fetch('/api/v3/goods/categoryList');
+    fetch('/api/v3/report/list?page_size=20&page_num=1&purchase_time_s=1760000000&purchase_time_e=1762000000&version=1');
   </script>
 </body>
 </html>
     `);
+  });
+
+  app.get('/api/v3/report/list', (_req, res) => {
+    state.reportListCalls += 1;
+    res.json({
+      code: 0,
+      msg: 'success',
+      data: {
+        page_num: 1,
+        page_size: 20,
+        total_count: 1,
+        list: [{
+          purchase_time: 1760000000,
+          checkout_status: 'Waiting for payment',
+          affiliate_id: 42,
+          utm_content: 'tiktok-P1-clip-blue-202610',
+          estimated_total_commission: 10,
+          orders: [{
+            order_sn: 'REDACTED',
+            order_status: 'COMPLETED',
+            items: [{ item_id: 1, actual_amount: 100, qty: 1, item_commission: 8 }],
+          }],
+        }],
+      },
+    });
   });
 
   app.post('/api/v3/gql', (_req, res) => {

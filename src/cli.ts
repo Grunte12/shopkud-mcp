@@ -10,6 +10,9 @@ import { chromium, type Browser, type Page, type Response } from 'patchright';
 import { BrowserFlows } from './core/browser-flows.js';
 import { parseProductUrl } from './config/selectors.js';
 import { resolveCdpUrl } from './config/cdp.js';
+import { ShopkudDatabase } from './core/database.js';
+import { salesBy, type SalesDim } from './core/conversions.js';
+import { headNoRedirect, ownershipFromLocation } from './core/verify-link.js';
 
 const CDP_URL = resolveCdpUrl();
 const PAGE_LOAD_BUDGET = 20;
@@ -390,10 +393,102 @@ async function commandSmoke() {
   });
 }
 
+function dbPath(): string {
+  return process.env.SHOPKUD_DB_PATH || './shopkud.db';
+}
+
+async function commandGetConversions() {
+  const from = arg('--from');
+  const to = arg('--to');
+  if (!from || !to) throw new Error('Missing --from or --to');
+  const status = arg('--status');
+  return withOwnedPage(async (page) => {
+    const seen = watch(page);
+    const flows = new BrowserFlows(page);
+    const result = await flows.getConversions(from, to);
+    if (result.status === 'captcha_detected') {
+      print({ ok: false, status: result.status, error: result.error, page_loads: seen.loads() });
+      return 3;
+    }
+    const asOf = new Date().toISOString();
+    let rows = result.data?.rows || [];
+    if (status) {
+      const needle = status.toLowerCase();
+      rows = rows.filter((row) => row.status.toLowerCase().includes(needle));
+    }
+    const db = new ShopkudDatabase(dbPath());
+    if (result.ok && result.data) {
+      db.saveConversions(rows, result.data.source, asOf);
+      if (result.data.affiliate_id) db.saveAccountMarker(result.data.affiliate_id, asOf);
+    }
+    db.close();
+    print({
+      ok: result.ok,
+      status: result.status,
+      error: result.error,
+      source: result.data?.source || null,
+      endpoint_path: result.data?.endpoint_path || null,
+      download_clicked: result.data?.download_clicked ?? false,
+      row_count: rows.length,
+      empty: rows.length === 0,
+      page_loads: seen.loads(),
+      short_link_opened: seen.blockedShortLink(),
+      current_path: pathOnly(page.url()),
+    });
+    return result.ok ? 0 : 1;
+  });
+}
+
+async function commandSalesBy() {
+  const dim = arg('--dim') as SalesDim | undefined;
+  const from = arg('--from');
+  const to = arg('--to');
+  const dims: SalesDim[] = ['sub_id', 'platform', 'clip', 'product'];
+  if (!dim || !dims.includes(dim) || !from || !to) throw new Error('Usage: sales-by --dim sub_id|platform|clip|product --from YYYY-MM-DD --to YYYY-MM-DD');
+  const status = arg('--status');
+  const db = new ShopkudDatabase(dbPath());
+  let rows = db.listConversions(from, to);
+  db.close();
+  if (status) {
+    const needle = status.toLowerCase();
+    rows = rows.filter((row) => row.status.toLowerCase().includes(needle));
+  }
+  print({
+    ok: true,
+    source: 'sqlite',
+    dim,
+    from,
+    to,
+    buckets: salesBy(rows, dim, from, to),
+  });
+  return 0;
+}
+
+async function commandVerifyLink() {
+  const url = arg('--url');
+  if (!url) throw new Error('Missing --url');
+  const db = new ShopkudDatabase(dbPath());
+  const marker = db.getAccountMarker();
+  db.close();
+  const head = await headNoRedirect(url);
+  const decision = ownershipFromLocation(head.location, marker, head.status);
+  print({
+    ok: true,
+    source: 'head',
+    ownership_verified: decision.ownership_verified,
+    target_verified: decision.target_verified,
+    reason: decision.reason,
+    http_status: decision.http_status,
+    item_id_present: decision.item_id != null,
+    marker_present: marker != null,
+  });
+  return 0;
+}
+
 async function main() {
   const command = process.argv[2];
   if (!command || command === '--help') {
-    console.log('Usage: tsx src/cli.ts <connection-status|get-offer|create-link|reports|smoke> [--product-url URL] [--dry-run] [--sub-id1] [--sub-id2]');
+    console.log('Usage: tsx src/cli.ts <connection-status|get-offer|create-link|reports|smoke|get-conversions|sales-by|verify-link>');
     return 0;
   }
   if (command === 'connection-status') return commandConnectionStatus();
@@ -401,6 +496,9 @@ async function main() {
   if (command === 'create-link') return commandCreateLink();
   if (command === 'reports') return commandReports();
   if (command === 'smoke') return commandSmoke();
+  if (command === 'get-conversions') return commandGetConversions();
+  if (command === 'sales-by') return commandSalesBy();
+  if (command === 'verify-link') return commandVerifyLink();
   throw new Error(`Unknown command: ${command}`);
 }
 

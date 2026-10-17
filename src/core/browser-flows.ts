@@ -13,6 +13,7 @@ import { SHOPEE_SELECTORS, TIMEOUTS, DELAYS, isShortLink, parseProductUrl } from
 import type { SubIds } from './database.js';
 import { commissionFromOfferPayload } from './offer-commission.js';
 import { customLinksFromResponse } from './custom-link.js';
+import { conversionsFromMappedCsv, conversionsFromReportList, csvMappingFromHeader, parseMappedCsv, reportAffiliateId, type ConversionRow } from './conversions.js';
 
 export interface BrowserFlowResult<T = any> {
   ok: boolean;
@@ -548,6 +549,155 @@ export class BrowserFlows {
     } finally {
       endpointLog.stop();
     }
+  }
+
+  /**
+   * Read the conversion report for a date range.
+   * Uses the JSON list the page loads. Clicks download only if that list never arrives.
+   * Does not open short links.
+   */
+  async getConversions(from: string, to: string): Promise<BrowserFlowResult<{
+    rows: ConversionRow[];
+    endpoint_path: string | null;
+    source: 'report_list' | 'csv';
+    affiliate_id: string | null;
+    download_clicked: boolean;
+  }>> {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) {
+      return { ok: false, error: 'Dates must be YYYY-MM-DD', status: 'uncertain' };
+    }
+    const endpointLog = this.startEndpointLog();
+    let listPayload: any = null;
+    let listUrl: string | null = null;
+    const onResponse = async (response: Response) => {
+      try {
+        const url = new URL(response.url());
+        if (url.pathname !== '/api/v3/report/list') return;
+        const type = response.request().resourceType();
+        if (type !== 'xhr' && type !== 'fetch') return;
+        listUrl = response.url();
+        listPayload = await response.json();
+      } catch {
+        // Keep the first readable list.
+      }
+    };
+    this.page.on('response', onResponse);
+    try {
+      const pageUrl = this.options.reportsPage || this.resolveUrl(SHOPEE_SELECTORS.reports.page);
+      await this.page.goto(pageUrl, { waitUntil: 'domcontentloaded', timeout: TIMEOUTS.navigation });
+      const blockers = await this.checkForBlockers();
+      if (blockers.captcha) return { ok: false, error: 'CAPTCHA detected', status: 'captcha_detected' };
+      if (blockers.login) return { ok: false, error: 'Login required', status: 'login_required' };
+      if (this.page.url().includes('s.shopee.co.th')) {
+        return { ok: false, error: 'Stopped: short link host', status: 'uncertain' };
+      }
+      const deadline = Date.now() + (this.options.fast ? 2000 : 8000);
+      while (!listPayload && Date.now() < deadline) {
+        await this.page.waitForTimeout(100);
+      }
+      await this.pause('betweenFields');
+
+      let payload = listPayload;
+      let source: 'report_list' | 'csv' = 'report_list';
+      let downloadClicked = false;
+      if (listUrl) {
+        payload = await this.fetchReportList(listUrl, from, to) ?? payload;
+      }
+      if (!payload) {
+        downloadClicked = true;
+        const csv = await this.downloadReportCsv(from, to);
+        if (!csv) {
+          return {
+            ok: false,
+            error: 'Conversion list and CSV download were both missing',
+            status: 'uncertain',
+            submitted: false,
+          };
+        }
+        const mapped = parseMappedCsv(csv.text, csvMappingFromHeader(csv.text.split(/\r?\n/, 1)[0] || ''));
+        return {
+          ok: true,
+          status: 'success',
+          data: {
+            rows: conversionsFromMappedCsv(mapped, from),
+            endpoint_path: csv.path,
+            source: 'csv',
+            affiliate_id: null,
+            download_clicked: true,
+          },
+        };
+      }
+      return {
+        ok: true,
+        status: 'success',
+        data: {
+          rows: conversionsFromReportList(payload),
+          endpoint_path: '/api/v3/report/list',
+          source,
+          affiliate_id: reportAffiliateId(payload),
+          download_clicked: downloadClicked,
+        },
+      };
+    } catch (error: any) {
+      return { ok: false, error: error.message || String(error), status: 'network_error' };
+    } finally {
+      this.page.off('response', onResponse);
+      endpointLog.stop();
+    }
+  }
+
+  private async fetchReportList(sampleUrl: string, from: string, to: string): Promise<any | null> {
+    const start = Date.parse(`${from}T00:00:00+07:00`);
+    const end = Date.parse(`${to}T23:59:59+07:00`);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+    return this.page.evaluate(async ({ sampleUrl: raw, startMs, endMs }): Promise<any> => {
+      const sample = new URL(raw);
+      const stamp = Number(sample.searchParams.get('purchase_time_s') || '0');
+      const useMs = stamp > 1e12;
+      sample.searchParams.set('purchase_time_s', String(useMs ? startMs : Math.floor(startMs / 1000)));
+      sample.searchParams.set('purchase_time_e', String(useMs ? endMs : Math.floor(endMs / 1000)));
+      sample.searchParams.set('page_num', '1');
+      const first = await fetch(sample.toString(), { credentials: 'include' });
+      const body = await first.json() as any;
+      const pageSize = Number(body?.data?.page_size || sample.searchParams.get('page_size') || 20);
+      const total = Number(body?.data?.total_count || 0);
+      const list = Array.isArray(body?.data?.list) ? body.data.list : [];
+      const pages = Math.min(20, Math.ceil(total / Math.max(pageSize, 1)));
+      for (let page = 2; page <= pages; page += 1) {
+        sample.searchParams.set('page_num', String(page));
+        const next = await fetch(sample.toString(), { credentials: 'include' });
+        const more = await next.json() as any;
+        if (Array.isArray(more?.data?.list)) list.push(...more.data.list);
+      }
+      if (body?.data) body.data.list = list;
+      return body;
+    }, { sampleUrl, startMs: start, endMs: end }).catch(() => null);
+  }
+
+  private async downloadReportCsv(from: string, to: string): Promise<{ text: string; path: string } | null> {
+    const start = this.page.locator(SHOPEE_SELECTORS.reports.dateRangeStart).first();
+    const end = this.page.locator(SHOPEE_SELECTORS.reports.dateRangeEnd).first();
+    if (await start.count()) await start.fill(from).catch(() => {});
+    if (await end.count()) await end.fill(to).catch(() => {});
+    await this.pause('beforeSubmit');
+    const download = this.page.waitForResponse((response) => {
+      const type = response.headers()['content-type'] || '';
+      return response.request().method() === 'GET' && (type.includes('csv') || response.url().includes('/report/export'));
+    }, { timeout: TIMEOUTS.formSubmit }).catch(() => null);
+    const button = this.page.locator(SHOPEE_SELECTORS.reports.downloadButton).first();
+    if (await button.count() === 0) return null;
+    await button.click({ timeout: TIMEOUTS.elementVisible });
+    const response = await download;
+    if (!response) return null;
+    const text = await response.text().catch(() => null);
+    if (!text) return null;
+    let path = response.url();
+    try {
+      path = new URL(response.url()).pathname;
+    } catch {
+      path = response.url();
+    }
+    return { text, path };
   }
 
   /**

@@ -1,5 +1,6 @@
 import Database from 'better-sqlite3';
 import { randomBytes } from 'crypto';
+import type { ConversionRow } from './conversions.js';
 
 export interface Link {
   link_id: string;
@@ -177,6 +178,36 @@ export class ShopkudDatabase {
       }
       
       this.db.pragma('user_version = 2');
+    }
+
+    if (userVersion < 3) {
+      this.db.exec(`
+        CREATE TABLE IF NOT EXISTS conversions (
+          conversion_id TEXT PRIMARY KEY,
+          source TEXT NOT NULL,
+          as_of TEXT NOT NULL,
+          purchased_on TEXT NOT NULL,
+          status TEXT NOT NULL,
+          utm_content TEXT NOT NULL,
+          sub_id1 TEXT,
+          sub_id2 TEXT,
+          sub_id3 TEXT,
+          sub_id4 TEXT,
+          sub_id5 TEXT,
+          orders INTEGER NOT NULL,
+          gmv REAL NOT NULL,
+          commission REAL NOT NULL,
+          cancelled INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS conversions_day ON conversions(purchased_on);
+
+        CREATE TABLE IF NOT EXISTS account_marker (
+          id INTEGER PRIMARY KEY CHECK (id = 1),
+          affiliate_id TEXT NOT NULL,
+          as_of TEXT NOT NULL
+        );
+      `);
+      this.db.pragma('user_version = 3');
     }
   }
 
@@ -409,6 +440,67 @@ export class ShopkudDatabase {
     this.db.prepare(`
       UPDATE job_queue SET ${updates.join(', ')} WHERE job_id = ?
     `).run(...params);
+  }
+
+  saveConversions(rows: ConversionRow[], source: string, asOf: string): number {
+    const statement = this.db.prepare(`
+      INSERT INTO conversions (
+        conversion_id, source, as_of, purchased_on, status, utm_content,
+        sub_id1, sub_id2, sub_id3, sub_id4, sub_id5,
+        orders, gmv, commission, cancelled
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(conversion_id) DO UPDATE SET
+        source = excluded.source,
+        as_of = excluded.as_of,
+        purchased_on = excluded.purchased_on,
+        status = excluded.status,
+        utm_content = excluded.utm_content,
+        sub_id1 = excluded.sub_id1,
+        sub_id2 = excluded.sub_id2,
+        sub_id3 = excluded.sub_id3,
+        sub_id4 = excluded.sub_id4,
+        sub_id5 = excluded.sub_id5,
+        orders = excluded.orders,
+        gmv = excluded.gmv,
+        commission = excluded.commission,
+        cancelled = excluded.cancelled
+    `);
+    const save = this.db.transaction((items: ConversionRow[]) => {
+      for (const row of items) {
+        statement.run(
+          row.conversion_id, source, asOf, row.purchased_on, row.status, row.utm_content,
+          row.sub_id1, row.sub_id2, row.sub_id3, row.sub_id4, row.sub_id5,
+          row.orders, row.gmv, row.commission, row.cancelled,
+        );
+      }
+    });
+    save(rows);
+    return rows.length;
+  }
+
+  listConversions(from?: string, to?: string): ConversionRow[] {
+    const rows = this.db.prepare(`
+      SELECT conversion_id, purchased_on, status, utm_content,
+        sub_id1, sub_id2, sub_id3, sub_id4, sub_id5,
+        orders, gmv, commission, cancelled
+      FROM conversions
+      WHERE (? IS NULL OR purchased_on >= ?)
+        AND (? IS NULL OR purchased_on <= ?)
+      ORDER BY purchased_on, conversion_id
+    `).all(from ?? null, from ?? null, to ?? null, to ?? null) as ConversionRow[];
+    return rows;
+  }
+
+  saveAccountMarker(affiliateId: string, asOf: string): void {
+    this.db.prepare(`
+      INSERT INTO account_marker (id, affiliate_id, as_of) VALUES (1, ?, ?)
+      ON CONFLICT(id) DO UPDATE SET affiliate_id = excluded.affiliate_id, as_of = excluded.as_of
+    `).run(affiliateId, asOf);
+  }
+
+  getAccountMarker(): string | null {
+    const row = this.db.prepare('SELECT affiliate_id FROM account_marker WHERE id = 1').get() as { affiliate_id: string } | undefined;
+    return row?.affiliate_id ?? null;
   }
 
   close() {

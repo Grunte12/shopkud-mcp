@@ -171,6 +171,30 @@ test('getOfferData reads commission from the offer JSON and does not open a shor
   }
 });
 
+test('getConversions reads the report list and does not download or open a short link', async () => {
+  resetState();
+  const { context, page, flows } = await openFlows();
+  try {
+    const result = await flows.getConversions('2026-01-01', '2026-12-31');
+    assert.strictEqual(result.ok, true, result.error);
+    assert.strictEqual(result.data?.source, 'report_list');
+    assert.strictEqual(result.data?.endpoint_path, '/api/v3/report/list');
+    assert.strictEqual(result.data?.download_clicked, false);
+    assert.strictEqual(result.data?.affiliate_id, '42');
+    assert.strictEqual(result.data?.rows.length, 1);
+    assert.strictEqual(result.data?.rows[0].sub_id1, 'tiktok');
+    assert.strictEqual(result.data?.rows[0].sub_id2, 'P1');
+    assert.strictEqual(result.data?.rows[0].sub_id3, 'clip');
+    assert.strictEqual(result.data?.rows[0].sub_id5, '202610');
+    assert.strictEqual(result.data?.rows[0].gmv, 100);
+    assert.strictEqual(result.data?.rows[0].commission, 10);
+    assert.strictEqual(result.data?.rows[0].cancelled, 0);
+    assert.ok(!page.url().includes('s.shopee.co.th'));
+  } finally {
+    await context.close();
+  }
+});
+
 test('inspectReports checks selectors and does not export', async () => {
   resetState();
   const { context, flows } = await openFlows();

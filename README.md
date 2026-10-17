@@ -49,7 +49,9 @@ npm run test:bot  # bot detection tests (requires Chrome on :9222)
 - ✅ `find_link`: Search registry by product/channel/clip/item
 - ✅ `create_link`: Idempotent link creation with 5 Sub IDs per channel
 - ✅ `create_links_batch`: Batch creation with validation-first approach
-- ✅ `verify_link`: Ownership + target verification WITHOUT following redirects
+- ✅ `verify_link`: HEAD with redirects disabled. Ownership matches the Location marker to the saved affiliate id
+- ✅ `get_conversions`: Read the conversion report and store rows with source and as_of
+- ✅ `sales_by`: Orders, GMV, commission, and cancelled count by sub_id, platform, product, or clip
 - ✅ `get_offer`: Commission rates (cached 6h, CDP fallback)
 - ✅ `get_connection_status`: Chrome/CDP connection and queue monitor
 - ✅ Database migration: single `sub_id` → 5 slots (preserves old data)
