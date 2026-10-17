@@ -1,4 +1,5 @@
 import { chromium, type Browser, type Page, type CDPSession } from 'patchright';
+import { BrowserFlows } from './browser-flows.js';
 
 export interface CaptureOptions {
   urlPattern: string | RegExp;
@@ -22,6 +23,7 @@ export class CaptchaDetectedError extends Error {
 export class CDPController {
   private browser: Browser | null = null;
   private page: Page | null = null;
+  private browserFlows: BrowserFlows | null = null;
   private taskQueue: Map<string, QueuedTask[]> = new Map();
   private processing: Set<string> = new Set();
   private reconnectAttempts = 0;
@@ -45,12 +47,20 @@ export class CDPController {
         this.page = await contexts[0].newPage();
       }
 
+      this.browserFlows = new BrowserFlows(this.page);
       this.reconnectAttempts = 0;
       console.log('Connected to Chrome via CDP');
     } catch (error) {
       console.error('Failed to connect to Chrome:', error);
       throw new Error(`CDP connection failed: ${error instanceof Error ? error.message : String(error)}`);
     }
+  }
+
+  getBrowserFlows(): BrowserFlows {
+    if (!this.browserFlows) {
+      throw new Error('BrowserFlows not initialized. Call connect() first.');
+    }
+    return this.browserFlows;
   }
 
   async ensureConnected(): Promise<void> {
@@ -72,6 +82,7 @@ export class CDPController {
       }
       this.browser = null;
       this.page = null;
+      this.browserFlows = null;
     }
   }
 
