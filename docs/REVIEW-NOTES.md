@@ -34,7 +34,7 @@ ShopKud Core is a Chrome-control MCP server using patchright (patched Playwright
      - `verify_link`: Checks ownership and target WITHOUT following redirects
      - `get_offer`: Commission rates (cached 6h, CDP fallback)
      - `get_connection_status`: Chrome/CDP connection and queue status
-   - Affiliate Open API stub (no live calls, configured via env vars)
+   - **NO Open API** - all operations via browser automation
    - Captures `source` (api|cdp|cache) and `as_of` timestamp
 
 4. **Local Web Console** (`src/console/`)
