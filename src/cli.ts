@@ -35,6 +35,19 @@ function print(value: unknown) {
   console.log(JSON.stringify(value, null, 2));
 }
 
+function printOfferAmounts(data: any) {
+  if (data?.store_commission_percent == null) return;
+  console.log(`SENSITIVE store_commission_percent=${data.store_commission_percent}`);
+  console.log(`SENSITIVE shopee_commission_percent=${data.shopee_commission_percent}`);
+  console.log(`SENSITIVE xtra_commission_percent=${data.xtra_commission_percent}`);
+  console.log(`SENSITIVE total_commission_percent=${data.total_commission_percent}`);
+  console.log(`SENSITIVE price_baht=${data.price_baht}`);
+  console.log(`SENSITIVE commission_baht=${data.commission_baht}`);
+  console.log(`SENSITIVE total_commission_baht=${data.total_commission_baht}`);
+  console.log(`SENSITIVE commission_min_baht=${data.commission_min_baht}`);
+  console.log(`SENSITIVE commission_max_baht=${data.commission_max_baht}`);
+}
+
 function pathOnly(url: string): string {
   try {
     return new URL(url).pathname;
@@ -184,13 +197,7 @@ async function commandGetOffer() {
     source: result.data?.source || null,
     commission_captured: result.data?.commission_rate != null,
   });
-  if (result.data?.store_commission_percent != null) {
-    console.log(`SENSITIVE store_commission_percent=${result.data.store_commission_percent}`);
-    console.log(`SENSITIVE price_baht=${result.data.price_baht}`);
-    console.log(`SENSITIVE commission_baht=${result.data.commission_baht}`);
-    console.log(`SENSITIVE commission_min_baht=${result.data.commission_min_baht}`);
-    console.log(`SENSITIVE commission_max_baht=${result.data.commission_max_baht}`);
-  }
+  printOfferAmounts(result.data);
   return result.ok ? 0 : 1;
   });
 }
@@ -307,13 +314,7 @@ async function commandSmoke() {
     commission_captured: offer.data?.store_commission_percent != null,
     page_loads: seen.loads(),
   });
-  if (offer.data?.store_commission_percent != null) {
-    console.log(`SENSITIVE store_commission_percent=${offer.data.store_commission_percent}`);
-    console.log(`SENSITIVE price_baht=${offer.data.price_baht}`);
-    console.log(`SENSITIVE commission_baht=${offer.data.commission_baht}`);
-    console.log(`SENSITIVE commission_min_baht=${offer.data.commission_min_baht}`);
-    console.log(`SENSITIVE commission_max_baht=${offer.data.commission_max_baht}`);
-  }
+  printOfferAmounts(offer.data);
   if (offerVerdict !== 'ok' || seen.blockedShortLink() || seen.loads() > PAGE_LOAD_BUDGET) {
     console.log(`OUTLINE ${JSON.stringify(await outline(page))}`);
     console.log(`STOPPED: ${seen.blockedShortLink() ? 'short_link' : offerVerdict !== 'ok' ? offerVerdict : 'page_budget'}`);

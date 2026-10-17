@@ -509,24 +509,34 @@ export class ShopkudMCPServer {
       const price = Number(data.price_baht ?? 0);
       const storePercent = Number(data.store_commission_percent ?? 0);
 
-      const offer = {
+      const saved = {
         item_id: params.item_id,
         price,
         commission_rate_social: storePercent,
-        store_commission_percent: storePercent,
-        commission_baht: data.commission_baht ?? null,
-        commission_min_baht: data.commission_min_baht ?? null,
-        commission_max_baht: data.commission_max_baht ?? null,
-        commission_rate_video: null,
+        commission_rate_video: null as number | null,
         extra_comm: false,
         stock_available: Number(data.stock ?? 0) > 0,
       };
 
       this.db.saveOffer({
-        ...offer,
+        ...saved,
         as_of: new Date().toISOString(),
         source: 'cdp',
       });
+
+      const offer = {
+        ...saved,
+        store_commission_percent: storePercent,
+        shopee_commission_percent: data.shopee_commission_percent ?? null,
+        xtra_commission_percent: data.xtra_commission_percent ?? null,
+        total_commission_percent: data.total_commission_percent ?? null,
+        commission_baht: data.commission_baht ?? null,
+        store_commission_baht: data.store_commission_baht ?? null,
+        shopee_commission_baht: data.shopee_commission_baht ?? null,
+        total_commission_baht: data.total_commission_baht ?? null,
+        commission_min_baht: data.commission_min_baht ?? null,
+        commission_max_baht: data.commission_max_baht ?? null,
+      };
 
       return {
         content: [{

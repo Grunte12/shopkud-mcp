@@ -81,7 +81,14 @@ Affiliate API paths seen, with no bodies, ids, or amounts stored:
 - `GET /api/v3/dashboard/detail`
 - `POST /api/v3/gql` (operation names included `isAffiliateHasNoImpressionCampaign`, `productsRankList`, and `conversionReportUpdateTime`)
 
-The store rate is `data.commission_rate_detail.seller_commission_rate`. Divide that integer by 1000 to get the percent. Divide the price integer by 100000 to get baht. Commission baht is price times that percent. No sample prices or amounts are written here. The custom-link script names `POST /api/v3/gql?q=batchCustomLink`. Dry-run does not call it.
+The offer page shows three commission rows. They are not one rate.
+
+- `data.commission_rate_detail.seller_commission_rate` is the store row.
+- `data.commission_rate_detail.shopee_commission_rate` is the Shopee row.
+- `data.commission_rate_detail.default_commission_rate` is the total. It is seller + Shopee + xtra. It is not its own row.
+- Xtra has no integer field. It is default minus seller minus Shopee.
+
+A whole-number rate of 100 or more is percent × 1000, so divide by 1000. That includes values under 1000. Zero stays zero. A number under 100 is already a percent. A string such as "12%" is already a percent. When the integer and the percent string both exist, use the integer. Price integers are baht × 100000. Each row's baht amount is that price times that row's percent. No sample prices or amounts are written here. The custom-link script names `POST /api/v3/gql?q=batchCustomLink`. Dry-run does not call it.
 
 Nav paths seen on the logged-in home, as pathnames only: `/dashboard`, `/offer/shopee_offer`, `/offer/brand_offer`, `/offer/product_offer`, `/offer/offer_for_me`, `/offer/custom_link`, `/report/conversion_report`, `/report/click_report`.
 
@@ -100,7 +107,7 @@ Nav paths seen on the logged-in home, as pathnames only: `/dashboard`, `/offer/s
 
 ### Follow-up
 
-The offer result now shows the store's commission percent and the baht amount for the product price, including the min and max when the price is a range.
+The offer result keeps the store percent separate from the total. The total is `default_commission_rate / 1000`. The store row is `seller_commission_rate / 1000`. Shopee is `shopee_commission_rate / 1000`. Xtra is the remainder. Store baht uses the store percent, not the total.
 
 The create operation named in the page script is `batchCustomLink` on `POST /api/v3/gql`. It is not confirmed by a submit, and this tool still will not submit.
 

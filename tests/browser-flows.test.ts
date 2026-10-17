@@ -151,6 +151,10 @@ test('getOfferData reads commission from the offer JSON and does not open a shor
     const result = await flows.getOfferData('67890');
     assert.strictEqual(result.ok, true, result.error);
     assert.strictEqual(result.data.store_commission_percent, 10);
+    assert.strictEqual(result.data.total_commission_percent, 12);
+    assert.strictEqual(result.data.shopee_commission_percent, 2);
+    assert.strictEqual(result.data.xtra_commission_percent, 0);
+    assert.strictEqual(result.data.checkout_commission_percent, 0.6);
     assert.strictEqual(result.data.commission_rate, 10);
     assert.strictEqual(result.data.price_baht, 299);
     assert.strictEqual(result.data.commission_baht, 29.9);
