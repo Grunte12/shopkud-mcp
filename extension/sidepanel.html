@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShopKud Live</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header class="toolbar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M5 8.5h14l1 11H4l1-11Z"/><path d="M8 9V6.5a4 4 0 0 1 8 0V9"/></svg>
+      </span>
+      <div>
+        <h1>ShopKud Live</h1>
+        <p id="version">ส่วนขยาย —</p>
+      </div>
+    </div>
+    <div id="connection" class="connection" data-state="offline" role="status" aria-live="polite">
+      <span class="status-dot" aria-hidden="true"></span>
+      <span>กำลังเชื่อมต่อ</span>
+    </div>
+  </header>
+
+  <main>
+    <section class="now" aria-labelledby="now-heading">
+      <div class="section-title">
+        <div>
+          <h2 id="now-heading">กำลังทำอะไรอยู่</h2>
+          <p id="now-caption">รอ Agent เรียก playbook</p>
+        </div>
+        <span id="live-badge" class="live-badge" hidden>สด</span>
+      </div>
+      <div id="now-empty" class="empty-state">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 17h3l2-5 3 8 3-13 2 10h3"/></svg>
+        <strong>ยังไม่มีงานที่กำลังรัน</strong>
+        <span>เมื่อ Agent เริ่มคัดสินค้า ขั้นตอนและตัวเลขจะขึ้นตรงนี้ทันที</span>
+      </div>
+      <div id="now-content" class="now-content" hidden>
+        <div class="now-hero">
+          <div class="now-copy">
+            <div class="query-row">
+              <p id="now-query" class="query"></p>
+              <span id="now-elapsed" class="elapsed">0 ms</span>
+            </div>
+            <div class="stage-row" role="status" aria-live="polite" aria-atomic="true">
+              <span id="now-stage" class="stage"></span>
+              <span id="now-detail" class="stage-detail"></span>
+            </div>
+          </div>
+          <div id="now-dial" class="progress-dial" role="img" aria-label="ความคืบหน้า 0 เปอร์เซ็นต์">
+            <div><strong id="now-percent">0%</strong><small>คืบหน้า</small></div>
+          </div>
+        </div>
+        <div class="progress-track" aria-hidden="true"><span id="now-progress"></span></div>
+        <ol id="journey" class="journey" aria-label="เส้นทางงานปัจจุบัน">
+          <li data-key="queue"><span></span><small>คิว</small></li>
+          <li data-key="scan"><span></span><small>สแกน</small></li>
+          <li data-key="detail"><span></span><small>ตรวจจริง</small></li>
+          <li data-key="rank"><span></span><small>จัดอันดับ</small></li>
+          <li data-key="done"><span></span><small>เสร็จ</small></li>
+        </ol>
+      </div>
+    </section>
+
+    <section class="metrics" aria-labelledby="metrics-heading">
+      <div class="section-title compact">
+        <h2 id="metrics-heading">ประสิทธิภาพรอบนี้</h2>
+        <span id="completed-count" class="muted">0 งาน</span>
+      </div>
+      <div class="gauge-grid" aria-label="ภาพรวมประสิทธิภาพ">
+        <div id="success-gauge" class="metric-gauge" role="img" aria-label="อัตราสำเร็จ ยังไม่มีข้อมูล">
+          <div class="gauge-ring"><strong id="success-rate">—</strong></div>
+          <span>สำเร็จ</span>
+        </div>
+        <div id="effective-gauge" class="metric-gauge" role="img" aria-label="อัตราได้ผู้ชนะ ยังไม่มีข้อมูล">
+          <div class="gauge-ring"><strong id="effective-rate">—</strong></div>
+          <span>ได้ผู้ชนะ</span>
+        </div>
+        <div id="cache-gauge" class="metric-gauge" role="img" aria-label="อัตราใช้แคช ยังไม่มีข้อมูล">
+          <div class="gauge-ring"><strong id="cache-rate">—</strong></div>
+          <span>ใช้ Cache</span>
+        </div>
+      </div>
+      <div class="latency-compare" aria-label="เปรียบเทียบ latency">
+        <div class="latency-row"><span>p50</span><div><i id="p50-bar"></i></div><strong id="p50">—</strong></div>
+        <div class="latency-row"><span>p95</span><div><i id="p95-bar"></i></div><strong id="p95">—</strong></div>
+      </div>
+      <div class="resource-strip">
+        <div>
+          <span class="resource-icon browser-icon" aria-hidden="true"></span>
+          <p><strong id="browser-ops">0</strong><small>Browser actions</small></p>
+        </div>
+        <div>
+          <span class="resource-icon token-icon" aria-hidden="true"></span>
+          <p><strong id="token-estimate">0</strong><small>Output tokens ≈</small></p>
+        </div>
+      </div>
+      <figure class="latency-viz">
+        <figcaption><span>Latency ล่าสุด</span><strong id="latency-range">ยังไม่มีข้อมูล</strong></figcaption>
+        <svg viewBox="0 0 320 62" preserveAspectRatio="none" role="img" aria-label="แนวโน้ม latency ของงานล่าสุด">
+          <path class="chart-grid" d="M0 15.5H320M0 31H320M0 46.5H320"/>
+          <path id="latency-area" class="latency-area" d=""/>
+          <polyline id="latency-line" class="latency-line" points=""/>
+          <g id="latency-points"></g>
+        </svg>
+        <div id="latency-single" class="latency-single" hidden><span aria-hidden="true"></span><small>มีข้อมูล 1 งาน · รออีก 1 งานเพื่อวาดแนวโน้ม</small></div>
+      </figure>
+      <p class="metric-note">Token จริงของโมเดลไม่ส่งผ่าน MCP จึงแสดงเฉพาะค่าประมาณจากขนาดผลลัพธ์</p>
+    </section>
+
+    <section class="activity" aria-labelledby="activity-heading">
+      <div class="section-title compact activity-heading">
+        <div>
+          <h2 id="activity-heading">Agent swarm</h2>
+          <p>ทุก invocation เรียงตามเวลาจริง</p>
+        </div>
+        <button id="clear-completed" class="quiet-button" type="button" disabled>ล้างงานจบแล้ว</button>
+      </div>
+      <ol id="run-list" class="run-list"></ol>
+      <p id="run-empty" class="empty-list">ยังไม่มี trace ใน session นี้</p>
+    </section>
+  </main>
+
+  <template id="run-template">
+    <li class="run-item">
+      <span class="run-rail" aria-hidden="true"></span>
+      <div class="run-main">
+        <div class="run-topline">
+          <strong class="run-agent"></strong>
+          <span class="run-state"></span>
+          <time class="run-time"></time>
+        </div>
+        <p class="run-query"></p>
+        <p class="run-action"></p>
+        <div class="operation-viz" role="img"><span data-op="scan"></span><span data-op="read"></span><span data-op="detail"></span></div>
+        <p class="operation-legend"></p>
+        <div class="run-facts"></div>
+      </div>
+    </li>
+  </template>
+  <script src="sidepanel.js"></script>
+</body>
+</html>

@@ -1,9 +1,11 @@
 {
   "manifest_version": 3,
   "name": "ShopKud MCP",
-  "version": "0.10.2",
+  "version": "0.10.3",
   "description": "ให้เอเจนต์ช่วยค้นคว้าและคัดสินค้าจากหน้า Shopee Affiliate ที่คุณเปิดอยู่ พร้อมแผนให้ตรวจสอบก่อนเลือก",
-  "permissions": ["nativeMessaging", "storage"],
+  "permissions": ["nativeMessaging", "storage", "sidePanel"],
+  "action": {"default_title": "ShopKud Live"},
+  "side_panel": {"default_path": "sidepanel.html"},
   "optional_permissions": ["scripting"],
   "optional_host_permissions": ["https://shopee.co.th/*"],
   "options_page": "listing-access.html",

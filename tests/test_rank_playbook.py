@@ -40,6 +40,8 @@ class PlaybookBroker:
 
     async def call(self, page_id, operation, arguments, timeout=20):
         self.calls.append((page_id, operation, copy.deepcopy(arguments), timeout))
+        if page_id == "extension" and operation == "playbook_event":
+            return {"ok": True}
         if page_id == "extension" and operation == "open_offer":
             if arguments["offer_url"].endswith("/product_offer"):
                 return {"ok": True, "page_id": LIST_PAGE}
@@ -95,6 +97,11 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(trace["response_bytes_without_trace"], 0)
         self.assertGreater(trace["response_tokens_estimate"], 0)
         self.assertIsNone(trace["agent_input_and_reasoning_tokens"])
+        events = [call[2] for call in self.broker.calls if call[1] == "playbook_event"]
+        self.assertEqual(events[0]["stage"], "queued")
+        self.assertEqual(events[-1]["stage"], "completed")
+        self.assertEqual(events[-1]["success"], True)
+        self.assertTrue(any(event["stage"] == "detail_check" for event in events))
 
     async def test_concurrent_identical_agents_share_one_scan(self):
         first, second = await asyncio.gather(self.tool("ทีวี"), self.tool("ทีวี"))
@@ -104,6 +111,7 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(second["trace"]["browser_operations"], {"scan": 0, "scan_read": 0, "detail": 0})
         self.assertTrue(second["trace"]["cache_hit"])
         self.assertEqual(sum(call[1] == "search_scan" for call in self.broker.calls), 1)
+        self.assertTrue(any(call[1] == "playbook_event" and call[2]["stage"] == "cache_hit" for call in self.broker.calls))
 
     async def test_invalid_inputs_never_reach_browser(self):
         for arguments in [

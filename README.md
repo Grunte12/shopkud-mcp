@@ -4,10 +4,10 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.10.2** - Extension-only P0, P1, and P2 affiliate tools. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+**Version 0.10.3** - Extension-only P0, P1, and P2 affiliate tools. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
-This is a development candidate, not a published or stable release. The Python
-package and extension both declare **0.10.2**. Synthetic offline tests do not certify the
+This is the public **0.10.3** release. The Python package and extension both
+declare **0.10.3**. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
 ## Current capabilities
@@ -20,6 +20,8 @@ current Shopee UI, all product variants, or every account configuration.
 - ✅ Bounded product search, pagination, snapshots and cached-result reads
 - ✅ Deterministic commission-ranking playbook with one sequential browser lane
   and shared 10-minute results for concurrent agents
+- ✅ Live Chrome Side Panel for per-invocation stages, queue/cache state, latency,
+  success/effectiveness, browser operations and bounded response-token estimates
 - ✅ Product-detail observations, including displayed channel-specific commissions
 - ✅ Optional public-product evidence and model matching
 - ✅ Agent-authored selection previews and once-only, snapshot-checked selection
@@ -32,6 +34,18 @@ current Shopee UI, all product variants, or every account configuration.
 This release implements an **extension-only** architecture (no Affiliate Open API integration)
 as required by the owner. All operations are performed through the Chrome extension
 interacting with the logged-in Shopee Affiliate pages.
+
+### What's New in 0.10.3
+
+- The extension action opens `ShopKud Live` as a non-overlapping Chrome Side
+  Panel beside Shopee.
+- `rank_affiliate_products` emits bounded, session-only stage events for each
+  invocation: queued, lane acquired, scan, candidate loading, detail progress,
+  ranking and completion/failure.
+- The panel computes current-session success/effectiveness, cache rate, p50/p95
+  latency and operation totals without exposing cookies, tokens or page HTML.
+- Telemetry is best-effort: closing the panel or losing its connection never
+  turns a valid ranking playbook into a failure.
 
 ### What's New in 0.10.2
 

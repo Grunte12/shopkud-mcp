@@ -25,6 +25,7 @@ MAX_ABANDONED_CALLS = MAX_PAGES
 ALLOWED_OPERATIONS = frozenset({
     "snapshot", "selections", "prepare", "apply", "export", "clear",
     "pagination", "navigate", "scan", "scan_read", "review", "detail", "open_offer", "entry_info", "search_scan", "read_listing",
+    "playbook_event",
     "create_link_with_subids", "batch_create_links", "verify_link", "selector_health",
 })
 PRODUCT_PAGE_URL = "https://affiliate.shopee.co.th/offer/product_offer"
@@ -263,8 +264,8 @@ class Broker:
     ) -> dict[str, Any]:
         if self._server is None:
             raise BrokerError("not_started")
-        entry = operation in {"open_offer", "entry_info", "read_listing"}
-        if type(page_id) is not str or (page_id != "extension" if entry else not _PAGE_ID_RE.fullmatch(page_id)):
+        extension_target = operation in {"open_offer", "entry_info", "read_listing", "playbook_event"}
+        if type(page_id) is not str or (page_id != "extension" if extension_target else not _PAGE_ID_RE.fullmatch(page_id)):
             raise BrokerError("invalid_request")
         if type(operation) is not str or operation not in ALLOWED_OPERATIONS:
             raise BrokerError("invalid_request")
@@ -273,12 +274,12 @@ class Broker:
         if (type(timeout) not in (int, float) or timeout <= 0 or timeout > MAX_CALL_TIMEOUT):
             raise BrokerError("invalid_request")
 
-        candidates = [candidate for candidate in self._peers if not candidate.closed and (entry or page_id in candidate.pages)]
-        if entry and len(candidates)>1:
+        candidates = [candidate for candidate in self._peers if not candidate.closed and (extension_target or page_id in candidate.pages)]
+        if extension_target and len(candidates)>1:
             raise BrokerError("ambiguous_extension")
         peer = next(iter(candidates), None)
         if peer is None:
-            raise BrokerError("disconnected" if entry else "unknown_page")
+            raise BrokerError("disconnected" if extension_target else "unknown_page")
         if page_id in self._busy_pages:
             raise BrokerError("busy")
 

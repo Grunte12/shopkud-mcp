@@ -2,7 +2,12 @@
 
 This pass stays on your own Chrome profile. The coding agent does not log in, does not open `s.shopee.co.th` links, and does not receive cookies or page HTML.
 
-Load the unpacked extension from the `extension/` folder in this repo (version 0.10.2). Start the local ShopKud server only if you want the agent to call `selector_health`. The diagnostic also runs from the page console with no server.
+Load the unpacked extension from the `extension/` folder in this repo (version 0.10.3). Start the local ShopKud server only if you want the agent to call `selector_health` or see live ranking traces. The diagnostic also runs from the page console with no server.
+
+Click the ShopKud toolbar icon to open **ShopKud Live** beside the current page.
+While an agent calls `rank_affiliate_products`, it shows the queue, scan, detail
+checks, ranking and completion in real time. Its token number is only an output
+size estimate; the calling model's real input/reasoning usage is unavailable to MCP.
 
 ## 1. Confirm the build
 

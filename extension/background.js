@@ -15,6 +15,72 @@ let recovering = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
 const reconnectDelays = [1000, 3000, 8000, 15000];
+const telemetryRuns = new Map();
+const telemetryLimit = 60;
+const telemetryStages = new Set(["queued","lane_started","cache_hit","scan_started","scan_completed","candidates_loaded","detail_checks_started","detail_check","ranking","completed","failed"]);
+let telemetryHydrated = false;
+let telemetryHydrating = null;
+const finite = value => typeof value === "number" && Number.isFinite(value);
+function sanitizeTelemetry(value) {
+  if(!value || typeof value!=="object" || value.schema_version!==1 || !/^[0-9a-f]{16}$/u.test(value.trace_id || "") ||
+      !/^[0-9a-f]{16}$/u.test(value.swarm_id || "") || value.playbook!=="rank_affiliate_products" ||
+      typeof value.query!=="string" || value.query.length>120 || !telemetryStages.has(value.stage) ||
+      !["running","completed","failed"].includes(value.status) || !Number.isInteger(value.sequence) || value.sequence<1 || value.sequence>10000 ||
+      !Number.isSafeInteger(value.occurred_at_unix_ms) || !finite(value.elapsed_ms) || value.elapsed_ms<0)return null;
+  const scalar = key => ["string","number","boolean"].includes(typeof value[key]) || value[key]===null ? value[key] : undefined;
+  const latency = value.latency_ms && typeof value.latency_ms==="object" ? Object.fromEntries(Object.entries(value.latency_ms).filter(([,v])=>finite(v) && v>=0).slice(0,8)) : undefined;
+  const browser = value.browser_operations && typeof value.browser_operations==="object" ? Object.fromEntries(Object.entries(value.browser_operations).filter(([,v])=>Number.isInteger(v) && v>=0).slice(0,8)) : undefined;
+  return {
+    schema_version:1,trace_id:value.trace_id,swarm_id:value.swarm_id,sequence:value.sequence,playbook:value.playbook,
+    query:value.query,stage:value.stage,status:value.status,occurred_at_unix_ms:value.occurred_at_unix_ms,
+    elapsed_ms:value.elapsed_ms,queue_depth:scalar("queue_depth"),queue_wait_ms:scalar("queue_wait_ms"),cache_hit:scalar("cache_hit"),
+    cache_age_ms:scalar("cache_age_ms"),max_pages:scalar("max_pages"),scan_ms:scalar("scan_ms"),pages_scanned:scalar("pages_scanned"),
+    unique_products:scalar("unique_products"),scan_read_ms:scalar("scan_read_ms"),records_loaded:scalar("records_loaded"),
+    candidate_count:scalar("candidate_count"),candidate_index:scalar("candidate_index"),product_id:scalar("product_id"),
+    product_name:typeof value.product_name==="string"?value.product_name.slice(0,240):undefined,detail_ms:scalar("detail_ms"),
+    verified_count:scalar("verified_count"),error_count:scalar("error_count"),success:scalar("success"),effective:scalar("effective"),
+    response_bytes:scalar("response_bytes"),response_tokens_estimate:scalar("response_tokens_estimate"),
+    winner_product_id:scalar("winner_product_id"),error:typeof value.error==="string"?value.error.slice(0,120):undefined,
+    latency_ms:latency,browser_operations:browser,
+  };
+}
+async function hydrateTelemetry() {
+  if(telemetryHydrated)return;
+  if(telemetryHydrating)return telemetryHydrating;
+  telemetryHydrating=(async()=>{
+    try {
+      const saved=await chrome.storage?.session?.get?.("shopkudTelemetryRuns");
+      const runs=Array.isArray(saved?.shopkudTelemetryRuns)?saved.shopkudTelemetryRuns:[];
+      for(const run of runs.slice(0,telemetryLimit))if(run && /^[0-9a-f]{16}$/u.test(run.trace_id || ""))telemetryRuns.set(run.trace_id,run);
+    } catch {}
+    telemetryHydrated=true;
+    telemetryHydrating=null;
+  })();
+  return telemetryHydrating;
+}
+function telemetrySnapshot() {
+  return {ok:true,connected,extension_version:chrome.runtime.getManifest().version,
+    runs:[...telemetryRuns.values()].sort((a,b)=>b.updated_at_unix_ms-a.updated_at_unix_ms)};
+}
+function broadcastLive(kind="update") {
+  try {chrome.runtime.sendMessage?.({type:"shopkud-live-update",kind,snapshot:telemetrySnapshot()},()=>{void chrome.runtime.lastError;});} catch {}
+}
+async function recordTelemetry(raw) {
+  const event=sanitizeTelemetry(raw);
+  if(!event)return {ok:false,error:"invalid_event"};
+  await hydrateTelemetry();
+  const previous=telemetryRuns.get(event.trace_id);
+  if(previous && event.sequence<=previous.sequence)return {ok:true,duplicate:true};
+  const swarmRuns=[...telemetryRuns.values()].filter(run=>run.swarm_id===event.swarm_id && run.trace_id!==event.trace_id);
+  const invocation_number=previous?.invocation_number || swarmRuns.length+1;
+  const run={...(previous||{}),...event,invocation_number,updated_at_unix_ms:event.occurred_at_unix_ms,
+    started_at_unix_ms:previous?.started_at_unix_ms || event.occurred_at_unix_ms};
+  telemetryRuns.delete(event.trace_id);telemetryRuns.set(event.trace_id,run);
+  while(telemetryRuns.size>telemetryLimit)telemetryRuns.delete(telemetryRuns.keys().next().value);
+  try {await chrome.storage?.session?.set?.({shopkudTelemetryRuns:[...telemetryRuns.values()]});} catch {}
+  broadcastLive("event");
+  return {ok:true};
+}
 const offer = value => {
   try { const u=new URL(value);return u.origin==="https://affiliate.shopee.co.th" && !u.username && !u.password && !u.port && !u.search && !u.hash && /^\/offer\/product_offer(?:\/[1-9][0-9]{0,19})?$/u.test(u.pathname); }
   catch {return false;}
@@ -236,13 +302,13 @@ function connect(automatic=false) {
     port=channel;
     channel.onDisconnect.addListener(()=>{
       void chrome.runtime.lastError;
-      if(port===channel) {port=null;connected=false;state();scheduleReconnect();}
+      if(port===channel) {port=null;connected=false;state();broadcastLive("connection");scheduleReconnect();}
       if(listingTask?.channel===channel){listingTask.cancelled=true;listingTask.finishWait?.();}
       for(const [id,task] of inFlight)if(task.channel===channel){chrome.tabs.sendMessage(task.page.tab,{type:"shopkud-cancel",nonce:task.page.nonce,request_id:id},()=>{void chrome.runtime.lastError;});inFlight.delete(id);}
     });
     channel.onMessage.addListener(message=>{
       if(port!==channel)return;
-      if(message?.type==="hello-ack") {connected=true;reconnectAttempts=0;roster();state();return;}
+      if(message?.type==="hello-ack") {connected=true;reconnectAttempts=0;roster();state();broadcastLive("connection");return;}
       if(message?.type==="discover") {
         recoverPages().then(result=>{if(port===channel)channel.postMessage(result);}).catch(()=>{});
         return;
@@ -261,6 +327,10 @@ function connect(automatic=false) {
           if(listingEntry)listingEntry.uncertain=true;
           return {...listingFailure("listing_unconfirmed"),outcome:"unconfirmed"};
         }).then(result=>{if(port===channel)channel.postMessage({type:"result",id:message.id,result});}).finally(()=>{if(listingTask===task)listingTask=null;});
+        return;
+      }
+      if(message.page_id==="extension" && message.operation==="playbook_event") {
+        recordTelemetry(message.arguments).then(result=>{if(port===channel)channel.postMessage({type:"result",id:message.id,result});});
         return;
       }
       if(message.page_id==="extension" && ["open_offer","entry_info"].includes(message.operation)) {
@@ -304,9 +374,19 @@ function connect(automatic=false) {
         } else channel.postMessage({type:"result",id:message.id,result:result || {ok:false,error:"invalid_page_result",outcome:"unconfirmed"}});
       });
     });
-  } catch {port=null;connected=false;state();scheduleReconnect();}
+  } catch {port=null;connected=false;state();broadcastLive("connection");scheduleReconnect();}
 }
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
+  if(sender.id===chrome.runtime.id && !sender.tab && message?.type==="shopkud-live-snapshot") {
+    hydrateTelemetry().then(()=>respond(telemetrySnapshot()));return true;
+  }
+  if(sender.id===chrome.runtime.id && !sender.tab && message?.type==="shopkud-live-clear") {
+    hydrateTelemetry().then(async()=>{
+      for(const [id,run] of telemetryRuns)if(["completed","failed"].includes(run.status))telemetryRuns.delete(id);
+      try {await chrome.storage?.session?.set?.({shopkudTelemetryRuns:[...telemetryRuns.values()]});} catch {}
+      broadcastLive("clear");respond(telemetrySnapshot());
+    });return true;
+  }
   if(sender.id!==chrome.runtime.id || sender.frameId!==0 || !Number.isInteger(sender.tab?.id))return false;
   let sameHost=false;
   try{sameHost=new URL(sender.url).origin==="https://affiliate.shopee.co.th";}catch{}
@@ -342,5 +422,7 @@ chrome.tabs.onRemoved.addListener(tab=>{
   roster();
 });
 // Worker activation recovers existing pages once, including after extension reload.
+chrome.sidePanel?.setPanelBehavior?.({openPanelOnActionClick:true}).catch(()=>{});
+hydrateTelemetry().catch(()=>{});
 connect();
 recoverPages().catch(()=>{});

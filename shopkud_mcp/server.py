@@ -225,6 +225,20 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
     ranking_lock = asyncio.Lock()
     ranking_cache: dict[tuple, tuple[float, dict]] = {}
 
+    async def emit_playbook_event(event: dict) -> None:
+        """Best-effort local telemetry; visibility must never break the playbook."""
+        try:
+            result = await broker.call("extension", "playbook_event", event, timeout=2)
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                return
+        except asyncio.CancelledError:
+            raise
+        except BrokerError:
+            # A missing side panel or extension must not break the playbook.
+            return
+        except Exception:
+            return
+
     @server.tool(annotations=ToolAnnotations(readOnlyHint=True, destructiveHint=False,
                                             idempotentHint=True, openWorldHint=False))
     async def get_workflow_guide(view: Literal["brief", "full", "skill"] = "brief") -> dict:
@@ -376,12 +390,30 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         started = time.monotonic()
         started_at_unix_ms = int(time.time() * 1000)
         trace_id = os.urandom(8).hex()
+        event_sequence = 0
         timings = {"queue_wait_ms": 0.0, "scan_ms": 0.0, "scan_read_ms": 0.0, "detail_ms": 0.0}
         operations = {"scan": 0, "scan_read": 0, "detail": 0}
 
-        def finish(payload, cache_hit=False):
+        async def emit(stage, status="running", **extra):
+            nonlocal event_sequence
+            event_sequence += 1
+            await emit_playbook_event({
+                "schema_version": 1,
+                "trace_id": trace_id,
+                "swarm_id": swarm_id,
+                "sequence": event_sequence,
+                "playbook": "rank_affiliate_products",
+                "query": normalized_query,
+                "stage": stage,
+                "status": status,
+                "occurred_at_unix_ms": int(time.time() * 1000),
+                "elapsed_ms": round((time.monotonic() - started) * 1000, 2),
+                **extra,
+            })
+
+        async def finish(payload, cache_hit=False):
             body_bytes = len(json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode())
-            return {**payload, "trace": {
+            trace = {
                 "schema_version": 1, "trace_id": trace_id, "playbook": "rank_affiliate_products",
                 "started_at_unix_ms": started_at_unix_ms,
                 "latency_ms": {**{key: round(value, 2) for key, value in timings.items()},
@@ -394,7 +426,21 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 "token_estimate_method": "utf8_bytes_div_4",
                 "agent_input_and_reasoning_tokens": None,
                 "agent_token_note": "MCP does not receive the calling model's token usage",
-            }}
+            }
+            await emit(
+                "completed" if trace["success"] else "failed",
+                status="completed" if trace["success"] else "failed",
+                cache_hit=cache_hit,
+                success=trace["success"],
+                effective=trace["effective"],
+                latency_ms=trace["latency_ms"],
+                browser_operations=trace["browser_operations"],
+                response_bytes=body_bytes,
+                response_tokens_estimate=trace["response_tokens_estimate"],
+                winner_product_id=(payload.get("winner") or {}).get("product_id") if isinstance(payload.get("winner"), dict) else None,
+                error=payload.get("error"),
+            )
+            return {**payload, "trace": trace}
 
         if (type(query) is not str or not query.strip() or len(query) > 120 or any(ord(c) < 32 for c in query)
                 or channel not in {"social", "shopee_live", "shopee_video"}
@@ -402,43 +448,59 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 or type(min_sold) is not int or not 0 <= min_sold <= 1000000000
                 or type(top_k) is not int or not 1 <= top_k <= 10
                 or type(max_pages) is not int or not 1 <= max_pages <= 20):
-            return finish({"ok": False, "error": "invalid_input"})
+            return {"ok": False, "error": "invalid_input", "trace": {
+                "schema_version": 1, "trace_id": trace_id, "playbook": "rank_affiliate_products",
+                "started_at_unix_ms": started_at_unix_ms,
+                "latency_ms": {**timings, "total": round((time.monotonic() - started) * 1000, 2)},
+                "browser_operations": operations.copy(), "cache_hit": False,
+                "success": False, "effective": False, "response_bytes_without_trace": 36,
+                "response_tokens_estimate": 9, "token_estimate_method": "utf8_bytes_div_4",
+                "agent_input_and_reasoning_tokens": None,
+                "agent_token_note": "MCP does not receive the calling model's token usage",
+            }}
         normalized_query = " ".join(query.split())
         key = (normalized_query.casefold(), channel, mall_only, min_sold, exclude_preorder, top_k, max_pages)
+        swarm_id = hashlib.sha256(json.dumps(key, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()[:16]
+        await emit("queued")
         queued = time.monotonic()
         async with ranking_lock:
             timings["queue_wait_ms"] = (time.monotonic() - queued) * 1000
+            await emit("lane_started", queue_wait_ms=round(timings["queue_wait_ms"], 2))
             cached = ranking_cache.get(key)
             if cached and time.monotonic() - cached[0] <= 600:
-                return finish({**cached[1], "cache_hit": True}, cache_hit=True)
+                await emit("cache_hit", cache_hit=True, cache_age_ms=round((time.monotonic() - cached[0]) * 1000, 2))
+                return await finish({**cached[1], "cache_hit": True}, cache_hit=True)
 
             mark = time.monotonic()
             operations["scan"] += 1
+            await emit("scan_started", max_pages=max_pages)
             scan = await scan_products(
                 page_id=None, start_page=1, max_pages=max_pages,
                 max_products=1000, query=normalized_query,
             )
             timings["scan_ms"] = (time.monotonic() - mark) * 1000
             if scan.get("ok") is not True or not scan.get("scan_id") or not scan.get("page_id"):
-                return finish({"ok": False, "error": scan.get("error", "scan_failed"),
-                               "stage": "scan", "outcome": scan.get("outcome", "not_completed"),
-                               "retry_automatically": False})
+                return await finish({"ok": False, "error": scan.get("error", "scan_failed"),
+                                     "stage": "scan", "outcome": scan.get("outcome", "not_completed"),
+                                     "retry_automatically": False})
+            await emit("scan_completed", scan_ms=round(timings["scan_ms"], 2),
+                       pages_scanned=scan.get("pages_scanned"), unique_products=scan.get("unique_products"))
 
             records = []
             offset = 0
             unique_products = scan.get("unique_products")
             if type(unique_products) is not int or not 0 <= unique_products <= 1000:
-                return finish({"ok": False, "error": "invalid_extension_result", "stage": "scan",
-                               "outcome": "unconfirmed", "retry_automatically": False})
+                return await finish({"ok": False, "error": "invalid_extension_result", "stage": "scan",
+                                     "outcome": "unconfirmed", "retry_automatically": False})
             mark = time.monotonic()
             while offset < unique_products:
                 operations["scan_read"] += 1
                 chunk = await get_scan_products(scan["page_id"], scan["scan_id"], 50, offset, "", "full")
                 if chunk.get("ok") is not True:
                     timings["scan_read_ms"] = (time.monotonic() - mark) * 1000
-                    return finish({"ok": False, "error": chunk.get("error", "scan_read_failed"),
-                                   "stage": "scan_read", "outcome": chunk.get("outcome", "not_completed"),
-                                   "retry_automatically": False})
+                    return await finish({"ok": False, "error": chunk.get("error", "scan_read_failed"),
+                                         "stage": "scan_read", "outcome": chunk.get("outcome", "not_completed"),
+                                         "retry_automatically": False})
                 part = chunk.get("records") if type(chunk.get("records")) is list else []
                 records.extend(row for row in part if type(row) is dict)
                 next_offset = chunk.get("next_offset")
@@ -446,6 +508,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                     break
                 offset = next_offset
             timings["scan_read_ms"] = (time.monotonic() - mark) * 1000
+            await emit("candidates_loaded", scan_read_ms=round(timings["scan_read_ms"], 2), records_loaded=len(records))
 
             preorder = re.compile(r"(?:pre[ -]?order|pre[ -]?sale|พรี\s*ออเดอร์|สั่งจอง)", re.I)
             eligible = []
@@ -479,8 +542,11 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
 
             verified, detail_errors = [], []
             mark = time.monotonic()
-            for row in candidates:
+            await emit("detail_checks_started", candidate_count=len(candidates))
+            for index, row in enumerate(candidates, start=1):
                 operations["detail"] += 1
+                await emit("detail_check", candidate_index=index, candidate_count=len(candidates),
+                           product_id=row.get("product_id"), product_name=row.get("name"))
                 detail = await get_product_detail(offer_url=row["product_url"], open_if_missing=True, view="brief")
                 if detail.get("ok") is not True:
                     detail_errors.append({"product_id": row.get("product_id"), "error": detail.get("error", "detail_failed")})
@@ -504,6 +570,8 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                     "trust_basis": ["mall"] if row.get("mall") is True else [],
                 })
             timings["detail_ms"] = (time.monotonic() - mark) * 1000
+            await emit("ranking", detail_ms=round(timings["detail_ms"], 2),
+                       verified_count=len(verified), error_count=len(detail_errors))
             verified.sort(key=lambda row: (
                 -(row["commission_thb_per_order"] or 0),
                 -(row["sold"] or 0),
@@ -523,7 +591,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 "limitations": ["seller ratings and ad spend are not observed", "ranking covers only detail candidates checked"],
             }
             ranking_cache[key] = (time.monotonic(), result)
-            return finish(result)
+            return await finish(result)
 
     @server.tool()
     async def get_product_history(

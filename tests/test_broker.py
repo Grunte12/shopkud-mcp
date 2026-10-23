@@ -317,6 +317,17 @@ class BrokerTests(unittest.IsolatedAsyncioTestCase):
             await self.broker.call("extension", "open_offer", {"offer_url": PRODUCT_PAGE_URL + "/123"})
         self.assertEqual(caught.exception.code, "ambiguous_extension")
 
+    async def test_playbook_event_uses_extension_target_and_is_allowlisted(self) -> None:
+        peer = await self.connect()
+        event = {"schema_version": 1, "trace_id": "a" * 16, "stage": "queued"}
+        task = asyncio.create_task(self.broker.call("extension", "playbook_event", event, timeout=2))
+        command = await peer.recv()
+        self.assertEqual(command["page_id"], "extension")
+        self.assertEqual(command["operation"], "playbook_event")
+        self.assertEqual(command["arguments"], event)
+        await peer.send({"type": "result", "id": command["id"], "result": {"ok": True}})
+        self.assertEqual(await task, {"ok": True})
+
     async def test_pagination_navigation_and_scan_operations_are_allowlisted(self) -> None:
         current = page(24)
         peer = await self.connect(pages=[current])
