@@ -4,10 +4,10 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.10.1** - Extension-only P0, P1, and P2 affiliate tools. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+**Version 0.10.2** - Extension-only P0, P1, and P2 affiliate tools. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 This is a development candidate, not a published or stable release. The Python
-package and extension both declare **0.10.1**. Synthetic offline tests do not certify the
+package and extension both declare **0.10.2**. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
 ## Current capabilities
@@ -18,6 +18,8 @@ current Shopee UI, all product variants, or every account configuration.
 - ✅ **Link verification**: Verify link ownership and target without opening links or creating tracking clicks
 - ✅ **Link registry**: Find/filter links by product, channel, or clip with flexible search
 - ✅ Bounded product search, pagination, snapshots and cached-result reads
+- ✅ Deterministic commission-ranking playbook with one sequential browser lane
+  and shared 10-minute results for concurrent agents
 - ✅ Product-detail observations, including displayed channel-specific commissions
 - ✅ Optional public-product evidence and model matching
 - ✅ Agent-authored selection previews and once-only, snapshot-checked selection
@@ -30,6 +32,19 @@ current Shopee UI, all product variants, or every account configuration.
 This release implements an **extension-only** architecture (no Affiliate Open API integration)
 as required by the owner. All operations are performed through the Chrome extension
 interacting with the logged-in Shopee Affiliate pages.
+
+### What's New in 0.10.2
+
+- `rank_affiliate_products` turns bounded search, visible trust filters,
+  channel-specific detail checks and commission ranking into one MCP call.
+- Concurrent agents wait for one browser playbook and reuse the same result
+  instead of racing one Shopee tab.
+- Final ranking uses the requested channel's displayed estimated THB/order;
+  list-page commission is used only to bound detail candidates.
+- Every accepted ranking call returns a trace with queue/scan/read/detail/total
+  latency, browser-operation counts, cache hit, success/effectiveness, response
+  bytes and a clearly labeled response-token estimate. Calling-agent tokens are
+  unavailable to MCP and are never presented as measured values.
 
 ### What's New in 0.10.1
 
@@ -160,6 +175,7 @@ recovered from Chrome history by this tool.
 
 ```sh
 PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
+.venv/bin/python evals/rank-playbook.py
 node tests/background-reconnect.cjs
 node tests/entry-reuse.cjs
 node tests/listing-entry.cjs

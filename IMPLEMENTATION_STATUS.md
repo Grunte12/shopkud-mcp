@@ -1,8 +1,8 @@
 # ShopKud P0 / P1 / P2 checklist
 
-Version 0.10.1. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
+Version 0.10.2. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
 
-Release verification: 199 Python tests plus every committed Node/DOM/Playwright
+Release verification: 202 Python tests plus every committed Node/DOM/Playwright
 suite pass. The isolated E2E path covers authenticated MCP, Native Messaging,
 MV3, a synthetic Shopee page, one official Get Link click, local history save,
 owner-tab preservation and blocked non-fixture network. Live Shopee markup is
@@ -21,6 +21,7 @@ Status words: **done** means the behavior exists in code, **tested** means an of
 | P0-5 | Read a short link when the link box is hidden inside an open Get Link dialog | done, tested, flagged | `extension/linkcapture.js`, `detail.js` | `tests/test_linkcapture.cjs`, `tests/hidden-link-evals.cjs` |
 | P0-6 | Attribute imported conversion aggregates by SubID | done, tested, flagged | `sales_by`, `get_conversions` | `tests/test_sales_by.py`, `tests/test_fullspec.py` |
 | P0-7 | Offer lookup with social vs video commission and Extra Com | done, tested, flagged | `get_offer`, `project_offer` | `tests/test_fullspec.py`, `tests/detail-evals.cjs` |
+| P0-8 | Deterministic ranked discovery with one sequential browser lane, shared concurrent results, and per-call timing/outcome/context traces | done, tested, flagged | `rank_affiliate_products` | `tests/test_rank_playbook.py`, `evals/rank-playbook.py` |
 
 ## P1
 

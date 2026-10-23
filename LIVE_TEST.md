@@ -2,7 +2,7 @@
 
 This pass stays on your own Chrome profile. The coding agent does not log in, does not open `s.shopee.co.th` links, and does not receive cookies or page HTML.
 
-Load the unpacked extension from the `extension/` folder in this repo (version 0.10.0). Start the local ShopKud server only if you want the agent to call `selector_health`. The diagnostic also runs from the page console with no server.
+Load the unpacked extension from the `extension/` folder in this repo (version 0.10.2). Start the local ShopKud server only if you want the agent to call `selector_health`. The diagnostic also runs from the page console with no server.
 
 ## 1. Confirm the build
 

@@ -96,7 +96,7 @@ class PaginationToolsTests(unittest.IsolatedAsyncioTestCase):
         schema=self.tools['get_scan_products'].parameters['properties']
         self.assertEqual(schema['query']['maxLength'],120)
         self.assertEqual(schema['view']['enum'],['full','brief'])
-        self.assertEqual(len(self.tools),55)
+        self.assertEqual(len(self.tools),56)
         self.assertIn("selector_health", self.tools)
         self.assertIn("get_offer", self.tools)
         self.assertIn("find_link", self.tools)

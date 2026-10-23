@@ -1,11 +1,12 @@
 {
   "id": "shopkud-affiliate",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "skill": "skills/shopkud-affiliate/SKILL.md",
   "guide": "skills/shopkud-affiliate/references/workflow.md",
   "purpose": "ตรวจรุ่นและร้าน เทียบค่าคอมตามช่องทาง เตรียมภาพอ้างอิง และเก็บลิงก์ทางการครั้งเดียวเมื่อได้รับคำสั่ง",
   "stages": [
-    {"id": "discover", "tools": ["scan_products", "get_scan_products"]},
+    {"id": "discover-rank", "tools": ["rank_affiliate_products"]},
+    {"id": "custom-discover", "tools": ["scan_products", "get_scan_products"]},
     {"id": "verify-product-seller", "tools": ["get_product_detail"]},
     {"id": "compare-channel-offers", "tools": ["get_product_detail"]},
     {"id": "plan-references", "tools": ["get_product_detail"]},
