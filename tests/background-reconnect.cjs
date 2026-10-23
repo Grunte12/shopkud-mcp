@@ -87,13 +87,24 @@ function run() {
   h.fireDelay(1000);
   assert.equal(h.ports.length, 2, "first timer reconnects once");
   h.ports[1].onDisconnect.fire();
+  assert.equal(h.timers.size, 1, "second failure keeps one reconnect timer");
   h.fireDelay(3000);
   assert.equal(h.ports.length, 3, "second timer reconnects once");
   h.ports[2].onDisconnect.fire();
+  assert.equal(h.timers.size, 1, "third failure keeps one reconnect timer");
   h.fireDelay(8000);
   assert.equal(h.ports.length, 4, "third timer reconnects once");
   h.ports[3].onDisconnect.fire();
-  assert.equal(h.timers.size, 0, "reconnect stops after three failed attempts");
+  assert.equal(h.timers.size, 1, "fourth failure retains one reconnect timer");
+  h.fireDelay(15000);
+  assert.equal(h.ports.length, 5, "fourth timer reconnects once");
+  h.ports[4].onDisconnect.fire();
+  assert.equal(h.timers.size, 1, "long outage still keeps one pending timer");
+  assert.equal([...h.timers.values()][0].delay, 15000, "backoff saturates at fifteen seconds");
+  h.fireDelay(15000);
+  assert.equal(h.ports.length, 6, "reconnect continues after the backoff saturates");
+  h.ports[5].onDisconnect.fire();
+  assert.equal(h.timers.size, 1, "repeated failures continue with one timer");
 
   const reset = harness();
   reset.ports[0].onDisconnect.fire();
@@ -136,7 +147,7 @@ function run() {
 
   console.log(JSON.stringify({ ok: true, checks: [
     "startup and bounded single reconnects",
-    "three-attempt stop and hello-ack reset",
+    "saturating reconnect backoff continues and hello-ack resets",
     "manual connect timer cancellation and existing-port dedupe",
     "no command replay or tab creation; stale disconnect is harmless",
   ] }));

@@ -4,11 +4,10 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.10.0** - Extension-only P0, P1, and P2 affiliate tools. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+**Version 0.10.1** - Extension-only P0, P1, and P2 affiliate tools. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 This is a development candidate, not a published or stable release. The Python
-package declares **0.10.0** and the extension manifest declares **0.10.0**. Package
-and extension versions are separate. Synthetic offline tests do not certify the
+package and extension both declare **0.10.1**. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
 ## Current capabilities
@@ -32,7 +31,16 @@ This release implements an **extension-only** architecture (no Affiliate Open AP
 as required by the owner. All operations are performed through the Chrome extension
 interacting with the logged-in Shopee Affiliate pages.
 
-### What's New in 0.10.0
+### What's New in 0.10.1
+
+- Native Messaging reconnect now continues with a bounded 15-second backoff
+  instead of stopping after three failures.
+- The isolated MCP-to-extension E2E harness uses the current Chromium native
+  host location and verifies the source checkout and extension versions match.
+- macOS tests canonicalize the private temporary storage path before applying
+  the production symlink and permission checks.
+
+### P0/P1/P2 delivered in 0.10.0
 
 **SubID Management:**
 - Extended database schema to support 5 SubID fields (sub_id_1 through sub_id_5)

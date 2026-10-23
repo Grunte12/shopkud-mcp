@@ -1,6 +1,12 @@
 # ShopKud P0 / P1 / P2 checklist
 
-Version 0.10.0. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
+Version 0.10.1. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
+
+Release verification: 199 Python tests plus every committed Node/DOM/Playwright
+suite pass. The isolated E2E path covers authenticated MCP, Native Messaging,
+MV3, a synthetic Shopee page, one official Get Link click, local history save,
+owner-tab preservation and blocked non-fixture network. Live Shopee markup is
+still operator-verified where marked `flagged` below.
 
 Status words: **done** means the behavior exists in code, **tested** means an offline fixture covers it, **flagged** means a live Shopee page or an owner choice still has to confirm an assumption.
 

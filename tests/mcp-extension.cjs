@@ -76,7 +76,19 @@ async function run(){
     await rpc("initialize",{protocolVersion:"2025-11-25",capabilities:{},clientInfo:{name:"offline-shopkud-test",version:"1"}});
     assert.equal((await fetch(endpoint)).status,401);
     assert.equal((await fetch(endpoint,{headers:{Authorization:`Bearer ${token}`,Origin:"https://evil.example"}})).status,401);
-    const catalog=await rpc("tools/list");assert.deepEqual(catalog.tools.map(t=>t.name).sort(),["list_pages","get_products","get_product_detail","get_product_history","get_selections","prepare_selection","apply_selection","export_products","clear_picker_selections","get_pagination","go_to_page","scan_products","get_scan_products","get_review_plan","save_workspace","get_workspace","set_campaign_link","import_report_csv"].sort());
+    const expectedTools=[
+      "apply_selection","batch_create_links","check_commission_health","check_post_compliance","check_posting_budget",
+      "clear_picker_selections","convert_links_in_text","create_link","create_video_draft","enroll_mission",
+      "explain_cancellations","export","export_data","export_products","find_campaign_links","find_link",
+      "get_conversions","get_earnings_summary","get_offer","get_pagination","get_price_history","get_product_detail",
+      "get_product_history","get_product_media","get_products","get_review_plan","get_scan_products","get_selections",
+      "get_video_level","get_workflow_guide","get_workspace","go_to_page","import_report_csv","list_missions",
+      "list_pages","list_video_clips","posting_budget","prepare_cart_swap","prepare_selection","record_earnings_observation",
+      "record_offer_observation","record_video_level_observation","sales_by","save_workspace","scan_products","search_offers",
+      "search_products_for_content","selector_health","set_campaign_link","set_posting_cap","suggest_replacement","track_video_clip",
+      "update_commission_health","update_mission_progress","verify_link",
+    ];
+    const catalog=await rpc("tools/list");assert.deepEqual(catalog.tools.map(t=>t.name).sort(),expectedTools.sort());
     results.push({name:phase,status:"pass"});
     await context.route("**/*",route=>{const u=new URL(route.request().url());if(u.origin==="https://affiliate.shopee.co.th")fixtureRouteHits.push({url:u.href,path:u.pathname});return u.origin==="https://affiliate.shopee.co.th" && (u.pathname==="/" || /^\/offer\/product_offer(?:\/(?:123)?)?$/.test(u.pathname))?route.fulfill({contentType:"text/html; charset=utf-8",body:u.pathname.endsWith('/123')?detailFixture():fixture()}):route.abort();});
     const page=await context.newPage();await page.goto(PAGE);

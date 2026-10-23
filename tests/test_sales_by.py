@@ -1,6 +1,7 @@
 """Test SubID-based sales attribution queries (P0-6)."""
 
 import json
+import os
 import tempfile
 import unittest
 from decimal import Decimal
@@ -13,7 +14,8 @@ class TestSalesByAttribution(unittest.TestCase):
     """Test sales_by dimension queries for SubID-based attribution."""
 
     def setUp(self):
-        self.tempdir = tempfile.mkdtemp()
+        self.tempdir = Path(tempfile.mkdtemp()).resolve()
+        os.chmod(self.tempdir, 0o700)
         self.store = CampaignStore(self.tempdir)
         self.workspace_id = "0123456789abcdef" * 2
 

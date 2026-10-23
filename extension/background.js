@@ -14,7 +14,7 @@ let connected = false;
 let recovering = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
-const reconnectDelays = [1000, 3000, 8000];
+const reconnectDelays = [1000, 3000, 8000, 15000];
 const offer = value => {
   try { const u=new URL(value);return u.origin==="https://affiliate.shopee.co.th" && !u.username && !u.password && !u.port && !u.search && !u.hash && /^\/offer\/product_offer(?:\/[1-9][0-9]{0,19})?$/u.test(u.pathname); }
   catch {return false;}
@@ -222,8 +222,9 @@ function recoverPages() {
   return recovering;
 }
 function scheduleReconnect() {
-  if(port || reconnectTimer || reconnectAttempts>=reconnectDelays.length)return;
-  const delay=reconnectDelays[reconnectAttempts++];
+  if(port || reconnectTimer)return;
+  const delay=reconnectDelays[Math.min(reconnectAttempts,reconnectDelays.length-1)];
+  reconnectAttempts=Math.min(reconnectAttempts+1,reconnectDelays.length-1);
   reconnectTimer=setTimeout(()=>{reconnectTimer=null;connect(true);},delay);
 }
 function connect(automatic=false) {

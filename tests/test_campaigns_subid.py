@@ -13,7 +13,7 @@ class TestCampaignStoreSubIds(unittest.TestCase):
 
     def setUp(self):
         """Create a temporary directory for test database."""
-        self.test_dir = tempfile.mkdtemp()
+        self.test_dir = str(Path(tempfile.mkdtemp()).resolve())
         os.chmod(self.test_dir, 0o700)
         self.store = CampaignStore(self.test_dir)
 

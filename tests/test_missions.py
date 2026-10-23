@@ -2,6 +2,7 @@
 
 import tempfile
 import unittest
+import os
 from pathlib import Path
 
 from shopkud_mcp.campaigns import CampaignStore
@@ -11,7 +12,8 @@ class TestMissions(unittest.TestCase):
     """Test mission/campaign tracking."""
 
     def setUp(self):
-        self.tempdir = tempfile.mkdtemp()
+        self.tempdir = Path(tempfile.mkdtemp()).resolve()
+        os.chmod(self.tempdir, 0o700)
         self.store = CampaignStore(self.tempdir)
         self.workspace_id = "0123456789abcdef" * 2
 

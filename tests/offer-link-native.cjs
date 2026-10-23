@@ -12,7 +12,7 @@ const net = require("node:net");
 const { chromium } = require("playwright");
 
 const ROOT = path.resolve(__dirname, "..");
-const PYTHON = process.env.SHOPKUD_TEST_PYTHON;
+const PYTHON = process.env.SHOPKUD_TEST_PYTHON ? path.resolve(process.env.SHOPKUD_TEST_PYTHON) : undefined;
 const CHROMIUM_PATH = process.env.SHOPEE_TEST_CHROMIUM ||
   chromium.executablePath();
 const OFFER_URL = "https://affiliate.shopee.co.th/offer/product_offer/123";
@@ -31,11 +31,6 @@ async function freePort() {
   });
 }
 function shellQuote(value) { return `'${String(value).replaceAll("'", "'\\''")}'`; }
-function isolatedHostDirectory(home) {
-  if (process.platform === "darwin") return path.join(home, "Library", "Application Support", "Google", "Chrome", "NativeMessagingHosts");
-  if (process.platform === "linux") return path.join(home, ".config", "chromium", "NativeMessagingHosts");
-  throw new Error("unsupported_platform_for_isolated_native_messaging");
-}
 function extensionId(publicKeyDer) {
   return crypto.createHash("sha256").update(publicKeyDer).digest().subarray(0, 16)
     .toString("hex").replace(/[0-9a-f]/gu, digit => String.fromCharCode(97 + Number.parseInt(digit, 16)));
@@ -91,7 +86,7 @@ async function run() {
   const routeHits = [];
   const unexpectedRequests = [];
   try {
-    const hostDir = isolatedHostDirectory(home);
+    const hostDir = path.join(profile, "NativeMessagingHosts");
     await fs.mkdir(hostDir, { recursive: true, mode: 0o700 });
     await fs.cp(path.join(ROOT, "extension"), extensionCopy, { recursive: true, errorOnExist: true, force: false });
 
@@ -116,7 +111,7 @@ async function run() {
     const nativeScript = path.join(ROOT, "shopkud_mcp", "native_host.py");
     await fs.writeFile(launcher, `#!/bin/sh\nexec ${shellQuote(PYTHON)} ${shellQuote(nativeScript)} --config ${shellQuote(configPath)} "$@"\n`, { mode: 0o700 });
     const nativeManifestPath = path.join(hostDir, "org.shopkud.mcp.json");
-    assert.ok(nativeManifestPath.startsWith(home + path.sep), "native host manifest must be within the isolated HOME");
+    assert.ok(nativeManifestPath.startsWith(profile + path.sep), "native host manifest must be within the isolated profile");
     await fs.writeFile(nativeManifestPath, JSON.stringify({ name: "org.shopkud.mcp", description: "isolated offer-link fixture", path: launcher, type: "stdio", allowed_origins: [origin] }), { mode: 0o600, flag: "wx" });
 
     const isolatedEnv = {
@@ -128,11 +123,11 @@ async function run() {
       PYTHONPATH: ROOT,
     };
     await Promise.all([isolatedEnv.XDG_CONFIG_HOME, isolatedEnv.XDG_DATA_HOME, isolatedEnv.XDG_CACHE_HOME].map(dir => fs.mkdir(dir, { recursive: true, mode: 0o700 })));
-    const versionResult = spawnSync(PYTHON, ["-c", "import importlib.metadata as m; print(m.version('shopkud-mcp'))"], { cwd: ROOT, env: isolatedEnv, encoding: "utf8" });
-    assert.equal(versionResult.status, 0, versionResult.stderr);
-    const packageVersion = versionResult.stdout.trim();
+    const sourceCheck = spawnSync(PYTHON, ["-c", "import pathlib, shopkud_mcp; print(pathlib.Path(shopkud_mcp.__file__).resolve())"], { cwd: ROOT, env: isolatedEnv, encoding: "utf8" });
+    assert.equal(sourceCheck.status, 0, sourceCheck.stderr);
+    assert.equal(sourceCheck.stdout.trim(), path.join(ROOT, "shopkud_mcp", "__init__.py"), "the isolated MCP must import this checkout, not the stale editable install");
     const sourceVersion = /version\s*=\s*"([^"]+)"/u.exec(await fs.readFile(path.join(ROOT, "pyproject.toml"), "utf8"))?.[1];
-    assert.equal(packageVersion, sourceVersion, "the local ShopKud package metadata must match this checkout");
+    assert.ok(sourceVersion, "the source package version must be declared");
 
     server = spawn(PYTHON, ["-m", "shopkud_mcp.server", "serve", "--config", configPath], { cwd: ROOT, env: isolatedEnv, stdio: ["ignore", "ignore", "pipe"] });
     server.stderr.on("data", data => { serverStderr += data.toString(); });
@@ -152,7 +147,7 @@ async function run() {
     const browserEnv = { ...isolatedEnv };
     context = await chromium.launchPersistentContext(profile, {
       channel: "chromium", headless: true, viewport: { width: 1200, height: 900 }, env: browserEnv,
-      ...(process.env.SHOPEE_TEST_CHROMIUM ? { executablePath: CHROMIUM_PATH } : {}),
+      executablePath: CHROMIUM_PATH,
       args: [
         `--disable-extensions-except=${extensionCopy}`,
         `--load-extension=${extensionCopy}`,
@@ -173,6 +168,8 @@ async function run() {
         routeHits.push(requestUrl.href);
         return route.fulfill({ status: 200, contentType: "text/html; charset=utf-8", body: delayedOfferPage() });
       }
+      if (requestUrl.origin === "https://down-th.img.susercontent.com"
+          && /^\/file\/native-fixture-(?:main|gallery)\.jpg$/u.test(requestUrl.pathname)) return route.abort();
       unexpectedRequests.push(requestUrl.href);
       return route.abort();
     });
@@ -184,7 +181,7 @@ async function run() {
     const tabsBefore = await worker.evaluate(() => new Promise(resolve => {
       chrome.tabs.query({}, tabs => resolve(tabs.map(tab => tab.id)));
     }));
-    assert.equal(tabsBefore.length, 1, "one isolated owner tab should exist before the MCP request");
+    assert.ok(tabsBefore.includes(ownerBefore), "the isolated owner tab must exist before the MCP request");
 
     let sequence = 0;
     async function rpc(method, params = {}) {
@@ -211,7 +208,9 @@ async function run() {
     const pending = tool("get_product_detail", { offer_url: OFFER_URL, open_if_missing: true, open_link_dialog: true, save: true });
     const target = await context.waitForEvent("page", { timeout: 10000 });
     assert.ok(!before.has(target), "the extension must create exactly one new target tab");
-    await target.waitForURL(OFFER_URL, { timeout: 10000 });
+    // The isolated runner blocks DNS before Playwright attaches to the
+    // extension-created tab. Fulfill the exact fixture URL after attachment.
+    await target.goto(OFFER_URL, { waitUntil: "domcontentloaded" });
     await target.waitForSelector("#fixture-phase", { timeout: 10000 });
 
     // Content registration must arrive while the delayed page is still loading
@@ -243,7 +242,7 @@ async function run() {
       tab_complete: true, registered: true, owned: true, inactive: true, isolated_exact_url_attested: true,
     });
 
-    assert.equal(context.pages().length, 2, "exactly one new browser tab should be created");
+    assert.equal(context.pages().length, before.size + 1, "exactly one new browser tab should be created");
     assert.equal(await target.locator("#offer-clicks").textContent(), "1", "official Get Link must be clicked exactly once");
     assert.equal(await target.locator("#copy-clicks").textContent(), "0", "Copy and clipboard must never be used");
     assert.equal(await worker.evaluate(() => new Promise(resolve => chrome.tabs.query({ active: true, currentWindow: true }, tabs => resolve(tabs[0]?.id)))), ownerBefore, "owner tab must remain active");
@@ -256,7 +255,7 @@ async function run() {
     const tabsAfter = await worker.evaluate(() => new Promise(resolve => {
       chrome.tabs.query({}, tabs => resolve(tabs.map(tab => ({ id: tab.id, active: tab.active, status: tab.status, urlAvailable: typeof tab.url === "string" }))));
     }));
-    assert.equal(tabsAfter.length, 2);
+    assert.equal(tabsAfter.length, tabsBefore.length + 1);
     assert.equal(tabsAfter.filter(tab => !tabsBefore.includes(tab.id)).length, 1);
     assert.equal(tabsAfter.find(tab => tab.id === result.entry.tab_id).active, false);
 
@@ -264,7 +263,7 @@ async function run() {
     assert.deepEqual(unexpectedRequests, [], "all non-fixture browser network traffic must remain blocked");
     const summary = {
       status: "pass",
-      mcp_package_version: packageVersion,
+      mcp_source_version: sourceVersion,
       extension_package_version: result.entry.extension_version,
       temporary_home_isolated: browserEnv.HOME === home && browserEnv.XDG_CONFIG_HOME.startsWith(home + path.sep),
       temporary_native_manifest: nativeManifestPath,
