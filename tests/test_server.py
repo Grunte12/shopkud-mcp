@@ -96,11 +96,18 @@ class PaginationToolsTests(unittest.IsolatedAsyncioTestCase):
         schema=self.tools['get_scan_products'].parameters['properties']
         self.assertEqual(schema['query']['maxLength'],120)
         self.assertEqual(schema['view']['enum'],['full','brief'])
-        self.assertEqual(len(self.tools),56)
+        self.assertEqual(len(self.tools),57)
         self.assertIn("selector_health", self.tools)
         self.assertIn("get_offer", self.tools)
         self.assertIn("find_link", self.tools)
         self.assertIn("suggest_replacement", self.tools)
+        self.assertIn("reload_extension", self.tools)
+
+    async def test_reload_extension_routes_only_the_idle_extension_target(self):
+        self.broker.response={"ok":True,"status":"reloading","extension_version":"0.10.4"}
+        result=await self.tool("reload_extension")()
+        self.assertEqual(result["status"],"reloading")
+        self.assertEqual(self.broker.calls,[("extension","reload_extension",{},5)])
 
     async def test_selector_health_strips_values_and_does_not_click(self):
         self.broker.response={

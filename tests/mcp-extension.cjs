@@ -84,7 +84,7 @@ async function run(){
       "get_product_history","get_product_media","get_products","get_review_plan","get_scan_products","get_selections",
       "get_video_level","get_workflow_guide","get_workspace","go_to_page","import_report_csv","list_missions",
       "list_pages","list_video_clips","posting_budget","prepare_cart_swap","prepare_selection","record_earnings_observation",
-      "rank_affiliate_products","record_offer_observation","record_video_level_observation","sales_by","save_workspace","scan_products","search_offers",
+      "rank_affiliate_products","record_offer_observation","record_video_level_observation","reload_extension","sales_by","save_workspace","scan_products","search_offers",
       "search_products_for_content","selector_health","set_campaign_link","set_posting_cap","suggest_replacement","track_video_clip",
       "update_commission_health","update_mission_progress","verify_link",
     ];

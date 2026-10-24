@@ -23,6 +23,7 @@ function harness() {
   const ports = [];
   const sentToTabs = [];
   let tabCreates = 0;
+  let reloads = 0;
   const runtimeMessage = event();
   const tabsRemoved = event();
   const tabsUpdated = event();
@@ -30,6 +31,7 @@ function harness() {
     runtime: {
       id: "extension-id",
       lastError: null,
+      reload() { reloads++; },
       getManifest: () => ({ version: "test" }),
       onMessage: runtimeMessage,
       connectNative(host) {
@@ -62,7 +64,7 @@ function harness() {
   });
   vm.runInContext(source, context, { filename: "background.js" });
   return {
-    ports, timers, sentToTabs, get tabCreates() { return tabCreates; }, runtimeMessage,
+    ports, timers, sentToTabs, get tabCreates() { return tabCreates; }, get reloads() { return reloads; }, runtimeMessage,
     fireTimer(id) { const timer = timers.get(id); assert.ok(timer, `timer ${id} exists`); timers.delete(id); timer.fn(); },
     fireDelay(delay) { const entry = [...timers].find(([, timer]) => timer.delay === delay); assert.ok(entry, `timer ${delay}ms exists`); this.fireTimer(entry[0]); },
     connectMessage() {
@@ -145,11 +147,20 @@ function run() {
   assert.equal(safety.ports[2].messages.some(m => m.type === "command"), false, "commands are not replayed");
   assert.equal(safety.tabCreates, 0, "reconnection never creates a browser tab");
 
+  const reload = harness();
+  const reloadPort = reload.ports[0];
+  reloadPort.onMessage.fire({type:"command",id:"e".repeat(32),page_id:"extension",operation:"reload_extension",arguments:{}});
+  assert.equal(JSON.stringify(reloadPort.messages.at(-1)),JSON.stringify({type:"result",id:"e".repeat(32),result:{ok:true,status:"reloading",extension_version:"test"}}));
+  assert.equal(reload.reloads,0,"reload waits until its receipt is sent");
+  reload.fireDelay(100);
+  assert.equal(reload.reloads,1,"idle extension reloads once");
+
   console.log(JSON.stringify({ ok: true, checks: [
     "startup and bounded single reconnects",
     "saturating reconnect backoff continues and hello-ack resets",
     "manual connect timer cancellation and existing-port dedupe",
     "no command replay or tab creation; stale disconnect is harmless",
+    "idle-only extension reload returns a receipt before reloading",
   ] }));
 }
 

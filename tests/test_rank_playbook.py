@@ -113,6 +113,17 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sum(call[1] == "search_scan" for call in self.broker.calls), 1)
         self.assertTrue(any(call[1] == "playbook_event" and call[2]["stage"] == "cache_hit" for call in self.broker.calls))
 
+    async def test_stateless_service_wrappers_share_one_process_lane(self):
+        config = {"token": "a" * 64, "socket_path": "/private/tmp/native.sock",
+                  "allowed_origins": ["chrome-extension://" + "a" * 32 + "/"]}
+        _, second_mcp, _ = create_service(config, self.broker)
+        second_tool = second_mcp._tool_manager._tools["rank_affiliate_products"].fn
+        first, second = await asyncio.gather(self.tool("ทีวี"), second_tool("ทีวี"))
+        self.assertFalse(first["cache_hit"])
+        self.assertTrue(second["cache_hit"])
+        self.assertEqual(first["results"], second["results"])
+        self.assertEqual(sum(call[1] == "search_scan" for call in self.broker.calls), 1)
+
     async def test_invalid_inputs_never_reach_browser(self):
         for arguments in [
             {"query": ""}, {"query": "ทีวี", "mall_only": 1},

@@ -36,7 +36,12 @@
       changed=true;
       input.dispatchEvent(new Event("input",{bubbles:true}));
       input.dispatchEvent(new Event("change",{bubbles:true}));
-      for(const type of ["keydown","keyup"])input.dispatchEvent(new KeyboardEvent(type,{key:"Enter",code:"Enter",keyCode:13,which:13,bubbles:true}));
+      const searchRoot=input.closest(".ant-input-search");
+      const submitButtons=searchRoot?[...searchRoot.querySelectorAll("button.ant-input-search-button")].filter(visible):[];
+      if(submitButtons.length>1)return fail("search_controls_ambiguous");
+      const searchSource=submitButtons.length?"native_affiliate_search_button":"native_affiliate_input_enter";
+      if(submitButtons.length)submitButtons[0].click();
+      else for(const type of ["keydown","keyup"])input.dispatchEvent(new KeyboardEvent(type,{key:"Enter",code:"Enter",keyCode:13,which:13,bubbles:true}));
       const resultDeadline=performance.now()+15000;
       let stable=0,last=null;
       while(performance.now()<resultDeadline) {
@@ -46,7 +51,7 @@
         if(records().length && after!==before){stable=after===last?stable+1:1;last=after;}else stable=0;
         if(stable>=3) {
           const result=await scan({start_page:args.start_page,max_pages:args.max_pages,max_products:args.max_products},()=>Boolean(stopped()));
-          return {...result,query,search_source:"native_affiliate_input_enter",search_confirmed:true};
+          return {...result,query,search_source:searchSource,search_confirmed:true};
         }
         await new Promise(resolve=>setTimeout(resolve,100));
       }

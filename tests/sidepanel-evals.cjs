@@ -10,11 +10,11 @@ async function run(){
   await page.addInitScript(()=>{
     const listeners=[];
     const now=Date.now();
-    const snapshot={ok:true,connected:true,extension_version:"0.10.3",runs:[
+    const snapshot={ok:true,connected:true,extension_version:"0.10.4",runs:[
       {trace_id:"a".repeat(16),swarm_id:"b".repeat(16),invocation_number:1,query:"ทีวี",stage:"completed",status:"completed",updated_at_unix_ms:now-1000,elapsed_ms:1200,success:true,effective:true,cache_hit:false,response_tokens_estimate:480,latency_ms:{total:1200,queue_wait_ms:3},browser_operations:{scan:1,scan_read:1,detail:2}},
       {trace_id:"c".repeat(16),swarm_id:"b".repeat(16),invocation_number:2,query:"ทีวี",stage:"detail_check",status:"running",updated_at_unix_ms:now,elapsed_ms:340,candidate_index:2,candidate_count:5,product_name:"Smart TV",browser_operations:{scan:1}},
     ]};
-    globalThis.chrome={runtime:{getManifest:()=>({version:"0.10.3"}),onMessage:{addListener(fn){listeners.push(fn);}},async sendMessage(message){if(message.type==="shopkud-live-clear"){snapshot.runs=snapshot.runs.filter(run=>run.status==="running");}return snapshot;}}};
+    globalThis.chrome={runtime:{getManifest:()=>({version:"0.10.4"}),onMessage:{addListener(fn){listeners.push(fn);}},async sendMessage(message){if(message.type==="shopkud-live-clear"){snapshot.runs=snapshot.runs.filter(run=>run.status==="running");}return snapshot;}}};
   });
   await page.goto(pathToFileURL(path.join(__dirname,"../extension/sidepanel.html")).href);
   await page.waitForSelector("#now-content:not([hidden])");

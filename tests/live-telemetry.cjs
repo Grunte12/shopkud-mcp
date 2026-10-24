@@ -8,7 +8,7 @@ function event(){const listeners=[];return{addListener(fn){listeners.push(fn);},
 async function run(){
   const runtimeMessage=event(),ports=[],saved={};
   const chrome={
-    runtime:{id:"extension-id",lastError:null,getManifest:()=>({version:"0.10.3"}),onMessage:runtimeMessage,
+    runtime:{id:"extension-id",lastError:null,getManifest:()=>({version:"0.10.4"}),onMessage:runtimeMessage,
       connectNative(){const port={messages:[],onDisconnect:event(),onMessage:event(),postMessage(value){this.messages.push(value);}};ports.push(port);return port;},
       sendMessage(_message,callback){callback?.();}},
     storage:{session:{async get(key){return{[key]:saved[key]};},async set(value){Object.assign(saved,value);}}},
@@ -24,7 +24,7 @@ async function run(){
   runtimeMessage.fire({type:"shopkud-live-snapshot"},{id:"extension-id"},value=>{snapshot=value;});
   await new Promise(resolve=>setTimeout(resolve,0));
   assert.equal(snapshot.connected,true);
-  assert.equal(snapshot.extension_version,"0.10.3");
+  assert.equal(snapshot.extension_version,"0.10.4");
   assert.equal(snapshot.runs.length,1);
   assert.equal(snapshot.runs[0].invocation_number,1);
   assert.equal(snapshot.runs[0].stage,"queued");

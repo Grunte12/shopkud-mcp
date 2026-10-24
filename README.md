@@ -4,10 +4,10 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.10.3** - Extension-only P0, P1, and P2 affiliate tools. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+**Version 0.10.4** - Extension-only P0, P1, and P2 affiliate tools. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
-This is the public **0.10.3** release. The Python package and extension both
-declare **0.10.3**. Synthetic offline tests do not certify the
+This is the public **0.10.4** release. The Python package and extension both
+declare **0.10.4**. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
 ## Current capabilities
@@ -34,6 +34,16 @@ current Shopee UI, all product variants, or every account configuration.
 This release implements an **extension-only** architecture (no Affiliate Open API integration)
 as required by the owner. All operations are performed through the Chrome extension
 interacting with the logged-in Shopee Affiliate pages.
+
+### What's New in 0.10.4
+
+- Shopee Affiliate search prefers the page's visible Ant Design search button
+  and falls back to Enter only when no button exists.
+- The ranking lane and ten-minute result cache are shared across stateless MCP
+  request wrappers, so concurrent agents cannot race the same browser tab.
+- After the initial 0.10.4 load, `reload_extension` safely reloads an idle
+  unpacked ShopKud build through MCP; later local updates no longer require
+  opening `chrome://extensions`.
 
 ### What's New in 0.10.3
 

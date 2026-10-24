@@ -333,6 +333,14 @@ function connect(automatic=false) {
         recordTelemetry(message.arguments).then(result=>{if(port===channel)channel.postMessage({type:"result",id:message.id,result});});
         return;
       }
+      if(message.page_id==="extension" && message.operation==="reload_extension") {
+        if(message.arguments && Object.keys(message.arguments).length || inFlight.size || entryBusy || listingTask || opening.size) {
+          channel.postMessage({type:"result",id:message.id,result:{ok:false,error:"extension_busy",status:"not_reloaded",retry_automatically:false}});return;
+        }
+        channel.postMessage({type:"result",id:message.id,result:{ok:true,status:"reloading",extension_version:chrome.runtime.getManifest().version}});
+        setTimeout(()=>chrome.runtime.reload(),100);
+        return;
+      }
       if(message.page_id==="extension" && ["open_offer","entry_info"].includes(message.operation)) {
         const operation=message.operation==="entry_info"?entryInfo:openOffer;
         operation(message.arguments).then(result=>{if(port===channel)channel.postMessage({type:"result",id:message.id,result});}).catch(()=>{
