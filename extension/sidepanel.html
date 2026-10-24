@@ -64,6 +64,29 @@
       </div>
     </section>
 
+    <section class="developer-console" aria-labelledby="console-heading">
+      <div class="section-title compact console-heading">
+        <div>
+          <h2 id="console-heading">Working log</h2>
+          <p>คำสั่งจาก Agent และฟังก์ชันที่โค้ดกำลังรันแบบสด</p>
+        </div>
+        <div class="console-actions">
+          <button id="follow-logs" class="console-button" type="button" aria-pressed="true">ตามสด</button>
+          <button id="clear-logs" class="console-button" type="button" disabled>ล้าง</button>
+        </div>
+      </div>
+      <div id="console-shell" class="console-shell" role="log" aria-live="polite" aria-relevant="additions">
+        <ol id="developer-log" class="developer-log"></ol>
+        <p id="developer-log-empty" class="console-empty"><span aria-hidden="true">$</span> รอ MCP tool call แรก…</p>
+      </div>
+      <div class="console-footer">
+        <span><i class="actor-key agent-key"></i>Agent request</span>
+        <span><i class="actor-key code-key"></i>Code execution</span>
+        <strong id="developer-log-count">0 lines</strong>
+      </div>
+      <p class="console-note">แสดง tool call, arguments ที่ตัดข้อมูลลับแล้ว, source/function, สรุปผล และภาพที่ส่งกลับให้ Agent — คำตอบสุดท้ายและ private reasoning ของ Agent ไม่ได้ถูกส่งกลับเข้า MCP จึงไม่สามารถแสดงได้</p>
+    </section>
+
     <section class="metrics" aria-labelledby="metrics-heading">
       <div class="section-title compact">
         <h2 id="metrics-heading">ประสิทธิภาพรอบนี้</h2>
@@ -138,6 +161,11 @@
         <p class="operation-legend"></p>
         <div class="run-facts"></div>
       </div>
+    </li>
+  </template>
+  <template id="developer-log-template">
+    <li class="console-line">
+      <time></time><span class="console-actor"></span><span class="console-progress"></span><code class="console-operation"></code><span class="console-message"></span><span class="console-detail"></span><span class="console-source"></span><span class="console-media"></span>
     </li>
   </template>
   <script src="sidepanel.js"></script>

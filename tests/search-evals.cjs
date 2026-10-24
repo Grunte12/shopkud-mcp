@@ -87,6 +87,31 @@ async function main() {
     assert.equal(buttonSubmit.enters, 0);
     results.push("Ant Design search button is preferred over synthetic Enter");
 
+    await page.setContent(`<main><span class="custom-search-input ant-input-group-wrapper ant-input-group-wrapper-lg"><span class="ant-input-wrapper ant-input-group"><span class="custom-search-input ant-input-affix-wrapper ant-input-affix-wrapper-lg">${inputHTML}</span><span class="ant-input-group-addon"><div>ค้นหา</div></span></span></span><section id="rows"></section></main>`);
+    await page.addScriptTag({ path: SEARCH_JS });
+    const liveAddon = await page.evaluate(async query => {
+      const input = document.querySelector("input");
+      const addon = document.querySelector(".ant-input-group-addon > div");
+      const rows = document.querySelector("#rows");
+      let clicks = 0, scans = 0;
+      addon.addEventListener("click", () => {
+        clicks++;
+        setTimeout(() => { rows.innerHTML = '<div class="product-row" data-id="live">ผลลัพธ์จาก UI ปัจจุบัน</div>'; }, 100);
+      });
+      const result = await ShopKudSearch.run({
+        args: { query, start_page: 1, max_pages: 1, max_products: 5 },
+        records: () => [...rows.children].map(row => ({product_id:row.dataset.id,name:row.textContent})),
+        selectionStates: () => [], active: () => true, cancelled: () => false,
+        scan: async () => { scans++; return {ok:true}; },
+      });
+      return {result, clicks, scans};
+    }, QUERY);
+    assert.equal(liveAddon.result.ok, true);
+    assert.equal(liveAddon.result.search_source, "native_affiliate_search_addon");
+    assert.equal(liveAddon.clicks, 1);
+    assert.equal(liveAddon.scans, 1);
+    results.push("current Shopee ant-input-group-addon works even when the page starts empty");
+
     await reset(page, { input: false });
     const delayed = await page.evaluate(async query => {
       const rows = document.querySelector("#rows");

@@ -2,10 +2,12 @@
 import json
 import os
 from pathlib import Path
+import plistlib
 import re
 import secrets
 import shlex
 import stat
+import subprocess
 import sys
 import tempfile
 
@@ -48,6 +50,61 @@ def enable_workspace(config_path):
     if intake.resolve()!=intake or not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode)!=0o700 or info.st_uid!=os.getuid():raise ValueError("unsafe_intake_directory")
     if before.get("workspace_enabled") is True:return
     _replace_config(path,{**before,"workspace_enabled":True},"workspace")
+
+
+def install_macos_service(config_path, launch_agents_dir=None, python_executable=None, start=True):
+    """Install one per-user launchd worker without exposing the bearer key."""
+    if sys.platform != "darwin" or type(start) is not bool:
+        raise ValueError("unsupported_service_platform")
+    config_path = Path(config_path).expanduser().absolute().resolve(strict=True)
+    read_config(config_path)
+    executable = Path(python_executable or sys.executable).expanduser().absolute().resolve(strict=True)
+    if not executable.is_file():
+        raise ValueError("python_executable_unavailable")
+    launch_dir = Path(launch_agents_dir or Path.home()/"Library"/"LaunchAgents").expanduser().absolute()
+    launch_dir.mkdir(parents=True, exist_ok=True)
+    info = launch_dir.lstat()
+    if launch_dir.resolve() != launch_dir or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        raise ValueError("unsafe_launch_agents_directory")
+    label = "org.shopkud.mcp"
+    target = launch_dir/f"{label}.plist"
+    payload = {
+        "Label": label,
+        "ProgramArguments": [str(executable), "-m", "shopkud_mcp.server", "serve", "--config", str(config_path)],
+        "RunAtLoad": True,
+        "KeepAlive": True,
+        "ProcessType": "Background",
+        "ThrottleInterval": 10,
+        "WorkingDirectory": str(config_path.parent),
+        "StandardOutPath": "/dev/null",
+        "StandardErrorPath": "/dev/null",
+    }
+    data = plistlib.dumps(payload, fmt=plistlib.FMT_XML, sort_keys=True)
+    if target.exists() or target.is_symlink():
+        current = target.lstat()
+        if (target.resolve() != target or not stat.S_ISREG(current.st_mode)
+                or current.st_uid != os.getuid() or current.st_nlink != 1):
+            raise ValueError("unsafe_launch_agent_target")
+        if target.read_bytes() != data:
+            raise ValueError("existing_launch_agent_mismatch")
+    else:
+        fd = os.open(target, os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "wb") as stream:
+            stream.write(data)
+    state = "installed"
+    if start:
+        service = f"gui/{os.getuid()}/{label}"
+        known = subprocess.run(["launchctl", "print", service], stdout=subprocess.DEVNULL,
+                               stderr=subprocess.DEVNULL, check=False)
+        if known.returncode == 0:
+            state = "already_running"
+        else:
+            started = subprocess.run(["launchctl", "bootstrap", f"gui/{os.getuid()}", str(target)],
+                                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+            if started.returncode != 0:
+                raise OSError("launch_agent_start_failed")
+            state = "running"
+    return {"ok": True, "state": state, "label": label, "plist": str(target)}
 
 
 def setup(extension_id, state_dir, manifest_dir, port=8176):

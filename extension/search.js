@@ -24,7 +24,7 @@
         const stop=stopped();if(stop)return fail(stop);
         const matches=[...document.querySelectorAll(selector)].filter(visible);
         if(matches.length>1)return fail("search_controls_ambiguous");
-        if(matches.length===1 && records().length){input=matches[0];break;}
+        if(matches.length===1){input=matches[0];break;}
         await new Promise(resolve=>setTimeout(resolve,100));
       }
       if(!input)return fail("search_controls_unavailable");
@@ -36,11 +36,13 @@
       changed=true;
       input.dispatchEvent(new Event("input",{bubbles:true}));
       input.dispatchEvent(new Event("change",{bubbles:true}));
-      const searchRoot=input.closest(".ant-input-search");
+      const searchRoot=input.closest(".ant-input-search,.ant-input-group-wrapper");
       const submitButtons=searchRoot?[...searchRoot.querySelectorAll("button.ant-input-search-button")].filter(visible):[];
-      if(submitButtons.length>1)return fail("search_controls_ambiguous");
-      const searchSource=submitButtons.length?"native_affiliate_search_button":"native_affiliate_input_enter";
-      if(submitButtons.length)submitButtons[0].click();
+      const groupAddons=searchRoot?[...searchRoot.querySelectorAll(".ant-input-group-addon")].filter(visible):[];
+      const submitControls=[...submitButtons,...groupAddons];
+      if(submitControls.length>1)return fail("search_controls_ambiguous");
+      const searchSource=submitButtons.length?"native_affiliate_search_button":groupAddons.length?"native_affiliate_search_addon":"native_affiliate_input_enter";
+      if(submitControls.length)(submitControls[0].firstElementChild || submitControls[0]).click();
       else for(const type of ["keydown","keyup"])input.dispatchEvent(new KeyboardEvent(type,{key:"Enter",code:"Enter",keyCode:13,which:13,bubbles:true}));
       const resultDeadline=performance.now()+15000;
       let stable=0,last=null;

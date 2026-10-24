@@ -328,6 +328,18 @@ class BrokerTests(unittest.IsolatedAsyncioTestCase):
         await peer.send({"type": "result", "id": command["id"], "result": {"ok": True}})
         self.assertEqual(await task, {"ok": True})
 
+    async def test_developer_event_uses_extension_target_and_is_allowlisted(self) -> None:
+        peer = await self.connect()
+        event = {"schema_version": 1, "event_id": "b" * 16, "trace_id": "a" * 16,
+                 "actor": "code", "operation": "rank_affiliate_products"}
+        task = asyncio.create_task(self.broker.call("extension", "developer_event", event, timeout=2))
+        command = await peer.recv()
+        self.assertEqual(command["page_id"], "extension")
+        self.assertEqual(command["operation"], "developer_event")
+        self.assertEqual(command["arguments"], event)
+        await peer.send({"type": "result", "id": command["id"], "result": {"ok": True}})
+        self.assertEqual(await task, {"ok": True})
+
     async def test_pagination_navigation_and_scan_operations_are_allowlisted(self) -> None:
         current = page(24)
         peer = await self.connect(pages=[current])

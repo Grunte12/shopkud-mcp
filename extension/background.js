@@ -17,6 +17,8 @@ let reconnectAttempts = 0;
 const reconnectDelays = [1000, 3000, 8000, 15000];
 const telemetryRuns = new Map();
 const telemetryLimit = 60;
+let developerLogs = [];
+const developerLogLimit = 500;
 const telemetryStages = new Set(["queued","lane_started","cache_hit","scan_started","scan_completed","candidates_loaded","detail_checks_started","detail_check","ranking","completed","failed"]);
 let telemetryHydrated = false;
 let telemetryHydrating = null;
@@ -44,6 +46,23 @@ function sanitizeTelemetry(value) {
     latency_ms:latency,browser_operations:browser,
   };
 }
+function sanitizeDeveloperEvent(value) {
+  if(!value || typeof value!=="object" || value.schema_version!==1 ||
+      !/^[0-9a-f]{16}$/u.test(value.event_id || "") || !/^[0-9a-f]{16}$/u.test(value.trace_id || "") ||
+      !["agent","code"].includes(value.actor) || !["started","running","completed","failed"].includes(value.phase) ||
+      !["ok","error"].includes(value.status) || !Number.isSafeInteger(value.occurred_at_unix_ms) ||
+      !finite(value.elapsed_ms) || value.elapsed_ms<0 || !finite(value.progress_pct) || value.progress_pct<0 || value.progress_pct>100)return null;
+  const text=(input,limit)=>typeof input==="string"?input.replace(/[\r\n\t]+/gu," ").slice(0,limit):"";
+  const source=text(value.source,180),operation=text(value.operation,120),message=text(value.message,240),detail=text(value.detail,1000);
+  if(!source || !operation || !message)return null;
+  const media=(Array.isArray(value.media)?value.media:[]).filter(item=>{
+    try {const url=new URL(item);return url.protocol==="https:" && !url.username && !url.password && /(?:^|\.)(?:susercontent|shopeemobile)\.com$/u.test(url.hostname);}
+    catch {return false;}
+  }).slice(0,4);
+  return {schema_version:1,event_id:value.event_id,trace_id:value.trace_id,actor:value.actor,source,operation,
+    phase:value.phase,status:value.status,message,detail,progress_pct:value.progress_pct,
+    occurred_at_unix_ms:value.occurred_at_unix_ms,elapsed_ms:value.elapsed_ms,media};
+}
 async function hydrateTelemetry() {
   if(telemetryHydrated)return;
   if(telemetryHydrating)return telemetryHydrating;
@@ -52,6 +71,9 @@ async function hydrateTelemetry() {
       const saved=await chrome.storage?.session?.get?.("shopkudTelemetryRuns");
       const runs=Array.isArray(saved?.shopkudTelemetryRuns)?saved.shopkudTelemetryRuns:[];
       for(const run of runs.slice(0,telemetryLimit))if(run && /^[0-9a-f]{16}$/u.test(run.trace_id || ""))telemetryRuns.set(run.trace_id,run);
+      const savedLogs=await chrome.storage?.session?.get?.("shopkudDeveloperLogs");
+      developerLogs=(Array.isArray(savedLogs?.shopkudDeveloperLogs)?savedLogs.shopkudDeveloperLogs:[])
+        .map(sanitizeDeveloperEvent).filter(Boolean).slice(-developerLogLimit);
     } catch {}
     telemetryHydrated=true;
     telemetryHydrating=null;
@@ -60,7 +82,8 @@ async function hydrateTelemetry() {
 }
 function telemetrySnapshot() {
   return {ok:true,connected,extension_version:chrome.runtime.getManifest().version,
-    runs:[...telemetryRuns.values()].sort((a,b)=>b.updated_at_unix_ms-a.updated_at_unix_ms)};
+    runs:[...telemetryRuns.values()].sort((a,b)=>b.updated_at_unix_ms-a.updated_at_unix_ms),
+    developer_logs:developerLogs.slice()};
 }
 function broadcastLive(kind="update") {
   try {chrome.runtime.sendMessage?.({type:"shopkud-live-update",kind,snapshot:telemetrySnapshot()},()=>{void chrome.runtime.lastError;});} catch {}
@@ -78,7 +101,19 @@ async function recordTelemetry(raw) {
   telemetryRuns.delete(event.trace_id);telemetryRuns.set(event.trace_id,run);
   while(telemetryRuns.size>telemetryLimit)telemetryRuns.delete(telemetryRuns.keys().next().value);
   try {await chrome.storage?.session?.set?.({shopkudTelemetryRuns:[...telemetryRuns.values()]});} catch {}
+  if(raw?.developer_event)await recordDeveloperEvent(raw.developer_event);
   broadcastLive("event");
+  return {ok:true};
+}
+async function recordDeveloperEvent(raw) {
+  const event=sanitizeDeveloperEvent(raw);
+  if(!event)return {ok:false,error:"invalid_event"};
+  await hydrateTelemetry();
+  if(developerLogs.some(item=>item.event_id===event.event_id))return {ok:true,duplicate:true};
+  developerLogs.push(event);
+  if(developerLogs.length>developerLogLimit)developerLogs=developerLogs.slice(-developerLogLimit);
+  try {await chrome.storage?.session?.set?.({shopkudDeveloperLogs:developerLogs});} catch {}
+  broadcastLive("developer-event");
   return {ok:true};
 }
 const offer = value => {
@@ -333,6 +368,10 @@ function connect(automatic=false) {
         recordTelemetry(message.arguments).then(result=>{if(port===channel)channel.postMessage({type:"result",id:message.id,result});});
         return;
       }
+      if(message.page_id==="extension" && message.operation==="developer_event") {
+        recordDeveloperEvent(message.arguments).then(result=>{if(port===channel)channel.postMessage({type:"result",id:message.id,result});});
+        return;
+      }
       if(message.page_id==="extension" && message.operation==="reload_extension") {
         if(message.arguments && Object.keys(message.arguments).length || inFlight.size || entryBusy || listingTask || opening.size) {
           channel.postMessage({type:"result",id:message.id,result:{ok:false,error:"extension_busy",status:"not_reloaded",retry_automatically:false}});return;
@@ -393,6 +432,13 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
       for(const [id,run] of telemetryRuns)if(["completed","failed"].includes(run.status))telemetryRuns.delete(id);
       try {await chrome.storage?.session?.set?.({shopkudTelemetryRuns:[...telemetryRuns.values()]});} catch {}
       broadcastLive("clear");respond(telemetrySnapshot());
+    });return true;
+  }
+  if(sender.id===chrome.runtime.id && !sender.tab && message?.type==="shopkud-live-clear-logs") {
+    hydrateTelemetry().then(async()=>{
+      developerLogs=[];
+      try {await chrome.storage?.session?.set?.({shopkudDeveloperLogs:developerLogs});} catch {}
+      broadcastLive("clear-logs");respond(telemetrySnapshot());
     });return true;
   }
   if(sender.id!==chrome.runtime.id || sender.frameId!==0 || !Number.isInteger(sender.tab?.id))return false;

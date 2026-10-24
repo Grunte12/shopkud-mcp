@@ -4,8 +4,10 @@ from pathlib import Path
 import shutil
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
 
-from shopkud_mcp.setup import set_tool_profile, setup
+from shopkud_mcp.setup import install_macos_service, set_tool_profile, setup
 from shopkud_mcp.server import read_config
 
 
@@ -58,6 +60,28 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(outside.read_bytes(),original)
     def test_extension_wildcard_refused(self):
         with self.assertRaises(ValueError):setup("*",self.state,self.manifests)
+
+    def test_macos_service_is_private_idempotent_and_starts_once(self):
+        config=self.install();launch=self.root/"launch-agents";python=Path(__import__("sys").executable)
+        responses=[SimpleNamespace(returncode=1),SimpleNamespace(returncode=0)]
+        with patch("shopkud_mcp.setup.sys.platform","darwin"), patch(
+                "shopkud_mcp.setup.subprocess.run",side_effect=responses) as run:
+            result=install_macos_service(config,launch,python)
+        target=launch/"org.shopkud.mcp.plist"
+        self.assertEqual((result["state"],target.stat().st_mode&0o777),("running",0o600))
+        self.assertEqual(run.call_count,2)
+        original=target.read_bytes()
+        with patch("shopkud_mcp.setup.sys.platform","darwin"), patch(
+                "shopkud_mcp.setup.subprocess.run",return_value=SimpleNamespace(returncode=0)):
+            again=install_macos_service(config,launch,python)
+        self.assertEqual(again["state"],"already_running")
+        self.assertEqual(target.read_bytes(),original)
+
+    def test_macos_service_refuses_foreign_existing_target(self):
+        config=self.install();launch=self.root/"launch-agents";launch.mkdir()
+        target=launch/"org.shopkud.mcp.plist";target.write_text("foreign")
+        with patch("shopkud_mcp.setup.sys.platform","darwin"), self.assertRaises(ValueError):
+            install_macos_service(config,launch,Path(__import__("sys").executable),start=False)
 
     def test_tool_profile_switch_preserves_credentials(self):
         config=self.install();before=read_config(config)

@@ -1,1 +1,1 @@
-"""ShopKud MCP is independent of MCP LinkHub, AutoFlow and Agent Tincan."""
+"""Standalone ShopKud MCP package for a user's local Chrome profile."""

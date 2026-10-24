@@ -26,7 +26,7 @@ class Broker:
 
     async def call(self, *args, **kwargs):
         self.calls.append((args, kwargs))
-        return {"ok": False}
+        return {"ok": args[1] == "developer_event" if len(args) > 1 else False}
 
 
 class Campaign:
@@ -63,7 +63,7 @@ class WorkflowGuideTests(unittest.IsolatedAsyncioTestCase):
         result = await self.tool()
         self.assertTrue(result["ok"])
         self.assertEqual(result["workflow_id"], "shopkud-affiliate")
-        self.assertEqual(result["guide_version"], "1.2.0")
+        self.assertEqual(result["guide_version"], "1.3.2")
         self.assertEqual(result["view"], "brief")
         self.assertIn("manifest", result)
         self.assertLess(len(json.dumps(result, ensure_ascii=False)), 5000)
@@ -77,6 +77,34 @@ class WorkflowGuideTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(annotations.openWorldHint)
         self.assertEqual(self.broker.calls, [])
         self.assertEqual(self.campaign.calls, [])
+
+    async def test_runtime_tool_manager_streams_agent_and_code_lifecycle_without_argument_values(self):
+        await self.mcp._tool_manager.call_tool("get_workflow_guide", {"view": "brief"})
+        events = [args[2] for args, _kwargs in self.broker.calls if args[1] == "developer_event"]
+        self.assertEqual([event["actor"] for event in events], ["agent", "code"])
+        self.assertEqual([event["phase"] for event in events], ["started", "completed"])
+        self.assertEqual(events[0]["operation"], "get_workflow_guide")
+        self.assertEqual(json.loads(events[0]["detail"]), {"argument_keys": ["view"]})
+        self.assertNotIn("brief", events[0]["detail"])
+        self.assertEqual(json.loads(events[1]["detail"]), {"ok": True})
+        self.assertEqual(events[1]["message"], "Returned result to Agent")
+
+    async def test_runtime_result_preview_allows_only_shopee_media(self):
+        tool = self.mcp._tool_manager._tools["get_product_media"]
+        original = tool.fn
+        async def fixture(*_args, **_kwargs):
+            return {"ok": True, "total": 2, "images": [
+                {"url": "https://down-th.img.susercontent.com/file/product.jpg"},
+                {"url": "https://evil.example/private.jpg"},
+            ]}
+        tool.fn = fixture
+        try:
+            await self.mcp._tool_manager.call_tool("get_product_media", {"workspace_id": "a" * 32, "item_id": "1"})
+        finally:
+            tool.fn = original
+        event = [args[2] for args, _kwargs in self.broker.calls if args[1] == "developer_event"][-1]
+        self.assertEqual(event["media"], ["https://down-th.img.susercontent.com/file/product.jpg"])
+        self.assertEqual(json.loads(event["detail"]), {"ok": True, "total": 2, "image_count": 1})
 
     async def test_full_and_skill_views_return_exact_packaged_files(self):
         manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))

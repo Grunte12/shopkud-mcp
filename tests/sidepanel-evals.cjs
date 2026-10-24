@@ -10,11 +10,14 @@ async function run(){
   await page.addInitScript(()=>{
     const listeners=[];
     const now=Date.now();
-    const snapshot={ok:true,connected:true,extension_version:"0.10.5",runs:[
+    const snapshot={ok:true,connected:true,extension_version:"0.10.6",runs:[
       {trace_id:"a".repeat(16),swarm_id:"b".repeat(16),invocation_number:1,query:"ทีวี",stage:"completed",status:"completed",updated_at_unix_ms:now-1000,elapsed_ms:1200,success:true,effective:true,cache_hit:false,response_tokens_estimate:480,latency_ms:{total:1200,queue_wait_ms:3},browser_operations:{scan:1,scan_read:1,detail:2}},
       {trace_id:"c".repeat(16),swarm_id:"b".repeat(16),invocation_number:2,query:"ทีวี",stage:"detail_check",status:"running",updated_at_unix_ms:now,elapsed_ms:340,candidate_index:2,candidate_count:5,product_name:"Smart TV",browser_operations:{scan:1}},
+    ],developer_logs:[
+      {event_id:"1".repeat(16),trace_id:"a".repeat(16),actor:"agent",source:"mcp.client",operation:"rank_affiliate_products",phase:"started",status:"ok",message:"Agent called an MCP tool",detail:'{"query":"ทีวี","freshness":"live"}',progress_pct:0,occurred_at_unix_ms:now-500,elapsed_ms:0},
+      {event_id:"2".repeat(16),trace_id:"a".repeat(16),actor:"code",source:"extension/detail.js",operation:"detail",phase:"completed",status:"ok",message:"Returned result to Agent",detail:'{"ok":true,"image_count":1}',media:["https://down-th.img.susercontent.com/file/result.jpg"],progress_pct:100,occurred_at_unix_ms:now,elapsed_ms:340},
     ]};
-    globalThis.chrome={runtime:{getManifest:()=>({version:"0.10.5"}),onMessage:{addListener(fn){listeners.push(fn);}},async sendMessage(message){if(message.type==="shopkud-live-clear"){snapshot.runs=snapshot.runs.filter(run=>run.status==="running");}return snapshot;}}};
+    globalThis.chrome={runtime:{getManifest:()=>({version:"0.10.6"}),onMessage:{addListener(fn){listeners.push(fn);}},async sendMessage(message){if(message.type==="shopkud-live-clear"){snapshot.runs=snapshot.runs.filter(run=>run.status==="running");}if(message.type==="shopkud-live-clear-logs")snapshot.developer_logs=[];return snapshot;}}};
   });
   await page.goto(pathToFileURL(path.join(__dirname,"../extension/sidepanel.html")).href);
   await page.waitForSelector("#now-content:not([hidden])");
@@ -30,6 +33,12 @@ async function run(){
   assert.equal(await page.locator("#p95-bar").evaluate(node=>node.style.width),"100%");
   assert.notEqual(await page.locator("#latency-line").getAttribute("points"),"");
   assert.equal(await page.locator(".run-item").count(),2);
+  assert.equal(await page.locator(".console-line").count(),2);
+  assert.match(await page.locator(".console-line").first().textContent(),/AGENT.*rank_affiliate_products.*ทีวี/u);
+  assert.match(await page.locator(".console-line").nth(1).textContent(),/CODE.*100%.*detail.*Returned result to Agent.*image_count.*extension\/detail\.js/u);
+  assert.equal(await page.locator(".console-line").nth(1).locator(".console-media img").count(),1);
+  assert.equal(await page.locator("#developer-log-count").textContent(),"2 lines");
+  assert.equal(await page.locator("#follow-logs").getAttribute("aria-pressed"),"true");
   assert.match(await page.locator(".run-item").nth(1).locator(".run-facts").textContent(),/ผล สำเร็จ.*ผู้ชนะ ได้/u);
   assert.match(await page.locator(".run-item").nth(1).locator(".operation-legend").textContent(),/สแกน 1.*อ่าน 1.*ตรวจจริง 2/u);
   assert.equal(await page.locator("#latency-single").isVisible(),true);
@@ -42,6 +51,8 @@ async function run(){
   await page.emulateMedia({colorScheme:"light"});
   await page.locator("#clear-completed").click();
   assert.equal(await page.locator(".run-item").count(),1);
+  await page.locator("#clear-logs").click();
+  assert.equal(await page.locator(".console-line").count(),0);
   await browser.close();
   console.log(JSON.stringify({ok:true,checks:["live state and metrics render","side-panel viewport has no horizontal overflow","completed traces can be cleared"]}));
 }

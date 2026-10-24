@@ -4,10 +4,17 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.10.5** - Extension-only P0, P1, and P2 affiliate tools. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+**Version 0.10.6** - Extension-only P0, P1, and P2 affiliate tools. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
-This is the public **0.10.5** release. The Python package and extension both
-declare **0.10.5**. Synthetic offline tests do not certify the
+Installing for another user or coding agent: read [AGENTS.md](AGENTS.md) and
+[docs/INSTALL_FOR_AGENTS.md](docs/INSTALL_FOR_AGENTS.md). ShopKud is standalone;
+no MCP gateway, Docker daemon, or external database is required.
+
+Architecture and trust boundaries: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Cheap-model tool-selection evidence: [evals/LUNA_TOOL_SELECTION_2026-10-24.md](evals/LUNA_TOOL_SELECTION_2026-10-24.md).
+
+This is the public **0.10.6** release. The Python package and extension both
+declare **0.10.6**. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
 ## Current capabilities
@@ -18,10 +25,16 @@ current Shopee UI, all product variants, or every account configuration.
 - ✅ **Link verification**: Verify link ownership and target without opening links or creating tracking clicks
 - ✅ **Link registry**: Find/filter links by product, channel, or clip with flexible search
 - ✅ Bounded product search, pagination, snapshots and cached-result reads
-- ✅ Deterministic commission-ranking playbook with one sequential browser lane
-  and shared 10-minute results for concurrent agents
+- ✅ Dynamic research intent (`commission_value`, `commission_rate`,
+  `sales_volume`, or `balanced`) executed by one deterministic browser lane
+- ✅ Agent-selected sales, minimum commission, maximum price, Mall and preorder
+  constraints; empty sets are explained and never relaxed automatically
+- ✅ Explicit freshness: live by default, or caller-approved 60-second/10-minute
+  reuse; concurrent identical live calls share only the same in-flight observation
 - ✅ Live Chrome Side Panel for per-invocation stages, queue/cache state, latency,
   success/effectiveness, browser operations and bounded response-token estimates
+- ✅ Developer Working Log streams Agent tool calls and code execution line by
+  line with redacted arguments, source/function, operation, progress and result
 - ✅ Product-detail observations, including displayed channel-specific commissions
 - ✅ Optional public-product evidence and model matching
 - ✅ Agent-authored selection previews and once-only, snapshot-checked selection
@@ -53,8 +66,20 @@ shopkud-mcp set-tool-profile --config /absolute/private/shopkud-state/config.jso
 shopkud-mcp set-tool-profile --config /absolute/private/shopkud-state/config.json full
 ```
 
-Restart only ShopKud after changing profiles. Bifrost or another MCP gateway
-can continue to provide progressive schema loading on top of either profile.
+Restart only ShopKud after changing profiles. The connected MCP client can then
+rediscover the selected catalog.
+
+### What's New in 0.10.6
+
+- Agents choose the research goal and freshness explicitly; live reads are the
+  safe default and empty results return bounded relaxation suggestions without
+  changing filters automatically.
+- macOS installation agents can register one private auto-start worker with
+  `install-macos-service`; no Docker or database server is required.
+- The standalone architecture and installation contract no longer assumes a
+  particular MCP client or gateway.
+- ShopKud Live includes a terminal-style developer console that tails safe MCP
+  tool lifecycle and deterministic workflow events while they happen.
 
 ### What's New in 0.10.5
 
@@ -69,8 +94,10 @@ can continue to provide progressive schema loading on top of either profile.
 
 - Shopee Affiliate search prefers the page's visible Ant Design search button
   and falls back to Enter only when no button exists.
-- The ranking lane and ten-minute result cache are shared across stateless MCP
+- The ranking lane and bounded result cache are shared across stateless MCP
   request wrappers, so concurrent agents cannot race the same browser tab.
+  The safe default is `live` (no earlier completed-result cache); callers may choose `recent` (60 seconds) or
+  `fast` (10 minutes), and every cache response discloses its age.
 - After the initial 0.10.4 load, `reload_extension` safely reloads an idle
   unpacked ShopKud build through MCP; later local updates no longer require
   opening `chrome://extensions`.
@@ -182,6 +209,13 @@ python3 -m venv .venv
   --manifest-dir /absolute/chrome/NativeMessagingHosts
 
 .venv/bin/shopkud-mcp serve \
+  --config /absolute/private/shopkud-state/config.json
+```
+
+For a per-user macOS worker that starts automatically at login:
+
+```sh
+.venv/bin/shopkud-mcp install-macos-service \
   --config /absolute/private/shopkud-state/config.json
 ```
 

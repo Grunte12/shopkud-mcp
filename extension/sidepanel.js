@@ -1,7 +1,8 @@
 (() => {
   "use strict";
   const $ = selector => document.querySelector(selector);
-  const state = {connected:false,extension_version:"",runs:[]};
+  const state = {connected:false,extension_version:"",runs:[],developer_logs:[]};
+  let followLogs = true;
   const stages = {
     queued:["รอคิว",4],lane_started:["ได้คิวแล้ว",10],cache_hit:["ใช้ผลจาก cache",92],
     scan_started:["กำลังสแกนตลาด",20],scan_completed:["สแกนตลาดเสร็จ",38],
@@ -18,6 +19,7 @@
     return `${Math.floor(ms/60000)}m ${Math.round(ms%60000/1000)}s`;
   };
   const time = value => new Intl.DateTimeFormat("th-TH",{hour:"2-digit",minute:"2-digit",second:"2-digit"}).format(new Date(value));
+  const logTime = value => new Intl.DateTimeFormat("en-GB",{hour:"2-digit",minute:"2-digit",second:"2-digit",fractionalSecondDigits:3,hour12:false}).format(new Date(value));
   const quantile = (values,q) => {
     if(!values.length)return null;
     const sorted=[...values].sort((a,b)=>a-b),index=Math.min(sorted.length-1,Math.ceil(q*sorted.length)-1);
@@ -130,11 +132,43 @@
       list.append(node);
     }
   }
+  function setFollowLogs(value) {
+    followLogs=Boolean(value);
+    const button=$("#follow-logs");button.setAttribute("aria-pressed",String(followLogs));button.textContent=followLogs?"ตามสด":"หยุดตาม";
+    button.classList.toggle("is-following",followLogs);
+    if(followLogs){const shell=$("#console-shell");shell.scrollTop=shell.scrollHeight;}
+  }
+  function renderDeveloperLogs() {
+    const list=$("#developer-log"),shell=$("#console-shell");list.replaceChildren();
+    const logs=[...state.developer_logs].sort((a,b)=>a.occurred_at_unix_ms-b.occurred_at_unix_ms);
+    $("#developer-log-empty").hidden=logs.length>0;$("#clear-logs").disabled=logs.length===0;
+    $("#developer-log-count").textContent=`${logs.length.toLocaleString("en-US")} lines`;
+    for(const entry of logs) {
+      const node=$("#developer-log-template").content.firstElementChild.cloneNode(true);
+      node.dataset.actor=entry.actor;node.dataset.status=entry.status;
+      const clock=node.querySelector("time");clock.dateTime=new Date(entry.occurred_at_unix_ms).toISOString();clock.textContent=logTime(entry.occurred_at_unix_ms);
+      node.querySelector(".console-actor").textContent=entry.actor==="agent"?"AGENT":"CODE";
+      node.querySelector(".console-progress").textContent=`${Math.round(number(entry.progress_pct))}%`;
+      node.querySelector(".console-operation").textContent=entry.operation;
+      node.querySelector(".console-message").textContent=entry.message;
+      const detail=node.querySelector(".console-detail");detail.textContent=entry.detail?` ${entry.detail}`:"";
+      node.querySelector(".console-source").textContent=` ${entry.source}`;
+      const media=node.querySelector(".console-media");
+      for(const [index,url] of (Array.isArray(entry.media)?entry.media:[]).entries()){
+        const link=document.createElement("a");link.href=url;link.target="_blank";link.rel="noopener noreferrer";link.title=`ภาพที่ส่งให้ Agent ${index+1}`;
+        const image=document.createElement("img");image.src=url;image.alt=`ภาพผลลัพธ์ ${index+1}`;image.loading="lazy";image.referrerPolicy="no-referrer";
+        link.append(image);media.append(link);
+      }
+      list.append(node);
+    }
+    if(followLogs)requestAnimationFrame(()=>{shell.scrollTop=shell.scrollHeight;});
+  }
   function render(snapshot) {
     if(!snapshot || snapshot.ok!==true)return;
     state.connected=snapshot.connected===true;state.extension_version=snapshot.extension_version||"";
     state.runs=Array.isArray(snapshot.runs)?snapshot.runs:[];
-    renderConnection();renderNow();renderMetrics();renderRuns();
+    state.developer_logs=Array.isArray(snapshot.developer_logs)?snapshot.developer_logs:[];
+    renderConnection();renderNow();renderDeveloperLogs();renderMetrics();renderRuns();
   }
   async function refresh() {
     try {render(await chrome.runtime.sendMessage({type:"shopkud-live-snapshot"}));}
@@ -147,5 +181,15 @@
     const button=$("#clear-completed");button.disabled=true;
     try {render(await chrome.runtime.sendMessage({type:"shopkud-live-clear"}));} finally {renderMetrics();}
   });
+  $("#follow-logs").addEventListener("click",()=>setFollowLogs(!followLogs));
+  $("#console-shell").addEventListener("scroll",event=>{
+    const node=event.currentTarget,atBottom=node.scrollHeight-node.scrollTop-node.clientHeight<24;
+    if(atBottom!==followLogs)setFollowLogs(atBottom);
+  });
+  $("#clear-logs").addEventListener("click",async()=>{
+    const button=$("#clear-logs");button.disabled=true;
+    try {render(await chrome.runtime.sendMessage({type:"shopkud-live-clear-logs"}));} finally {button.disabled=state.developer_logs.length===0;}
+  });
+  setFollowLogs(true);
   refresh();
 })();

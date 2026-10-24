@@ -85,7 +85,9 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row["product_id"] for row in result["results"]], ["1", "2"])
         self.assertEqual(result["winner"]["commission_thb_per_order"], 2904.5)
         self.assertEqual(result["exclusions"], {
-            "not_mall": 1, "sold_below_minimum": 1, "preorder": 1, "missing_fields": 0,
+            "not_mall": 1, "mall_excluded": 0, "sold_below_minimum": 1, "price_above_maximum": 0,
+            "commission_thb_below_minimum": 0, "commission_pct_below_minimum": 0,
+            "preorder": 1, "missing_fields": 0,
         })
         self.assertEqual(result["criteria"]["rank_by"], "displayed_estimated_commission_thb_per_order")
         trace = result["trace"]
@@ -113,6 +115,86 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sum(call[1] == "search_scan" for call in self.broker.calls), 1)
         self.assertTrue(any(call[1] == "playbook_event" and call[2]["stage"] == "cache_hit" for call in self.broker.calls))
 
+    async def test_agent_can_choose_ranking_goal_without_rebuilding_the_workflow(self):
+        commission = await self.tool("ทีวี", ranking_goal="commission_value", freshness="live")
+        volume = await self.tool("ทีวี", ranking_goal="sales_volume", freshness="live")
+        balanced = await self.tool("ทีวี", ranking_goal="balanced", freshness="live")
+        self.assertEqual(commission["winner"]["product_id"], "1")
+        self.assertEqual(volume["winner"]["product_id"], "2")
+        self.assertIn("ranking_score", balanced["winner"])
+        self.assertEqual(commission["criteria"]["rank_by"], "displayed_estimated_commission_thb_per_order")
+        self.assertEqual(volume["criteria"]["rank_by"], "visible_sold_count")
+
+    async def test_goal_aware_shortlist_keeps_low_price_sales_and_rate_winners(self):
+        self.broker.records = [product(str(index), f"High price {index}", 100000 - index, 600 + index, commission=1)
+                               for index in range(1, 18)]
+        self.broker.records += [
+            product("90", "Low price sales winner", 500, 999999, commission=2),
+            product("91", "Low price rate winner", 400, 700, commission=50),
+        ]
+        self.broker.amounts = {row["product_id"]: (row["commission_pct"], row["baht_per_order"])
+                               for row in self.broker.records}
+        sales = await self.tool("ทีวี", ranking_goal="sales_volume", freshness="live")
+        rate = await self.tool("ทีวี", ranking_goal="commission_rate", freshness="live")
+        self.assertEqual(sales["winner"]["product_id"], "90")
+        self.assertEqual(rate["winner"]["product_id"], "91")
+
+    async def test_non_mall_only_is_explicit_and_mutually_exclusive(self):
+        self.broker.amounts["4"] = (7, 7000)
+        result = await self.tool("ทีวี", mall_only=False, exclude_mall=True, min_sold=0, freshness="live")
+        self.assertEqual([row["product_id"] for row in result["results"]], ["4"])
+        self.assertEqual(result["criteria"]["exclude_mall"], True)
+        self.assertGreater(result["exclusions"]["mall_excluded"], 0)
+        invalid = await self.tool("ทีวี", mall_only=True, exclude_mall=True)
+        self.assertEqual((invalid["ok"], invalid["error"]), (False, "invalid_input"))
+
+    async def test_freshness_policy_is_explicit_and_live_bypasses_completed_cache(self):
+        first = await self.tool("ทีวี", freshness="recent")
+        second = await self.tool("ทีวี", freshness="recent")
+        live = await self.tool("ทีวี", freshness="live")
+        self.assertFalse(first["cache_hit"])
+        self.assertTrue(second["cache_hit"])
+        self.assertLessEqual(second["cache_age_ms"], 60000)
+        self.assertEqual(second["cache_ttl_seconds"], 60)
+        self.assertFalse(live["cache_hit"])
+        self.assertEqual(live["cache_ttl_seconds"], 0)
+        self.assertEqual(sum(call[1] == "search_scan" for call in self.broker.calls), 2)
+
+    async def test_agent_selected_commission_and_price_constraints_are_enforced(self):
+        result = await self.tool("ทีวี", freshness="live", min_commission_thb=2000,
+                                 min_commission_pct=4, max_price_thb=60000)
+        self.assertEqual([row["product_id"] for row in result["results"]], ["1"])
+        self.assertEqual(result["exclusions"]["commission_thb_below_minimum"], 1)
+        self.assertEqual(result["criteria"]["min_commission_thb"], 2000)
+        self.assertEqual(result["criteria"]["min_commission_pct"], 4)
+        self.assertEqual(result["criteria"]["max_price_thb"], 60000)
+
+    async def test_unmet_commission_constraint_returns_observed_alternative_without_retry(self):
+        result = await self.tool("ทีวี", freshness="live", min_commission_thb=5000)
+        self.assertIsNone(result["winner"])
+        self.assertEqual(result["detail_verified"], 2)
+        self.assertEqual(result["qualified_after_constraints"], 0)
+        suggestion = next(row for row in result["relaxation_suggestions"]
+                          if row["parameter"] == "min_commission_thb")
+        self.assertEqual(suggestion["suggested"], 2904.5)
+        self.assertEqual(sum(call[1] == "search_scan" for call in self.broker.calls), 1)
+
+    async def test_empty_result_explains_filters_but_never_relaxes_them(self):
+        self.broker.records = [
+            product("9", "Non Mall purifier", 5000, 2000, mall=False),
+            product("10", "Low-volume Mall purifier", 5000, 20, mall=True),
+        ]
+        self.broker.amounts = {"9": (12, 600), "10": (12, 600)}
+        result = await self.tool("เครื่องฟอกอากาศ", freshness="live", max_pages=1)
+        self.assertTrue(result["ok"])
+        self.assertIsNone(result["winner"])
+        self.assertEqual(result["results"], [])
+        suggestions = {row["parameter"]: row for row in result["relaxation_suggestions"]}
+        self.assertEqual(suggestions["mall_only"]["suggested"], False)
+        self.assertEqual(suggestions["min_sold"]["suggested"], 250)
+        self.assertEqual(result["criteria"]["mall_only"], True)
+        self.assertEqual(result["criteria"]["min_sold"], 500)
+
     async def test_stateless_service_wrappers_share_one_process_lane(self):
         config = {"token": "a" * 64, "socket_path": "/private/tmp/native.sock",
                   "allowed_origins": ["chrome-extension://" + "a" * 32 + "/"]}
@@ -126,8 +208,11 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_invalid_inputs_never_reach_browser(self):
         for arguments in [
-            {"query": ""}, {"query": "ทีวี", "mall_only": 1},
+            {"query": ""}, {"query": "ทีวี", "mall_only": 1}, {"query": "ทีวี", "exclude_mall": 1},
             {"query": "ทีวี", "min_sold": True}, {"query": "ทีวี", "max_pages": 21},
+            {"query": "ทีวี", "ranking_goal": "magic"}, {"query": "ทีวี", "freshness": "stale"},
+            {"query": "ทีวี", "min_commission_thb": True},
+            {"query": "ทีวี", "min_commission_pct": 101}, {"query": "ทีวี", "max_price_thb": -1},
         ]:
             result = await self.tool(**arguments)
             self.assertEqual((result["ok"], result["error"]), (False, "invalid_input"))

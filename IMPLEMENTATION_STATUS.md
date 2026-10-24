@@ -1,9 +1,13 @@
 # ShopKud P0 / P1 / P2 checklist
 
-Version 0.10.5. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
+Version 0.10.6. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
 
-Release verification: 208 Python tests plus 24 committed Node/DOM/Playwright
-suite pass. The isolated E2E path covers authenticated MCP, Native Messaging,
+The standalone runtime, cache/freshness behavior, trust boundaries, and
+agent-installed macOS topology are documented in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
+Release verification: 220 Python tests plus 24 executable Node/DOM/Playwright
+suites pass. The isolated E2E path covers authenticated MCP, Native Messaging,
 MV3, a synthetic Shopee page, one official Get Link click, local history save,
 owner-tab preservation and blocked non-fixture network. Live Shopee markup is
 still operator-verified where marked `flagged` below.
@@ -22,7 +26,7 @@ Status words: **done** means the behavior exists in code, **tested** means an of
 | P0-6 | Attribute imported conversion aggregates by SubID | done, tested, flagged | `sales_by`, `get_conversions` | `tests/test_sales_by.py`, `tests/test_fullspec.py` |
 | P0-7 | Offer lookup with social vs video commission and Extra Com | done, tested, flagged | `get_offer`, `project_offer` | `tests/test_fullspec.py`, `tests/detail-evals.cjs` |
 | P0-8 | Deterministic ranked discovery with one sequential browser lane, shared concurrent results, and per-call timing/outcome/context traces | done, tested, flagged | `rank_affiliate_products` | `tests/test_rank_playbook.py`, `evals/rank-playbook.py` |
-| P0-9 | Live Side Panel shows bounded per-agent ranking stages and current-session eval metrics without page HTML, cookies, or agent token claims | done, tested | `extension/sidepanel.*`, `playbook_event` | `tests/live-telemetry.cjs`, `tests/sidepanel-evals.cjs` |
+| P0-9 | Live Side Panel shows bounded per-agent stages, a line-by-line developer Working Log, and current-session eval metrics without page HTML, cookies, private reasoning, or agent token claims | done, tested | `extension/sidepanel.*`, `playbook_event`, `developer_event` | `tests/live-telemetry.cjs`, `tests/sidepanel-evals.cjs` |
 
 ## P1
 

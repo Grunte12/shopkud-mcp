@@ -224,6 +224,33 @@ class ProductDetailToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(mismatch["error"], "page_url_mismatch")
         self.assertEqual(len(self.broker.calls), 1)
 
+    async def test_product_id_shortcut_bypasses_search_and_returns_clickable_urls(self):
+        self.broker.page_list = [{"page_id": PAGE, "url": LIST_URL, "title": "owner"}]
+        result = await self.tool("get_product_detail")(
+            product_id=PRODUCT_ID, open_if_missing=True, view="brief",
+        )
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["product_id"], PRODUCT_ID)
+        self.assertEqual(result["offer_url"], OFFER_URL)
+        self.assertEqual(result["product_url"], DETAIL["product_url"])
+        self.assertEqual(self.broker.calls, [
+            ("extension", "open_offer", {"offer_url": OFFER_URL}, 25),
+            (ENTRY_PAGE, "detail", {"wait_ready": True}, 20),
+        ])
+        self.assertFalse(any(call[1] == "search_scan" for call in self.broker.calls))
+
+    async def test_product_id_shortcut_rejects_ambiguous_or_invalid_inputs(self):
+        for arguments in (
+            {"product_id": "001"},
+            {"product_id": PRODUCT_ID, "offer_url": OFFER_URL},
+            {"product_id": PRODUCT_ID, "page_id": PAGE},
+            {"product_id": PRODUCT_ID, "product_url": DETAIL["product_url"]},
+        ):
+            with self.subTest(arguments=arguments):
+                result = await self.tool("get_product_detail")(**arguments)
+                self.assertEqual(result["error"], "invalid_input")
+        self.assertEqual(self.broker.calls, [])
+
     async def test_offer_url_resolution_fails_closed_for_missing_or_ambiguous_pages(self):
         self.broker.page_list = []
         missing = await self.tool("get_product_detail")(offer_url=OFFER_URL)

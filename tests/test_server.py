@@ -126,7 +126,7 @@ class PaginationToolsTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(catalog_bytes(mcp),catalog_bytes(self.mcp)*0.4)
 
     async def test_reload_extension_routes_only_the_idle_extension_target(self):
-        self.broker.response={"ok":True,"status":"reloading","extension_version":"0.10.5"}
+        self.broker.response={"ok":True,"status":"reloading","extension_version":"0.10.6"}
         result=await self.tool("reload_extension")()
         self.assertEqual(result["status"],"reloading")
         self.assertEqual(self.broker.calls,[("extension","reload_extension",{},5)])
@@ -297,7 +297,11 @@ class PaginationToolsTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(type(error).__name__,"ToolError")
                 else:
                     self.fail("MCP schema must reject invalid arguments before function execution")
-        self.assertEqual(self.broker.calls,[])
+        self.assertTrue(self.broker.calls)
+        self.assertTrue(all(call[0]=="extension" and call[1]=="developer_event" for call in self.broker.calls))
+        events=[call[2] for call in self.broker.calls]
+        self.assertEqual(sum(event["phase"]=="started" for event in events),len(invalid))
+        self.assertEqual(sum(event["phase"]=="failed" for event in events),len(invalid))
 
     async def test_uncertain_navigation_and_scan_are_never_marked_retryable(self):
         self.broker.error="timeout"
