@@ -12,6 +12,32 @@ import tempfile
 from .server import read_config
 
 
+def _replace_config(path, after, prefix):
+    """Atomically replace one private config after validating both states."""
+    path=Path(path)
+    backup_fd,backup_path=tempfile.mkstemp(prefix=f"config-before-{prefix}-",suffix=".json",dir=path.parent)
+    with os.fdopen(backup_fd,"wb") as stream:stream.write(path.read_bytes())
+    fd,temp=tempfile.mkstemp(prefix=f".{prefix}-config-",dir=path.parent)
+    try:
+        with os.fdopen(fd,"w") as stream:
+            json.dump(after,stream)
+            stream.flush();os.fsync(stream.fileno())
+        os.chmod(temp,0o600)
+        read_config(Path(temp))
+        os.replace(temp,path)
+    finally:
+        if os.path.exists(temp):os.unlink(temp)
+
+
+def set_tool_profile(config_path, profile):
+    """Select the small workflow surface or the complete compatibility catalog."""
+    if profile not in {"guided","full"}:raise ValueError("invalid_tool_profile")
+    path=Path(config_path)
+    before=read_config(path)
+    if before.get("tool_profile", "full")==profile:return
+    _replace_config(path,{**before,"tool_profile":profile},"tool-profile")
+
+
 def enable_workspace(config_path):
     """Explicit operator opt-in. Preserve key/origin/socket/port and private backup."""
     path=Path(config_path)
@@ -21,18 +47,7 @@ def enable_workspace(config_path):
     info=intake.lstat()
     if intake.resolve()!=intake or not stat.S_ISDIR(info.st_mode) or stat.S_IMODE(info.st_mode)!=0o700 or info.st_uid!=os.getuid():raise ValueError("unsafe_intake_directory")
     if before.get("workspace_enabled") is True:return
-    raw=path.read_bytes()
-    backup_fd,backup_path=tempfile.mkstemp(prefix="config-before-workspace-",suffix=".json",dir=path.parent)
-    with os.fdopen(backup_fd,"wb") as stream:stream.write(raw)
-    fd,temp=tempfile.mkstemp(prefix=".workspace-config-",dir=path.parent)
-    try:
-        with os.fdopen(fd,"w") as stream:
-            json.dump({**before,"workspace_enabled":True},stream)
-            stream.flush();os.fsync(stream.fileno())
-        read_config(path)  # reject unsafe replacement before atomic swap
-        os.replace(temp,path)
-    finally:
-        if os.path.exists(temp):os.unlink(temp)
+    _replace_config(path,{**before,"workspace_enabled":True},"workspace")
 
 
 def setup(extension_id, state_dir, manifest_dir, port=8176):
@@ -48,7 +63,7 @@ def setup(extension_id, state_dir, manifest_dir, port=8176):
     state_dir=state_dir.resolve()
     config_path=state_dir/"config.json"
     origin=f"chrome-extension://{extension_id}/"
-    config={"token":secrets.token_hex(32),"port":port,"allowed_origins":[origin],"socket_path":str(state_dir/"native.sock")}
+    config={"token":secrets.token_hex(32),"port":port,"allowed_origins":[origin],"socket_path":str(state_dir/"native.sock"),"tool_profile":"guided"}
     if config_path.exists():
         config=read_config(config_path)
         if config["allowed_origins"]!=[origin] or config["port"]!=port:

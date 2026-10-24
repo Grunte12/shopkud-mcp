@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import unittest
 
-from shopkud_mcp.setup import setup
+from shopkud_mcp.setup import set_tool_profile, setup
 from shopkud_mcp.server import read_config
 
 
@@ -24,6 +24,7 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(config.stat().st_mode&0o777,0o600)
         self.assertEqual((self.state/"native-launcher").stat().st_mode&0o777,0o700)
         self.assertEqual(read_config(config)["allowed_origins"],["chrome-extension://"+self.extension+"/"])
+        self.assertEqual(read_config(config)["tool_profile"],"guided")
         manifest=json.loads((self.manifests/"org.shopkud.mcp.json").read_text())
         self.assertEqual(manifest["allowed_origins"],["chrome-extension://"+self.extension+"/"])
         self.assertNotIn(read_config(config)["token"],(self.state/"native-launcher").read_text())
@@ -57,6 +58,16 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(outside.read_bytes(),original)
     def test_extension_wildcard_refused(self):
         with self.assertRaises(ValueError):setup("*",self.state,self.manifests)
+
+    def test_tool_profile_switch_preserves_credentials(self):
+        config=self.install();before=read_config(config)
+        set_tool_profile(config,"full")
+        after=read_config(config)
+        self.assertEqual(after["tool_profile"],"full")
+        self.assertEqual({k:v for k,v in after.items() if k!="tool_profile"},
+                         {k:v for k,v in before.items() if k!="tool_profile"})
+        set_tool_profile(config,"full")
+        with self.assertRaises(ValueError):set_tool_profile(config,"invalid")
 
 
 if __name__=="__main__":unittest.main()

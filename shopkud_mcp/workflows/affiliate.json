@@ -1,6 +1,6 @@
 {
   "id": "shopkud-affiliate",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "skill": "skills/shopkud-affiliate/SKILL.md",
   "guide": "skills/shopkud-affiliate/references/workflow.md",
   "purpose": "ตรวจรุ่นและร้าน เทียบค่าคอมตามช่องทาง เตรียมภาพอ้างอิง และเก็บลิงก์ทางการครั้งเดียวเมื่อได้รับคำสั่ง",
@@ -14,5 +14,21 @@
     {"id": "handoff", "tools": []}
   ],
   "read_once": "เรียก get_workflow_guide(view=full) เมื่อเริ่มใช้คู่มือรุ่นนี้ ไม่ต้องอ่านซ้ำทุกสินค้า",
-  "execution": "เป็นแผนที่วิธีใช้ ไม่ใช่คำอนุญาตให้กดรับลิงก์ ซื้อ โพสต์ หรือเจนสื่อ"
+  "execution": "เป็นแผนที่วิธีใช้ ไม่ใช่คำอนุญาตให้กดรับลิงก์ ซื้อ โพสต์ หรือเจนสื่อ",
+  "tool_profiles": {
+    "guided": {
+      "purpose": "ค่าเริ่มต้นสำหรับผู้ใช้ใหม่: งานครบขั้นและ action ที่มีขอบเขตชัด โดยซ่อน browser/storage primitives",
+      "groups": {
+        "system": ["get_workflow_guide", "list_pages", "reload_extension", "selector_health"],
+        "research": ["rank_affiliate_products", "get_product_detail", "search_products_for_content", "get_product_media"],
+        "links": ["create_link", "verify_link", "batch_create_links", "find_link"],
+        "performance": ["import_report_csv", "sales_by", "get_conversions", "get_earnings_summary"],
+        "missions": ["list_missions", "enroll_mission"],
+        "content": ["create_video_draft"]
+      }
+    },
+    "full": {
+      "purpose": "compatibility/debug profile ที่เปิด action และ storage primitives ทั้งหมด"
+    }
+  }
 }

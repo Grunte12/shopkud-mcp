@@ -10,7 +10,7 @@ import tempfile
 import unittest
 
 from shopkud_mcp.broker import BrokerError
-from shopkud_mcp.server import read_config, BearerAuth, create_service
+from shopkud_mcp.server import GUIDED_TOOLS, read_config, BearerAuth, create_service
 
 
 class ConfigTests(unittest.TestCase):
@@ -42,6 +42,12 @@ class ConfigTests(unittest.TestCase):
         with self.assertRaises(ValueError):read_config(self.path)
     def test_extra_config_key_rejected(self):
         self.config["shell"]="anything";self.write()
+        with self.assertRaises(ValueError):read_config(self.path)
+    def test_tool_profile_is_bounded(self):
+        for profile in ("guided","full"):
+            self.config["tool_profile"]=profile;self.write()
+            self.assertEqual(read_config(self.path)["tool_profile"],profile)
+        self.config["tool_profile"]="everything";self.write()
         with self.assertRaises(ValueError):read_config(self.path)
 
 
@@ -103,8 +109,24 @@ class PaginationToolsTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("suggest_replacement", self.tools)
         self.assertIn("reload_extension", self.tools)
 
+    async def test_guided_profile_exposes_workflows_not_browser_primitives(self):
+        config={**self.config,"tool_profile":"guided"}
+        _,mcp,_=create_service(config,self.broker)
+        self.assertEqual(set(mcp._tool_manager._tools),GUIDED_TOOLS)
+        self.assertEqual(len(mcp._tool_manager._tools),19)
+        self.assertIn("rank_affiliate_products",mcp._tool_manager._tools)
+        self.assertNotIn("scan_products",mcp._tool_manager._tools)
+        self.assertNotIn("go_to_page",mcp._tool_manager._tools)
+        self.assertIn("guided profile intentionally hides",mcp.instructions)
+        self.assertNotIn("go_to_page",mcp.instructions)
+        def catalog_bytes(service):
+            rows=[{"name":tool.name,"description":tool.description,"inputSchema":tool.parameters}
+                  for tool in service._tool_manager._tools.values()]
+            return len(json.dumps(rows,ensure_ascii=False,separators=(",",":")).encode())
+        self.assertLess(catalog_bytes(mcp),catalog_bytes(self.mcp)*0.4)
+
     async def test_reload_extension_routes_only_the_idle_extension_target(self):
-        self.broker.response={"ok":True,"status":"reloading","extension_version":"0.10.4"}
+        self.broker.response={"ok":True,"status":"reloading","extension_version":"0.10.5"}
         result=await self.tool("reload_extension")()
         self.assertEqual(result["status"],"reloading")
         self.assertEqual(self.broker.calls,[("extension","reload_extension",{},5)])

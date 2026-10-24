@@ -10,7 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from shopkud_mcp.server import create_service
+from shopkud_mcp.server import GUIDED_TOOL_GROUPS, create_service
 
 
 PACKAGE = Path(__file__).resolve().parents[1] / "shopkud_mcp"
@@ -63,7 +63,7 @@ class WorkflowGuideTests(unittest.IsolatedAsyncioTestCase):
         result = await self.tool()
         self.assertTrue(result["ok"])
         self.assertEqual(result["workflow_id"], "shopkud-affiliate")
-        self.assertEqual(result["guide_version"], "1.1.0")
+        self.assertEqual(result["guide_version"], "1.2.0")
         self.assertEqual(result["view"], "brief")
         self.assertIn("manifest", result)
         self.assertLess(len(json.dumps(result, ensure_ascii=False)), 5000)
@@ -102,6 +102,9 @@ class WorkflowGuideTests(unittest.IsolatedAsyncioTestCase):
         named_tools = {name for stage in manifest["stages"] for name in stage["tools"]}
         self.assertTrue(named_tools)
         self.assertTrue(named_tools <= package_tools, named_tools - package_tools)
+        guided = manifest["tool_profiles"]["guided"]["groups"]
+        self.assertEqual({key: set(value) for key, value in guided.items()},
+                         {key: set(value) for key, value in GUIDED_TOOL_GROUPS.items()})
 
         for key in ("skill", "guide"):
             relative = Path(manifest[key])
