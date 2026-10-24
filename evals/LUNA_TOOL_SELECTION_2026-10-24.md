@@ -115,3 +115,31 @@ The held-out run exposed and then verified two implementation changes without
 adding tools: goal-aware candidate preselection no longer drops low-price
 sales/rate winners, and `exclude_mall=true` now represents non-Mall-only intent
 without overloading `mall_only=false` (which still means any store).
+
+## Final live contract check
+
+Date: 2026-10-25
+
+The first non-Mall live request exposed a schema contradiction: the concise
+tool description said `exclude_mall=true` was sufficient, but the Python
+default still injected `mall_only=true`, so the request failed before touching
+the browser. Guide 1.3.3 and the runtime now use one unambiguous rule:
+
+- omitted `mall_only` keeps the strict Mall-only default;
+- `exclude_mall=true` alone selects non-Mall stores;
+- explicitly combining `mall_only=true` and `exclude_mall=true` remains invalid.
+
+Verification after restarting only the ShopKud worker:
+
+- Offline Python suite: 222/222 passed.
+- Live dynamic request: `query="เมาส์ไร้สาย"`, Shopee Video,
+  non-Mall, price at most ฿500, commission at least 8%, sold at least 500,
+  ranked by visible sales.
+- Dynamic result: 19 products scanned on one page, five details checked, three
+  qualified, zero detail errors, total latency 13.25 seconds, trace
+  `b5e0f17a150fe84a`.
+- Exact-ID request for `29569915790` bypassed market search, reused the owned
+  tab, and returned the canonical offer URL, public product URL, price and all
+  three observed channel commissions.
+- Both runs were read-only and appeared in the Dev Console; no affiliate link,
+  post, purchase or mission enrollment was created.

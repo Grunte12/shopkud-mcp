@@ -596,7 +596,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         channel: Literal["social", "shopee_live", "shopee_video"] = "shopee_video",
         ranking_goal: Literal["commission_value", "commission_rate", "sales_volume", "balanced"] = "commission_value",
         freshness: Literal["live", "recent", "fast"] = "live",
-        mall_only: Annotated[bool, Field(strict=True)] = True,
+        mall_only: Annotated[bool | None, Field(strict=True)] = None,
         exclude_mall: Annotated[bool, Field(strict=True)] = False,
         min_sold: Annotated[int, Field(strict=True, ge=0, le=1000000000)] = 500,
         min_commission_thb: Annotated[float | None, Field(ge=0, le=1000000000)] = None,
@@ -606,7 +606,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         top_k: Annotated[int, Field(strict=True, ge=1, le=10)] = 5,
         max_pages: Annotated[int, Field(strict=True, ge=1, le=20)] = 20,
     ) -> dict:
-        """Deterministic read-only product-research playbook. The agent chooses ranking_goal from the user's intent: commission_value (THB/order), commission_rate (%), sales_volume (visible sold count), or balanced (equal normalized commission-value and log-sales signals), plus explicit sales, commission, price and trust constraints. Defaults are intentionally strict: mall_only=true, min_sold=500, exclude_preorder=true; pass mall_only=false/min_sold=0/exclude_preorder=false for a broad search, or exclude_mall=true for non-Mall only. mall_only and exclude_mall cannot both be true. freshness=live bypasses completed-result cache, recent accepts up to 60 seconds, and fast accepts up to 10 minutes; every response states cache age and observed timestamps. The tool searches one extension-owned Shopee Affiliate tab, verifies the requested channel on detail pages, and never silently relaxes filters, creates links, posts, buys, or infers seller ratings/ad spend."""
+        """Deterministic read-only product-research playbook. The agent chooses ranking_goal from the user's intent: commission_value (THB/order), commission_rate (%), sales_volume (visible sold count), or balanced (equal normalized commission-value and log-sales signals), plus explicit sales, commission, price and trust constraints. Defaults are intentionally strict: omitting mall_only searches Mall only, min_sold=500, exclude_preorder=true; pass mall_only=false/min_sold=0/exclude_preorder=false for a broad search, or exclude_mall=true for non-Mall only. Explicit mall_only=true and exclude_mall=true cannot be combined. freshness=live bypasses completed-result cache, recent accepts up to 60 seconds, and fast accepts up to 10 minutes; every response states cache age and observed timestamps. The tool searches one extension-owned Shopee Affiliate tab, verifies the requested channel on detail pages, and never silently relaxes filters, creates links, posts, buys, or infers seller ratings/ad spend."""
         started = time.monotonic()
         requested_at = started
         started_at_unix_ms = int(time.time() * 1000)
@@ -663,11 +663,17 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
             )
             return {**payload, "trace": trace}
 
+        if type(mall_only) not in (bool, type(None)):
+            mall_only_valid = False
+        else:
+            mall_only_valid = True
+            if mall_only is None:
+                mall_only = not exclude_mall
         if (type(query) is not str or not query.strip() or len(query) > 120 or any(ord(c) < 32 for c in query)
                 or channel not in {"social", "shopee_live", "shopee_video"}
                 or ranking_goal not in {"commission_value", "commission_rate", "sales_volume", "balanced"}
                 or freshness not in {"live", "recent", "fast"}
-                or type(mall_only) is not bool or type(exclude_mall) is not bool or type(exclude_preorder) is not bool
+                or not mall_only_valid or type(exclude_mall) is not bool or type(exclude_preorder) is not bool
                 or mall_only and exclude_mall
                 or type(min_sold) is not int or not 0 <= min_sold <= 1000000000
                 or min_commission_thb is not None and (type(min_commission_thb) not in (int, float) or isinstance(min_commission_thb, bool) or not 0 <= min_commission_thb <= 1000000000)

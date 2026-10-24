@@ -141,8 +141,9 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_non_mall_only_is_explicit_and_mutually_exclusive(self):
         self.broker.amounts["4"] = (7, 7000)
-        result = await self.tool("ทีวี", mall_only=False, exclude_mall=True, min_sold=0, freshness="live")
+        result = await self.tool("ทีวี", exclude_mall=True, min_sold=0, freshness="live")
         self.assertEqual([row["product_id"] for row in result["results"]], ["4"])
+        self.assertEqual(result["criteria"]["mall_only"], False)
         self.assertEqual(result["criteria"]["exclude_mall"], True)
         self.assertGreater(result["exclusions"]["mall_excluded"], 0)
         invalid = await self.tool("ทีวี", mall_only=True, exclude_mall=True)
