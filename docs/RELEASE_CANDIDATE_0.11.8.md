@@ -76,11 +76,13 @@ and future dependency resolution can change.
 
 ### Secret scanning
 
-`Gitleaks 8.30.1` ran with redaction over the current directory and all 59
-reachable commits. It reported two unique `generic-api-key` candidates,
-duplicated in ignored build/worktree copies. Manual inspection without printing
-candidate values confirmed both are telemetry field names/values
-(`token_estimate_method` and `response_tokens_estimate`), not credentials.
+`Gitleaks 8.30.1` ran with redaction over the current directory and reachable
+history. It reported 59 non-merge commits scanned; six reachable merge commits
+were not counted as individually scanned. It reported two unique
+`generic-api-key` candidates, duplicated in ignored build/worktree copies.
+Manual inspection without printing candidate values confirmed both are
+telemetry field names/values (`token_estimate_method` and
+`response_tokens_estimate`), not credentials.
 
 `detect-secrets 1.5.0` separately scanned all tracked files and reported three
 unverified candidates in synthetic test fixtures. Manual inspection classified
@@ -131,3 +133,12 @@ The candidate may proceed to Phase 7 only after all of these are true:
 4. the owner explicitly authorizes tag and GitHub Release publication.
 
 Until then: no tag, release, package publication or release asset is approved.
+
+## Review record
+
+Independent review failed commit
+`05d93a2a3df9dbea56314233bf541192356cfcff` because the report called the 59
+commits reported by Gitleaks all reachable commits. At scan time the reachable
+history contained 59 non-merge commits and six merge commits. This repair makes
+that coverage explicit and does not claim that merge commits were individually
+scanned.
