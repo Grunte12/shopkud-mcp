@@ -14,7 +14,7 @@ async function run(){
     const now=Date.now();
     const stored={};
     const dashboard={schema_version:1,query:"ทีวี",channel:"shopee_video",freshness:"live",cache_hit:false,cache_age_ms:0,partial_market_coverage:false,
-      criteria:{ranking_goal:"balanced",mall_only:true,min_sold:500,freshness:"live"},winner_product_id:"26570814201",observed_at:new Date(now-1000).toISOString(),
+      criteria:{ranking_goal:"balanced",target_kind:"product",mall_only:true,min_sold:500,freshness:"live"},winner_product_id:"26570814201",winner_status:"metric_leader_pending_agent_review",review_required:true,observed_at:new Date(now-1000).toISOString(),
       scan:{pages_scanned:3,unique_products:42,reached_end:true,outcome:"completed"},exclusions:{not_mall:9,sold_below_minimum:6},relaxation_suggestions:[],
       results:[
         {product_id:"26570814201",name:"Philips NA331 Air Fryer",offer_url:"https://affiliate.shopee.co.th/offer/product_offer/26570814201",image_url:"https://down-th.img.susercontent.com/file/result.jpg",mall:true,channel:"shopee_video",price_min_thb:3899,price_max_thb:3899,sold:1200,commission_pct:6.5,commission_thb_per_order:236.02,ranking_score:.92,observed_at:new Date(now-1000).toISOString(),trust_basis:["mall"]},
@@ -40,6 +40,8 @@ async function run(){
   assert.equal(await page.locator("#research-result").isVisible(),true);
   assert.equal(await page.locator("#winner-name").textContent(),"Philips NA331 Air Fryer");
   assert.match(await page.locator("#winner-reason").textContent(),/สมดุลค่าคอม/u);
+  assert.match(await page.locator("#winner-reason").textContent(),/รอ Agent ตรวจ/u);
+  assert.match(await page.locator(".winner-rank").textContent(),/อันดับ 1 ตามเกณฑ์/u);
   assert.equal(await page.locator("#shortlist-list .product-row").count(),1);
   assert.match(await page.locator("#evidence-chips").textContent(),/อ่านสดจาก Shopee.*3 หน้า.*42 สินค้า/u);
   assert.match(await page.locator("#coverage-summary").textContent(),/ครบขอบเขต/u);

@@ -1,4 +1,4 @@
-# วิธีทำงาน ShopKud Affiliate — 1.4.0
+# วิธีทำงาน ShopKud Affiliate — 1.5.0
 
 ## ขอบเขตของรุ่นนี้
 
@@ -33,6 +33,10 @@ Research report ไม่เปลี่ยนสูตร ranking ของ Sho
 
 งานคัดสินค้าใช้ `rank_affiliate_products` เป็นค่าเริ่มต้น เอเจนต์ต้องแปลงเป้าหมายผู้ใช้เป็นพารามิเตอร์ ไม่ใช่ให้โค้ดเดาเจตนา:
 
+- กำหนด `target_kind`: `product` สำหรับสินค้าหลัก, `accessory` สำหรับเคส/ฟิล์ม/อุปกรณ์เสริม, `any` เมื่อผู้ใช้ยอมรับทั้งคู่; `auto` ใช้เฉพาะเมื่อคำค้นบอกประเภทชัด
+- ใส่แบรนด์ รุ่น ความจุ กำลัง หรือสเปกที่ห้ามผิดเป็น `required_terms`; ใส่คำที่ผู้ใช้ไม่ต้องการเป็น `excluded_terms` เครื่องมือเทียบแบบ whole term/phrase และไม่ผ่อน hard terms เอง
+- ตัวกรองความเกี่ยวข้องและ accessory gate ลด false positive ก่อนตรวจค่าคอม แต่ไม่ใช่การยืนยันรุ่นหรือ variant ขั้นสุดท้าย
+
 - `ranking_goal="commission_value"` เน้นบาทต่อออเดอร์
 - `ranking_goal="commission_rate"` เน้นเปอร์เซ็นต์คอม
 - `ranking_goal="sales_volume"` เน้นยอดขายที่หน้าแสดง
@@ -56,6 +60,8 @@ Research report ไม่เปลี่ยนสูตร ranking ของ Sho
 ทุกผลมี `trace` สำหรับเวลาเข้าคิว/สแกน/อ่าน/รายละเอียด/รวม จำนวน browser operations, cache hit, success, effectiveness และขนาด response ค่า token เป็นเพียงประมาณการจาก UTF-8 bytes; token input/reasoning/output ของโมเดลไม่ถูกส่งเข้า MCP และต้องคงเป็น unknown
 
 ผลระบุจำนวนหน้าที่สแกน ผู้สมัครที่ตรวจรายละเอียด และข้อจำกัดเสมอ จึงไม่ใช่การยืนยันว่าครบทั้งตลาด ป้าย Mall กับยอดขายเป็นเพียงหลักฐานที่หน้าแสดง ไม่ใช่คะแนนรวมร้าน และเครื่องมือไม่เดางบโฆษณาหรือ seller rating
+
+`winner_status="metric_leader_pending_agent_review"` หมายถึงอันดับหนึ่งตามสูตรเท่านั้น ก่อนแนะนำผู้ใช้ Agent ต้องอ่าน finalist แล้วจำแนกแต่ละรายการเป็น `target`, `accessory`, `bundle_or_variant_ambiguous` หรือ `unrelated` ตรวจสินค้าหลัก/รุ่น/สเปก/ตัวเลือก/คุณค่า/ร้านและหลักฐาน หากมี public product URL ให้ใช้ `get_product_detail(product_url=…,view="brief")` เพื่อดู model/spec/variant evidence ใส่ `target_model` เฉพาะรหัสรุ่นสั้น เช่น `A1695`; ชื่อรุ่นแบบวลีให้ตรวจจาก title/description/spec evidence โดย Agent รายการที่กำกวมหรือขัดกันไม่ผ่าน ถ้าไม่มีรายการผ่านให้คืน “ยังไม่มี verified target” และอธิบายสิ่งที่ขาด ห้ามเลือกจากค่าคอมหรือยอดขายแทน
 
 ใช้ `scan_products(query=…,max_pages=…,max_products=…)` และอ่านแคชด้วย `get_scan_products(view="brief")` เฉพาะงานค้นแบบกำหนดเองที่ playbook ยังครอบคลุม การกรอง `query` ในเครื่องมืออ่านแคชไม่ใช่การค้น Shopee ใหม่ ชื่อรายการอาจไม่ใส่รหัสรุ่น จึงควรตรวจรายละเอียดเฉพาะผู้เข้ารอบ ไม่ค้นซ้ำแบบไร้ขอบเขต
 

@@ -269,10 +269,11 @@
   }
   function reason(product, dashboard, winner = false) {
     const goal = dashboard?.criteria?.ranking_goal;
-    if(goal === "commission_value") return winner ? "ค่าคอมต่อออเดอร์สูงสุดในชุดสินค้าที่ตรวจและผ่านเกณฑ์" : `ค่าคอมที่ตรวจพบ ${money(product.commission_thb_per_order)} ต่อออเดอร์`;
-    if(goal === "commission_rate") return winner ? "อัตราค่าคอมสูงสุดในชุดสินค้าที่ตรวจและผ่านเกณฑ์" : `อัตราค่าคอมที่ตรวจพบ ${percent(product.commission_pct)}`;
-    if(goal === "sales_volume") return winner ? "ยอดขายที่เห็นสูงสุดในชุดสินค้าที่ตรวจและผ่านเกณฑ์" : `ยอดขายที่เห็น ${count(product.sold)} · ไม่ระบุช่วงเวลา`;
-    if(goal === "balanced") return winner ? "อันดับหนึ่งตามเกณฑ์สมดุลค่าคอมต่อออเดอร์กับยอดขายที่เห็น" : "ผ่านเกณฑ์คัดกรอง · เปรียบเทียบค่าคอมกับยอดขายที่เห็นก่อนเลือก";
+    const review = winner ? " · Agent ต้องตรวจประเภทสินค้า รุ่น และตัวเลือกก่อนแนะนำ" : "";
+    if(goal === "commission_value") return winner ? `ค่าคอมต่อออเดอร์สูงสุดในชุดสินค้าที่ผ่านตัวกรอง${review}` : `ค่าคอมที่ตรวจพบ ${money(product.commission_thb_per_order)} ต่อออเดอร์`;
+    if(goal === "commission_rate") return winner ? `อัตราค่าคอมสูงสุดในชุดสินค้าที่ผ่านตัวกรอง${review}` : `อัตราค่าคอมที่ตรวจพบ ${percent(product.commission_pct)}`;
+    if(goal === "sales_volume") return winner ? `ยอดขายที่เห็นสูงสุดในชุดสินค้าที่ผ่านตัวกรอง${review}` : `ยอดขายที่เห็น ${count(product.sold)} · ไม่ระบุช่วงเวลา`;
+    if(goal === "balanced") return winner ? `อันดับหนึ่งตามเกณฑ์สมดุลค่าคอมต่อออเดอร์กับยอดขายที่เห็น${review}` : "ผ่านเกณฑ์คัดกรอง · เปรียบเทียบค่าคอมกับยอดขายที่เห็นก่อนเลือก";
     return "ผ่านเงื่อนไขและการจัดอันดับของงานนี้ · ไม่ใช่คำรับรองยอดขาย";
   }
   function trust(element, product) {
@@ -444,7 +445,7 @@
     const card = $("#product-template").content.firstElementChild.cloneNode(true);
     const winner = !saved && product.product_id === dashboard?.winner_product_id;
     card.dataset.productId = product.product_id; card.dataset.winner = String(winner);
-    card.querySelector(".product-position").textContent = saved ? `จากโจทย์ ${text(product.saved_query) || "ไม่ระบุ"}` : winner ? "อันดับ 1 · ตัวเลือกแนะนำ" : `อันดับ ${rank}`;
+    card.querySelector(".product-position").textContent = saved ? `จากโจทย์ ${text(product.saved_query) || "ไม่ระบุ"}` : winner ? "อันดับ 1 · รอ Agent ตรวจ" : `อันดับ ${rank}`;
     setImage(card.querySelector("img"), card.querySelector(".image-fallback"), product.image_url, product.name);
     trust(card.querySelector(".trust"), product);
     card.querySelector(".product-name").textContent = product.name;
@@ -518,6 +519,7 @@
     if(!report) unknowns.unshift("Agent ยังไม่ได้เผยแพร่เทรนด์ ความต้องการซื้อ หรือบริบทร้านสำหรับโจทย์นี้");
     else if(!array(report.citations).some(source => safeURL(source?.url))) unknowns.unshift("รายงาน Agent ยังไม่มีแหล่งอ้างอิงที่เปิดได้ ข้อประเมินนี้ยังตรวจย้อนกลับไม่ได้");
     if(products.some(product => !text(product.shop_name))) unknowns.push("หน้า Affiliate ไม่แสดงชื่อร้านสำหรับบางสินค้า ShopKud จึงให้ลิงก์เปิดร้านแทนการเดาชื่อ");
+    if(dashboard?.review_required !== false && products.length) unknowns.push("อันดับจากสูตรยังไม่ใช่คำแนะนำสุดท้าย Agent ต้องตรวจประเภทสินค้า รุ่น ตัวเลือก และหลักฐานก่อนเลือก");
     if(products.some(product => ["price_min_thb","commission_thb_per_order","sold"].some(key => !finite(product[key])))) unknowns.push("บางสินค้ามีข้อมูลราคา ค่าคอม หรือยอดขายไม่ครบ ช่องที่ไม่ทราบจะไม่ถูกแทนด้วยศูนย์");
     $("#unknowns").replaceChildren(...unknowns.map(value => node("li","",value)));
     $("#coverage-note").textContent = dashboard?.partial_market_coverage ? "สแกนเฉพาะบางหน้า ไม่ใช่การเปรียบเทียบสินค้าทั้งหมดใน Shopee" : "ข้อมูลอาจเปลี่ยนหลังเวลาที่ตรวจ ควรเปิดหน้าสินค้าตรวจอีกครั้งก่อนตัดสินใจ";
@@ -582,7 +584,7 @@
     const ratio = key => finished.length ? `${Math.round(finished.filter(run => run[key] === true).length / finished.length * 100)}%` : "—";
     const latencies = finished.map(run => run.latency_ms?.total ?? run.elapsed_ms).filter(finite).sort((a,b) => a-b);
     const median = latencies.length ? latencies[Math.max(0,Math.ceil(latencies.length/2)-1)] : null;
-    const metrics = [["งานที่จบ",String(finished.length)],["สำเร็จ",ratio("success")],["ได้ตัวเลือกแนะนำ",ratio("effective")],["ใช้แคช",ratio("cache_hit")],["เวลามัธยฐาน",duration(median)],["Browser actions",String(finished.reduce((sum,run) => sum + Object.values(run.browser_operations || {}).reduce((total,value) => total+number(value),0),0))]];
+    const metrics = [["งานที่จบ",String(finished.length)],["สำเร็จ",ratio("success")],["ได้อันดับตามเกณฑ์",ratio("effective")],["ใช้แคช",ratio("cache_hit")],["เวลามัธยฐาน",duration(median)],["Browser actions",String(finished.reduce((sum,run) => sum + Object.values(run.browser_operations || {}).reduce((total,value) => total+number(value),0),0))]];
     $("#live-metrics").replaceChildren(...metrics.map(([label,value]) => { const group=node("div"); group.append(node("dt","",label),node("dd","",value)); return group; }));
     const list = $("#run-list"); list.replaceChildren();
     for(const run of [...state.runs].sort((a,b) => number(b.updated_at_unix_ms)-number(a.updated_at_unix_ms))) {

@@ -117,9 +117,12 @@ function sanitizeDashboard(value) {
   }
   const criteria={};
   const rawCriteria=value.criteria && typeof value.criteria==="object"?value.criteria:{};
-  for(const key of ["mall_only","exclude_mall","min_sold","min_commission_thb","min_commission_pct","max_price_thb","exclude_preorder","ranking_goal","rank_by","freshness"]){
+  for(const key of ["mall_only","exclude_mall","min_sold","min_commission_thb","min_commission_pct","max_price_thb","exclude_preorder","target_kind","target_kind_input","minimum_query_term_matches","ranking_goal","rank_by","freshness"]){
     const item=rawCriteria[key];
     if(item===null || ["string","number","boolean"].includes(typeof item))criteria[key]=typeof item==="string"?item.slice(0,120):item;
+  }
+  for(const key of ["required_terms","excluded_terms","query_terms"]){
+    if(Array.isArray(rawCriteria[key]))criteria[key]=rawCriteria[key].filter(item=>typeof item==="string"&&item.trim()).slice(0,12).map(item=>item.trim().slice(0,48));
   }
   const scan={};
   const rawScan=value.scan && typeof value.scan==="object"?value.scan:{};
@@ -135,7 +138,10 @@ function sanitizeDashboard(value) {
   const winner_product_id=productId(value.winner_product_id) && rows.some(row=>row.product_id===value.winner_product_id)?value.winner_product_id:null;
   return {schema_version:1,query:value.query,channel:value.channel,criteria,results:rows,winner_product_id,scan,exclusions,
     relaxation_suggestions,partial_market_coverage:value.partial_market_coverage,freshness:value.freshness,cache_hit:value.cache_hit,
-    cache_age_ms:value.cache_age_ms,observed_at:typeof value.observed_at==="string"?value.observed_at.slice(0,64):null};
+    cache_age_ms:value.cache_age_ms,review_required:value.review_required===true,
+    winner_status:value.winner_status==="metric_leader_pending_agent_review"?value.winner_status:null,
+    candidate_verification_partial:value.candidate_verification_partial===true,
+    observed_at:typeof value.observed_at==="string"?value.observed_at.slice(0,64):null};
 }
 function sanitizeTelemetry(value) {
   if(!value || typeof value!=="object" || value.schema_version!==1 || !/^[0-9a-f]{16}$/u.test(value.trace_id || "") ||

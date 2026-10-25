@@ -1,6 +1,6 @@
 # ShopKud P0–P2 report
 
-Version 0.11.3. Public branch `main`.
+Version 0.11.4. Public branch `main`.
 
 The service stays extension-only. It does not sign Affiliate Open API requests, follow `s.shopee.co.th` redirects, or store buyer or order identifiers. Remote MCP remains loopback plus a bearer token.
 
@@ -19,10 +19,17 @@ The requirement-by-requirement checklist, test commands, and live-UI assumptions
 
 ## Tests
 
-`python3 -m unittest discover -s tests -p 'test_*.py'` — 229 tests, passing.
+`python3 -m unittest discover -s tests -p 'test_*.py'` — 235 tests, passing.
 
 This release also passed 27 directly executed Node/DOM/Playwright suites,
 including the new Dashboard interaction/safety matrix and tab-lifecycle tests.
+
+Product discovery now has two explicit decision layers. Deterministic code
+rejects obvious query, hard-identity and product/accessory mismatches before
+ranking. The returned winner remains a metric leader pending Agent review; the
+bundled 1.5.0 skill/playbook requires the Agent to inspect product type, exact
+model/variant, value, store evidence and evidence sufficiency before making a
+recommendation. The Dashboard and Side Panel preserve that distinction.
 
 ## Codex review at a38b33f
 

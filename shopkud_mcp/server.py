@@ -14,6 +14,7 @@ import sqlite3
 import threading
 import time
 from typing import Annotated, Literal
+import unicodedata
 import weakref
 
 from mcp.server.fastmcp import FastMCP
@@ -60,6 +61,54 @@ _RANKING_STATES_GUARD = threading.Lock()
 _RANKING_STATES = weakref.WeakKeyDictionary()
 _RANKING_CACHE_MAX_ENTRIES = 64
 _RANKING_CACHE_MAX_AGE_SECONDS = 600
+
+_ACCESSORY_TERM_RE = re.compile(
+    r"\b(?:case|cover|pouch|sleeve|screen[\s-]*protector|film|skin|shell|strap|holder|mount|replacement|accessor(?:y|ies))\b"
+    r"|(?:เคส|ปลอก|ฟิล์ม|กระจกกันรอย|กันรอย|ฝาครอบ|ซอง|สายคล้อง|ขาตั้ง|ที่ยึด|อะไหล่|อุปกรณ์เสริม)",
+    re.I,
+)
+_ACCESSORY_COMPATIBILITY_RE = re.compile(
+    r"\b(?:for|compatible(?:\s+with)?|fits?)\b|(?:สำหรับ|ใช้(?:ได้)?กับ|รองรับรุ่น)", re.I,
+)
+_QUERY_STOP_TERMS = frozenset({
+    "and", "for", "from", "the", "with", "ของ", "ที่", "รุ่น", "สำหรับ", "พร้อม", "และ", "หา", "อยาก", "ต้องการ",
+})
+
+
+def _normalize_relevance_text(value: str) -> str:
+    value = unicodedata.normalize("NFKC", value).casefold()
+    value = re.sub(r"(?<=\d),(?=\d)", "", value)
+    value = re.sub(r"(?<=\d)\s+(?=(?:mah|wh|gb|tb|hz|w)\b)", "", value)
+    return " ".join(value.split())
+
+
+def _relevance_terms(value: str) -> list[str]:
+    normalized = _normalize_relevance_text(value)
+    terms = []
+    for term in re.findall(r"[a-z0-9]+(?:[.-][a-z0-9]+)*|[ก-๙]+", normalized):
+        if len(term) < 2 or term in _QUERY_STOP_TERMS or term in terms:
+            continue
+        terms.append(term)
+    return terms[:12]
+
+
+def _has_relevance_term(value: str, term: str) -> bool:
+    haystack, needle = _normalize_relevance_text(value), _normalize_relevance_text(term)
+    if not needle:
+        return False
+    if re.fullmatch(r"[a-z0-9]+(?: [a-z0-9]+)*", needle):
+        pattern = re.escape(needle).replace(r"\ ", r"\s+")
+        return re.search(rf"(?<![a-z0-9]){pattern}(?![a-z0-9])", haystack) is not None
+    return needle in haystack
+
+
+def _accessory_only_title(value: str) -> bool:
+    normalized = _normalize_relevance_text(value)
+    marker = _ACCESSORY_TERM_RE.search(normalized)
+    if not marker:
+        return False
+    leading = re.match(r"^(?:\d+\s*(?:ชิ้น|pcs?)\s*)?", normalized).end()
+    return marker.start() <= leading + 18 or _ACCESSORY_COMPATIBILITY_RE.search(normalized) is not None
 
 
 def _ranking_state(broker):
@@ -277,11 +326,11 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
             raise
     guided = config.get("tool_profile", "full") == "guided"
     instructions = ("Before the first ShopKud affiliate action, read get_workflow_guide(view='full') once per guide version and follow it; reuse it across products. "
-                    "Prefer rank_affiliate_products for product discovery: infer ranking_goal, freshness and explicit filters from the user's intent, then let one deterministic call perform bounded search, trust filtering, channel verification and ranking. Never relax constraints silently. "
+                    "Prefer rank_affiliate_products for product discovery: infer target_kind, required/excluded identity terms, ranking_goal, freshness and explicit filters from the user's intent, then let one deterministic call perform bounded search, relevance filtering, trust filtering, channel verification and ranking. Never relax constraints silently. The returned winner is only the metric leader; review finalists for product type, model, variant, value, store evidence and evidence sufficiency before recommending one. "
                     "The guided profile intentionally hides browser/storage primitives; switch the operator-managed profile to full only for custom scanning, selection or debugging. "
                     if guided else
                     "Before the first ShopKud affiliate action, read get_workflow_guide(view='full') once per guide version and follow it; reuse it across products. "
-                    "Prefer rank_affiliate_products for product discovery: infer ranking_goal, freshness and explicit filters from the user's intent; it serializes browser work and returns a deterministic shortlist without silently relaxing constraints. "
+                    "Prefer rank_affiliate_products for product discovery: infer target_kind, required/excluded identity terms, ranking_goal, freshness and explicit filters from the user's intent; it serializes browser work and returns a deterministic shortlist without silently relaxing constraints. Treat its winner as a metric leader, then review finalists for product type, model, variant, value, store evidence and evidence sufficiency before recommending one. "
                     "Use low-level scan tools only when the playbook cannot express the task. For selection, go_to_page then get_products for a fresh snapshot, prepare reasoned picks and explicitly apply only with owner authority. ")
     instructions += ("Thai-only user audience: author reasons, content scenes, risks and evidence titles in Thai. "
                      "When external niche, trend, purchase-intent or store research materially affects a recommendation, summarize only the decision-relevant evidence with HTTPS citations through present_research_report so the owner can review it in the Dashboard; never expose private chain-of-thought or present Agent-authored judgments as Shopee-observed facts. "
@@ -575,7 +624,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                                  target_model: Annotated[str | None,Field(strict=True,max_length=32)] = None,
                                  view: Literal["full","brief"] = "full",
                                  product_id: Annotated[str | None,Field(strict=True,pattern=r"^[1-9][0-9]{0,19}$")] = None) -> dict:
-        """อ่านสินค้าและค่าคอมสดจาก Affiliate ด้วย page_id/offer_url หรือ product_id ที่ทราบแล้ว; product_id เปิดข้อเสนอตรงเมื่อ open_if_missing=true โดยไม่ค้นตลาด และผลคืน offer_url/product_url ที่คลิกได้ view=brief คืนราคา ค่าคอมแยกช่องทาง วันสิ้นสุดข้อเสนอที่หน้าแสดง และสถานะลิงก์ โดย shopee_commission เป็นเรตพื้นฐานที่เห็นตอนนี้ ไม่รับรองหลังข้อเสนอหมด; ช่วงเวลา extra, cap และ attribution duration ที่หน้าไม่แสดงคืน null ไม่เดา ไม่ส่งรูป/ข้อมูลวินิจฉัย หรืออ่านรุ่น/สีสาธารณะด้วย product_url=https://shopee.co.th/product/<ร้าน>/<สินค้า>; target_model ใช้เฉพาะ product_url, view=brief คืนหลักฐานรุ่นสั้น ๆ ห้ามรวม product_url กับ page_id/offer_url/product_id/save/open_link_dialog ต้องเปิดสิทธิ์เสริมผ่านส่วนขยายก่อน open_if_missing=true เปิด/ใช้ซ้ำแท็บเบื้องหลังเฉพาะของส่วนขยาย open_link_dialog=true เปิดกล่องรับลิงก์หนึ่งครั้งเฉพาะ owned inactive idle offer ที่ตรงรหัส อ่าน URL จาก dialog ทางการ ไม่ clipboard/privateAPI ไม่แก้ SubID/สี ไม่ retry เมื่อไม่แน่นอน ต้องเจ้าของสั่งเอาลิงก์ก่อนใช้ save=true บันทึกประวัติเมื่อเจ้าของสั่ง ไม่รับรอง attribution/รุ่น/สี/เพดานคอม ค่าเริ่มต้นไม่เปิดหน้า/กล่อง หยุดเมื่อ login/challenge."""
+        """อ่านสินค้าและค่าคอมสดจาก Affiliate ด้วย page_id/offer_url หรือ product_id ที่ทราบแล้ว; product_id เปิดข้อเสนอตรงเมื่อ open_if_missing=true โดยไม่ค้นตลาด และผลคืน offer_url/product_url ที่คลิกได้ view=brief คืนราคา ค่าคอมแยกช่องทาง วันสิ้นสุดข้อเสนอที่หน้าแสดง และสถานะลิงก์ โดย shopee_commission เป็นเรตพื้นฐานที่เห็นตอนนี้ ไม่รับรองหลังข้อเสนอหมด; ช่วงเวลา extra, cap และ attribution duration ที่หน้าไม่แสดงคืน null ไม่เดา ไม่ส่งรูป/ข้อมูลวินิจฉัย หรืออ่านรุ่น/สีสาธารณะด้วย product_url=https://shopee.co.th/product/<ร้าน>/<สินค้า>; target_model รับรหัสรุ่นสั้น เช่น A1695 ไม่ใช่ชื่อสินค้าแบบวลี ใช้เฉพาะ product_url และ view=brief คืนหลักฐานรุ่นสั้น ๆ ห้ามรวม product_url กับ page_id/offer_url/product_id/save/open_link_dialog ต้องเปิดสิทธิ์เสริมผ่านส่วนขยายก่อน open_if_missing=true เปิด/ใช้ซ้ำแท็บเบื้องหลังเฉพาะของส่วนขยาย open_link_dialog=true เปิดกล่องรับลิงก์หนึ่งครั้งเฉพาะ owned inactive idle offer ที่ตรงรหัส อ่าน URL จาก dialog ทางการ ไม่ clipboard/privateAPI ไม่แก้ SubID/สี ไม่ retry เมื่อไม่แน่นอน ต้องเจ้าของสั่งเอาลิงก์ก่อนใช้ save=true บันทึกประวัติเมื่อเจ้าของสั่ง ไม่รับรอง attribution/รุ่น/สี/เพดานคอม ค่าเริ่มต้นไม่เปิดหน้า/กล่อง หยุดเมื่อ login/challenge."""
         if type(save) is not bool or type(open_if_missing) is not bool or type(open_link_dialog) is not bool:return {"ok":False,"error":"invalid_input"}
         if view not in ("full","brief") or target_model is not None and normalize_model(target_model) is None:return {"ok":False,"error":"invalid_input"}
         if product_url is None and target_model is not None:return {"ok":False,"error":"public_product_url_required"}
@@ -665,6 +714,9 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         channel: Literal["social", "shopee_live", "shopee_video"] = "shopee_video",
         ranking_goal: Literal["commission_value", "commission_rate", "sales_volume", "balanced"] = "commission_value",
         freshness: Literal["live", "recent", "fast"] = "live",
+        target_kind: Literal["auto", "product", "accessory", "any"] = "auto",
+        required_terms: Annotated[list[Annotated[str, Field(strict=True, min_length=1, max_length=48)]], Field(max_length=12)] = [],
+        excluded_terms: Annotated[list[Annotated[str, Field(strict=True, min_length=1, max_length=48)]], Field(max_length=12)] = [],
         mall_only: Annotated[bool | None, Field(strict=True)] = None,
         exclude_mall: Annotated[bool, Field(strict=True)] = False,
         min_sold: Annotated[int, Field(strict=True, ge=0, le=1000000000)] = 500,
@@ -675,7 +727,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         top_k: Annotated[int, Field(strict=True, ge=1, le=10)] = 5,
         max_pages: Annotated[int, Field(strict=True, ge=1, le=20)] = 20,
     ) -> dict:
-        """Deterministic read-only product-research playbook. The agent chooses ranking_goal from the user's intent: commission_value (THB/order), commission_rate (%), sales_volume (visible sold count), or balanced (equal normalized commission-value and log-sales signals), plus explicit sales, commission, price and trust constraints. Defaults are intentionally strict: omitting mall_only searches Mall only, min_sold=500, exclude_preorder=true; pass mall_only=false/min_sold=0/exclude_preorder=false for a broad search, or exclude_mall=true for non-Mall only. Explicit mall_only=true and exclude_mall=true cannot be combined. freshness=live bypasses completed-result cache, recent accepts up to 60 seconds, and fast accepts up to 10 minutes; every response states cache age and observed timestamps. The tool searches one extension-owned Shopee Affiliate tab, verifies the requested channel on detail pages, and never silently relaxes filters, creates links, posts, buys, or infers seller ratings/ad spend."""
+        """Read-only deterministic product shortlist. target_kind separates primary products, accessories or either; auto infers from the query. required_terms are hard whole-term/phrase identity constraints and excluded_terms are hard title exclusions. The tool filters query relevance, trust, sales, price and preorder, verifies the requested commission channel, and ranks by commission value/rate, visible sales or balanced score. Defaults are Mall-only, min_sold=500 and no preorder. live bypasses cache; recent allows 60 seconds; fast allows 10 minutes. Constraints are never relaxed. winner is only the metric leader pending Agent review of product type, exact model/variant, value, store evidence and evidence sufficiency. No link creation, posting or purchase."""
         started = time.monotonic()
         requested_at = started
         started_at_unix_ms = int(time.time() * 1000)
@@ -713,6 +765,9 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                     "results": payload.get("results", [])[:10],
                     "winner_product_id": ((payload.get("winner") or {}).get("product_id")
                                           if isinstance(payload.get("winner"), dict) else None),
+                    "winner_status": payload.get("winner_status"),
+                    "review_required": payload.get("review_required") is True,
+                    "candidate_verification_partial": payload.get("candidate_verification_partial") is True,
                     "scan": payload.get("scan", {}),
                     "exclusions": payload.get("exclusions", {}),
                     "relaxation_suggestions": payload.get("relaxation_suggestions", [])[:8],
@@ -736,6 +791,8 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 "token_estimate_method": "utf8_bytes_div_4",
                 "agent_input_and_reasoning_tokens": None,
                 "agent_token_note": "MCP does not receive the calling model's token usage",
+                "error": payload.get("error") if isinstance(payload.get("error"), str) else None,
+                "outcome": payload.get("outcome") if isinstance(payload.get("outcome"), str) else None,
             }
             await emit(
                 "completed" if trace["success"] else "failed",
@@ -763,6 +820,10 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 or channel not in {"social", "shopee_live", "shopee_video"}
                 or ranking_goal not in {"commission_value", "commission_rate", "sales_volume", "balanced"}
                 or freshness not in {"live", "recent", "fast"}
+                or target_kind not in {"auto", "product", "accessory", "any"}
+                or type(required_terms) is not list or len(required_terms) > 12
+                or type(excluded_terms) is not list or len(excluded_terms) > 12
+                or any(type(term) is not str or not term.strip() or len(term) > 48 for term in required_terms + excluded_terms)
                 or not mall_only_valid or type(exclude_mall) is not bool or type(exclude_preorder) is not bool
                 or mall_only and exclude_mall
                 or type(min_sold) is not int or not 0 <= min_sold <= 1000000000
@@ -780,10 +841,20 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 "response_tokens_estimate": 9, "token_estimate_method": "utf8_bytes_div_4",
                 "agent_input_and_reasoning_tokens": None,
                 "agent_token_note": "MCP does not receive the calling model's token usage",
+                "error": "invalid_input", "outcome": "not_completed",
             }}
         normalized_query = " ".join(query.split())
+        normalized_required_terms = list(dict.fromkeys(" ".join(term.split()) for term in required_terms))
+        normalized_excluded_terms = list(dict.fromkeys(" ".join(term.split()) for term in excluded_terms))
+        effective_target_kind = ("accessory" if _ACCESSORY_TERM_RE.search(_normalize_relevance_text(normalized_query))
+                                 else "product") if target_kind == "auto" else target_kind
+        query_terms = _relevance_terms(normalized_query)
+        minimum_query_term_matches = min(len(query_terms), 2 if len(query_terms) >= 4 else 1)
         cache_ttl_seconds = {"live": 0, "recent": 60, "fast": 600}[freshness]
-        key = (normalized_query.casefold(), channel, ranking_goal, mall_only, exclude_mall, min_sold,
+        key = (normalized_query.casefold(), channel, ranking_goal, target_kind,
+               tuple(term.casefold() for term in normalized_required_terms),
+               tuple(term.casefold() for term in normalized_excluded_terms),
+               mall_only, exclude_mall, min_sold,
                min_commission_thb, min_commission_pct, max_price_thb,
                exclude_preorder, top_k, max_pages)
         swarm_id = hashlib.sha256(json.dumps(key, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()[:16]
@@ -852,13 +923,25 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
             eligible = []
             exclusions = {"not_mall": 0, "mall_excluded": 0, "sold_below_minimum": 0, "price_above_maximum": 0,
                           "commission_thb_below_minimum": 0, "commission_pct_below_minimum": 0,
-                          "preorder": 0, "missing_fields": 0}
+                          "preorder": 0, "missing_fields": 0, "query_mismatch": 0,
+                          "accessory_mismatch": 0, "target_kind_mismatch": 0,
+                          "required_terms_missing": 0, "excluded_terms_present": 0}
             for row in records:
                 name, sold = row.get("name"), row.get("sold")
                 price = row.get("price_max_thb") if type(row.get("price_max_thb")) in (int, float) else row.get("price_min_thb")
                 offer_url = row.get("product_url")
                 if type(name) is not str or type(sold) is not int or type(price) not in (int, float) or type(offer_url) is not str:
                     exclusions["missing_fields"] += 1
+                elif any(not _has_relevance_term(name, term) for term in normalized_required_terms):
+                    exclusions["required_terms_missing"] += 1
+                elif any(_has_relevance_term(name, term) for term in normalized_excluded_terms):
+                    exclusions["excluded_terms_present"] += 1
+                elif len([term for term in query_terms if _has_relevance_term(name, term)]) < minimum_query_term_matches:
+                    exclusions["query_mismatch"] += 1
+                elif effective_target_kind == "product" and _accessory_only_title(name):
+                    exclusions["accessory_mismatch"] += 1
+                elif effective_target_kind == "accessory" and not _ACCESSORY_TERM_RE.search(_normalize_relevance_text(name)):
+                    exclusions["target_kind_mismatch"] += 1
                 elif mall_only and row.get("mall") is not True:
                     exclusions["not_mall"] += 1
                 elif exclude_mall and row.get("mall") is True:
@@ -870,7 +953,9 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 elif exclude_preorder and preorder.search(name):
                     exclusions["preorder"] += 1
                 else:
-                    eligible.append(row)
+                    eligible.append({**row, "_query_terms_matched": [
+                        term for term in query_terms if _has_relevance_term(name, term)
+                    ]})
 
             # Detail checks are the slow part. Select a bounded shortlist using
             # the requested goal, then verify every finalist on its detail page.
@@ -913,6 +998,22 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 if detail.get("ok") is not True:
                     detail_errors.append({"product_id": row.get("product_id"), "error": detail.get("error", "detail_failed")})
                     continue
+                detail_name = detail.get("name") or row.get("name")
+                if type(detail_name) is not str:
+                    exclusions["missing_fields"] += 1
+                    continue
+                if any(not _has_relevance_term(detail_name, term) for term in normalized_required_terms):
+                    exclusions["required_terms_missing"] += 1
+                    continue
+                if any(_has_relevance_term(detail_name, term) for term in normalized_excluded_terms):
+                    exclusions["excluded_terms_present"] += 1
+                    continue
+                if effective_target_kind == "product" and _accessory_only_title(detail_name):
+                    exclusions["accessory_mismatch"] += 1
+                    continue
+                if effective_target_kind == "accessory" and not _ACCESSORY_TERM_RE.search(_normalize_relevance_text(detail_name)):
+                    exclusions["target_kind_mismatch"] += 1
+                    continue
                 detail_channels = detail.get("channels") if type(detail.get("channels")) is list else []
                 offer = next((item for item in detail_channels
                               if type(item) is dict and item.get("channel") == channel), None)
@@ -947,7 +1048,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                         "shopee_commission_pct": nonnegative_finite_number(shopee_channel.get("pct")),
                     })
                 verified.append({
-                    "product_id": row.get("product_id"), "name": detail.get("name") or row.get("name"),
+                    "product_id": row.get("product_id"), "name": detail_name,
                     "shop_id": shop_id, "shop_name": detail.get("shop_name") if type(detail.get("shop_name")) is str else None,
                     "product_url": product_url, "shop_url": f"https://shopee.co.th/shop/{shop_id}" if shop_id else None,
                     "price_min_thb": detail.get("price_min_thb"), "price_max_thb": detail.get("price_max_thb"),
@@ -959,6 +1060,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                     "extra_comm": row.get("extra_comm"), "offer_url": detail.get("offer_url") or row.get("product_url"),
                     "observed_at": detail.get("observed_at"),
                     "image_url": image_url,
+                    "query_terms_matched": row.get("_query_terms_matched", []),
                     "trust_basis": ["mall"] if row.get("mall") is True else [],
                 })
             detail_verified_count = len(verified)
@@ -1032,17 +1134,28 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                              "min_commission_pct": min_commission_pct,
                              "max_price_thb": max_price_thb,
                              "exclude_preorder": exclude_preorder,
+                             "target_kind": effective_target_kind,
+                             "target_kind_input": target_kind,
+                             "required_terms": normalized_required_terms,
+                             "excluded_terms": normalized_excluded_terms,
+                             "query_terms": query_terms,
+                             "minimum_query_term_matches": minimum_query_term_matches,
                              "ranking_goal": ranking_goal, "rank_by": ranking_labels[ranking_goal],
                              "freshness": freshness},
                 "results": verified[:top_k], "winner": verified[0] if verified else None,
+                "winner_status": "metric_leader_pending_agent_review" if verified else None,
+                "review_required": bool(verified),
                 "scan": {key: scan.get(key) for key in ("scan_id", "pages_scanned", "unique_products", "reached_end", "stop_reason", "next_page", "outcome")},
                 "eligible_from_scan": len(eligible), "detail_candidates_checked": len(candidates),
                 "detail_verified": detail_verified_count, "qualified_after_constraints": len(verified),
+                "candidate_verification_partial": len(eligible) > len(candidates) or bool(detail_errors),
                 "exclusions": exclusions,
                 "detail_errors": detail_errors[:20], "relaxation_suggestions": relaxation_suggestions,
                 "freshness": freshness, "cache_ttl_seconds": cache_ttl_seconds, "cache_age_ms": 0,
                 "cache_hit": False, "partial_market_coverage": scan.get("reached_end") is not True,
-                "limitations": ["seller ratings and ad spend are not observed", "ranking covers only detail candidates checked"],
+                "limitations": ["seller ratings and ad spend are not observed",
+                                "ranking covers only detail candidates checked",
+                                "metric leader requires Agent review of product type, exact model and variant before recommendation"],
             }
             ranking_cache.pop(key, None)
             while len(ranking_cache) >= _RANKING_CACHE_MAX_ENTRIES:

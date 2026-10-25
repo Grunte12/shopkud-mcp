@@ -90,13 +90,16 @@ function run() {
   assert.equal(JSON.stringify(receipts),JSON.stringify([{product_id:"123",affiliate_url:"https://s.shopee.co.th/Abc123",sub_ids:["twitter","clip-1"],status:"confirmed",created_at:"2026-10-25T00:00:00.000Z"}]),"confirmed link receipts are safe and dashboard-ready");
   assert.equal(helpers.confirmedLinkReceipts("create_link_with_subids", {product_id:"123",sub_ids:["x"]}, {ok:true,status:"confirmed",product_id:"123",affiliate_url:"https://evil.example/x"}).length,0,"foreign link receipts are rejected");
   const dashboard = helpers.sanitizeDashboard({schema_version:1,query:"ทีวี",channel:"social",freshness:"live",partial_market_coverage:false,cache_hit:false,cache_age_ms:0,
-    criteria:{},scan:{},exclusions:{},results:[{product_id:"123",name:"ทีวี",shop_name:" ร้านทางการ ",shop_id:"456",offer_url:"https://affiliate.shopee.co.th/offer/product_offer/123",
+    criteria:{target_kind:"product",required_terms:["ทีวี"]},winner_product_id:"123",winner_status:"metric_leader_pending_agent_review",review_required:true,candidate_verification_partial:false,scan:{},exclusions:{},results:[{product_id:"123",name:"ทีวี",shop_name:" ร้านทางการ ",shop_id:"456",offer_url:"https://affiliate.shopee.co.th/offer/product_offer/123",
       product_url:"https://shopee.co.th/product/456/123",shop_url:"https://shopee.co.th/shop/456",mall:true,
       commission_channels:[{channel:"social",label:"โซเชียลมีเดีย",commission_pct:7,commission_thb_per_order:1297,extra_commission_pct:5,shopee_commission_pct:2},{channel:"bad",commission_pct:999}]}],winner_product_id:"123"});
   assert.equal(dashboard.results[0].shop_name,"ร้านทางการ","store name survives the MCP-to-dashboard boundary");
   assert.equal(dashboard.results[0].shop_id,"456","matching store evidence survives the MCP-to-dashboard boundary");
   assert.equal(dashboard.results[0].product_url,"https://shopee.co.th/product/456/123","canonical product URL survives");
   assert.equal(dashboard.results[0].shop_url,"https://shopee.co.th/shop/456","matching canonical shop URL survives");
+  assert.equal(dashboard.criteria.target_kind,"product","target intent survives the MCP-to-dashboard boundary");
+  assert.deepEqual(dashboard.criteria.required_terms,["ทีวี"],"hard identity terms survive the MCP-to-dashboard boundary");
+  assert.equal(dashboard.review_required,true,"metric leader stays pending Agent review");
   assert.equal(JSON.stringify(dashboard.results[0].commission_channels),JSON.stringify([{channel:"social",label:"โซเชียลมีเดีย",commission_pct:7,commission_thb_per_order:1297,extra_commission_pct:5,shopee_commission_pct:2}]),"bounded observed commission channels survive while unknown channels are rejected");
   assert.equal(h.ports.length, 1, "startup connects once");
 

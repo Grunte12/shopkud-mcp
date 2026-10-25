@@ -12,7 +12,7 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.11.3** - Actionable store evidence, decision-first commission comparison, visual product-research Dashboard and persistent Personal Workspace. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+**Version 0.11.4** - Intent-safe product shortlisting, mandatory Agent finalist review, actionable store evidence and a visual product-research Dashboard. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 Installing for another user or coding agent: read [AGENTS.md](AGENTS.md) and
 [docs/INSTALL_FOR_AGENTS.md](docs/INSTALL_FOR_AGENTS.md). ShopKud is standalone;
@@ -21,8 +21,8 @@ no MCP gateway, Docker daemon, or external database is required.
 Architecture and trust boundaries: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Cheap-model tool-selection evidence: [evals/LUNA_TOOL_SELECTION_2026-10-24.md](evals/LUNA_TOOL_SELECTION_2026-10-24.md).
 
-This is the public **0.11.3** release. The Python package and extension both
-declare **0.11.3**. Synthetic offline tests do not certify the
+This is the public **0.11.4** release. The Python package and extension both
+declare **0.11.4**. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
 ## Current capabilities
@@ -88,6 +88,19 @@ shopkud-mcp set-tool-profile --config /absolute/private/shopkud-state/config.jso
 
 Restart only ShopKud after changing profiles. The connected MCP client can then
 rediscover the selected catalog.
+
+### What's New in 0.11.4
+
+- `rank_affiliate_products` now separates primary-product, accessory and mixed
+  intent, enforces hard required/excluded identity terms, and filters unrelated
+  search noise before commission or sales ranking.
+- Obvious case, cover and film compatibility listings no longer compete with a
+  requested primary product; explicit accessory searches remain supported.
+- The returned `winner` is labeled as a metric leader pending Agent review.
+  The bundled guide requires the Agent to verify product type, exact model,
+  variant, value, store evidence and evidence sufficiency before recommending.
+- Dashboard and Side Panel no longer present an automatic metric winner as an
+  Agent-reviewed recommendation.
 
 ### What's New in 0.11.3
 

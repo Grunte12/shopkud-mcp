@@ -2,7 +2,7 @@
 
 This pass stays on your own Chrome profile. The coding agent does not log in, does not open `s.shopee.co.th` links, and does not receive cookies or page HTML.
 
-Load the unpacked extension from the `extension/` folder in this repo (version 0.11.3). Start the local ShopKud server only if you want the agent to call `selector_health` or see live ranking traces. The diagnostic also runs from the page console with no server.
+Load the unpacked extension from the `extension/` folder in this repo (version 0.11.4). Start the local ShopKud server only if you want the agent to call `selector_health` or see live ranking traces. The diagnostic also runs from the page console with no server.
 
 Click the ShopKud toolbar icon to open **ShopKud Live** beside the current page.
 While an agent calls `rank_affiliate_products`, it shows the queue, scan, detail
@@ -55,12 +55,12 @@ Matched pattern ids update the evidence notes in `SELECTOR_EVIDENCE.md`. A miss 
 This release candidate was exercised against the owner's current signed-in
 Chrome profile without creating a link or changing Shopee state.
 
-- Python: 229/229 tests passed.
+- Python: 235/235 tests passed.
 - Repeated-search browser contract: 11/11 tests passed, including a second
   identical live query after the page already showed that query.
 - Extension/DOM suites passed for search, detail, listing, pagination, reviews,
   offer links, selector health, telemetry and the Side Panel.
-- The built `shopkud_mcp-0.11.3` wheel contains the worker, bundled workflow,
+- The built `shopkud_mcp-0.11.4` wheel contains the worker, bundled workflow,
   skill and complete unpacked Chrome extension. A clean Python 3.12 virtual
   environment installed the wheel with declared dependencies and opened the
   `shopkud-mcp` CLI successfully.
@@ -70,6 +70,11 @@ Chrome profile without creating a link or changing Shopee state.
   stage, latency/effectiveness metrics, and the bounded winner summary returned
   to the Agent: product name, channel, price, commission rate and estimated
   commission per order.
+- A held-out Luna review of the Anker 25000mAh/165W case rejected 13 accessory
+  rows before ranking, then classified the metric leader as
+  bundle/variant-ambiguous instead of recommending it automatically. The full
+  cases, traces and remaining one-page search limits are recorded in
+  [`evals/LUNA_TOOL_SELECTION_2026-10-24.md`](evals/LUNA_TOOL_SELECTION_2026-10-24.md).
 
 This proves the supported macOS/Chrome path on the maintainer machine. It does
 not claim that future Shopee markup changes, every account configuration, or

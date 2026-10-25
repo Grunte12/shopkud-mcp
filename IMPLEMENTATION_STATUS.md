@@ -1,12 +1,12 @@
 # ShopKud P0 / P1 / P2 checklist
 
-Version 0.11.3. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
+Version 0.11.4. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
 
 The standalone runtime, cache/freshness behavior, trust boundaries, and
 agent-installed macOS topology are documented in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-Release verification: 229 Python tests plus 27 directly executed
+Release verification: 235 Python tests plus 27 directly executed
 Node/DOM/Playwright suites pass. They cover the Dashboard, Side Panel,
 tab lifecycle and the existing synthetic Shopee readers/actions. Native
 Messaging/live-account acceptance remains operator-specific. Live Shopee markup
@@ -25,7 +25,7 @@ Status words: **done** means the behavior exists in code, **tested** means an of
 | P0-5 | Read a short link when the link box is hidden inside an open Get Link dialog | done, tested, flagged | `extension/linkcapture.js`, `detail.js` | `tests/test_linkcapture.cjs`, `tests/hidden-link-evals.cjs` |
 | P0-6 | Attribute imported conversion aggregates by SubID | done, tested, flagged | `sales_by`, `get_conversions` | `tests/test_sales_by.py`, `tests/test_fullspec.py` |
 | P0-7 | Offer lookup with social vs video commission and Extra Com | done, tested, flagged | `get_offer`, `project_offer` | `tests/test_fullspec.py`, `tests/detail-evals.cjs` |
-| P0-8 | Deterministic ranked discovery with one sequential browser lane, shared concurrent results, and per-call timing/outcome/context traces | done, tested, flagged | `rank_affiliate_products` | `tests/test_rank_playbook.py`, `evals/rank-playbook.py` |
+| P0-8 | Intent-safe ranked discovery with one sequential browser lane, hard identity/product-type gates, shared concurrent results, per-call traces, and mandatory Agent finalist review before recommendation | done, tested, flagged | `rank_affiliate_products`, guide 1.5.0 | `tests/test_rank_playbook.py`, `evals/rank-playbook.py`, `evals/LUNA_TOOL_SELECTION_2026-10-24.md` |
 | P0-9 | Full-page Dashboard shows cited Agent research, deterministic Shopee results, comparison and evidence; the Side Panel tracks bounded stages and a safe line-by-line developer log | done, tested | `extension/dashboard.*`, `extension/sidepanel.*`, `present_research_report`, `playbook_event`, `developer_event` | `tests/dashboard-evals.cjs`, `tests/live-telemetry.cjs`, `tests/sidepanel-evals.cjs`, `tests/test_guides.py` |
 
 ## P1

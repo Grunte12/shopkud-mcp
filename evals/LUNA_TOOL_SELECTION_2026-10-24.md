@@ -169,3 +169,47 @@ The same `offer_end_date` is projected into `rank_affiliate_products`. A live
 one-page query for `Philips NA331 Air Fryer` returned the target as the winner,
 with 10,000 visible sales, Mall evidence, zero detail errors and trace
 `ce10a14e55fe564e` in 10.49 seconds. The run was read-only.
+
+## Product-intent and Agent-review live eval
+
+Date: 2026-10-25
+
+Runtime: ShopKud 0.11.4, guide 1.5.0, guided 19-tool catalog
+
+Evaluator: isolated Luna 6 agent through the live owner profile, read-only
+
+This eval was added after a primary Anker power-bank request ranked protective
+cases and films. The repaired contract has two layers: code rejects obvious
+query, hard-identity and product/accessory mismatches; the Agent then reviews
+the remaining finalists before recommending anything. The metric leader is
+explicitly marked `metric_leader_pending_agent_review`.
+
+| Held-out intent | Deterministic result | Agent review | Rank latency |
+| --- | --- | --- | ---: |
+| EN Anker 25000mAh 165W primary product | No finalist in one partial page; no false acceptance | No verified target; do not broaden silently | 4.747s |
+| TH Anker 25000mAh 165W primary product | 13 accessory rows rejected; two finalists | Metric leader was bundle/variant-ambiguous; second listing classified target with title/description-level evidence | 9.842s |
+| Anker A1695 accessory | Two long-query scans failed; shorter query produced no strict-default finalist | No accessory accepted without evidence | 18.030s / 2.373s / 5.200s |
+| Impossible `ZZ999MODEL` hard term | All 20 rows rejected; no detail read | Correct no-result; hard term preserved | 5.102s |
+| Logitech MX Master 3S primary product | No finalist in one partial page | No verified target; recall remains unknown | 4.860s |
+| iPhone 17 Pro Max positive control | One exact product-line finalist | Classified target; no storage/color claim made | 7.643s |
+
+Across the returned finalists, accessory false positives were **0**. The Agent
+overrode one unsafe implication from the metric order: the highest-ranked Anker
+listing exposed device-plus-charger options with no selected variant, so it was
+not promoted as the final recommendation. The impossible model term was never
+relaxed. No link, mission, post, purchase or other stateful action ran.
+
+The eval also found two boundaries:
+
+- Exact English marketplace wording and one Logitech query returned no match
+  in a deliberately bounded one-page scan. This is not evidence that the
+  market has no item; the response must preserve partial-coverage wording.
+- `target_model` is a compact model-code matcher (`A1695` works), not a general
+  product-name classifier. Guide 1.5.0 now tells the Agent to review phrase-like
+  product names from title/description/spec evidence instead.
+
+After the eval, failed ranking traces were extended to retain `error` and
+`outcome` alongside latency/browser operations, with a regression test for a
+failed search scan. Calling-model input/reasoning token usage remains
+unavailable; `response_tokens_estimate` is only UTF-8 response bytes divided by
+four.

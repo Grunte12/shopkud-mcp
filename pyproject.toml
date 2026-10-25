@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shopkud-mcp"
-version = "0.11.3"
+version = "0.11.4"
 description = "Agent-neutral MCP tools for an owner's open Shopee Affiliate Chrome page"
 readme = "README.md"
 license = "MIT"
@@ -17,7 +17,6 @@ shopkud-mcp = "shopkud_mcp.server:main"
 
 [tool.setuptools.packages.find]
 include = ["shopkud_mcp*"]
-namespaces = false
 
 [tool.setuptools.package-data]
 shopkud_mcp = ["workflows/affiliate.json", "skills/shopkud-affiliate/SKILL.md", "skills/shopkud-affiliate/references/workflow.md"]

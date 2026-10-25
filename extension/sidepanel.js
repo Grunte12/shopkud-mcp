@@ -45,11 +45,12 @@
   }
   function productReason(product,dashboard,index=0) {
     const goal=dashboard?.criteria?.ranking_goal;
-    if(goal==="commission_value")return index===0?`ค่าคอมต่อออเดอร์สูงสุดในชุดที่ตรวจจริง · ${baht(product.commission_thb_per_order)}`:`คอมต่อออเดอร์ ${baht(product.commission_thb_per_order)}`;
-    if(goal==="commission_rate")return index===0?`อัตราค่าคอมสูงสุดในชุดที่ตรวจจริง · ${number(product.commission_pct).toLocaleString("th-TH")}%`:`อัตราค่าคอม ${number(product.commission_pct).toLocaleString("th-TH")}%`;
-    if(goal==="sales_volume")return index===0?`ยอดขายที่เห็นสูงสุดในชุดที่ตรวจจริง · ${compact(product.sold)}`:`ขายแล้ว ${compact(product.sold)}`;
-    if(goal==="balanced")return index===0?"สมดุลค่าคอมต่อออเดอร์กับหลักฐานยอดขายดีที่สุด":"คะแนนสมดุลค่าคอมและยอดขายรองลงมา";
-    return "ผ่านเกณฑ์ที่ Agent กำหนดและตรวจรายละเอียดแล้ว";
+    const review=" · รอ Agent ตรวจประเภทสินค้า รุ่น และตัวเลือก";
+    if(goal==="commission_value")return index===0?`ค่าคอมต่อออเดอร์สูงสุดในชุดที่ผ่านตัวกรอง · ${baht(product.commission_thb_per_order)}${review}`:`คอมต่อออเดอร์ ${baht(product.commission_thb_per_order)}`;
+    if(goal==="commission_rate")return index===0?`อัตราค่าคอมสูงสุดในชุดที่ผ่านตัวกรอง · ${number(product.commission_pct).toLocaleString("th-TH")}%${review}`:`อัตราค่าคอม ${number(product.commission_pct).toLocaleString("th-TH")}%`;
+    if(goal==="sales_volume")return index===0?`ยอดขายที่เห็นสูงสุดในชุดที่ผ่านตัวกรอง · ${compact(product.sold)}${review}`:`ขายแล้ว ${compact(product.sold)}`;
+    if(goal==="balanced")return index===0?`คะแนนสมดุลค่าคอมกับยอดขายสูงสุด${review}`:"คะแนนสมดุลค่าคอมและยอดขายรองลงมา";
+    return `ผ่านตัวกรองและตรวจค่าคอมแล้ว${review}`;
   }
   function priceLabel(product) {
     if(Number.isFinite(product.price_min_thb) && Number.isFinite(product.price_max_thb) && product.price_max_thb!==product.price_min_thb)return `${baht(product.price_min_thb)}–${baht(product.price_max_thb)}`;
@@ -120,7 +121,7 @@
     for(const [label,warning] of chipValues){const span=document.createElement("span"),dot=document.createElement("i");span.classList.toggle("is-warning",Boolean(warning));span.append(dot,label);chips.append(span);}
     const winner=products.find(item=>item.product_id===currentDashboard.winner_product_id)||products[0];
     setImage($("#winner-image"),$("#winner-fallback"),winner.image_url,winner.name);
-    $("#winner-trust").textContent=winner.mall?"✓ Shopee Mall":"ตรวจรายละเอียดแล้ว"; $("#winner-channel").textContent=channelLabels[winner.channel]||"Affiliate";
+    $("#winner-trust").textContent=winner.mall?"✓ Shopee Mall":"อ่านรายละเอียดแล้ว"; $("#winner-channel").textContent=channelLabels[winner.channel]||"Affiliate";
     $("#winner-name").textContent=winner.name; $("#winner-reason").textContent=productReason(winner,currentDashboard,0);
     $("#winner-price").textContent=priceLabel(winner); $("#winner-commission").textContent=baht(winner.commission_thb_per_order); $("#winner-sold").textContent=compact(winner.sold);
     $("#winner-open").href=winner.offer_url;
