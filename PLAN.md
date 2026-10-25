@@ -1,7 +1,7 @@
 # ShopKud: close the product-selection E2E gaps
 
-Date: 2026-10-25. Status: implemented and verified for the bounded scenarios
-below. Source, installed extension runtime and local worker are on 0.11.6.
+Date: 2026-10-26. Status: 0.11.8 reliability repair and concurrent live swarm
+acceptance passed. Runtime and source are both on 0.11.8; release packaging is complete.
 
 ## Implementation result
 
@@ -14,7 +14,7 @@ below. Source, installed extension runtime and local worker are on 0.11.6.
 - A cleanup-timer race that closed the next public-product tab was reproduced and
   fixed. If a tool tab becomes active, it is preserved as user-claimed and a new
   inactive automation tab is used.
-- Guide 1.5.4 teaches cheap agents not to use generic category words or flexible
+- Guide 1.5.6 teaches cheap agents not to use generic category words or flexible
   minimum/range specs as literal title gates.
 - Final evidence: 244 Python tests, all 27 JavaScript/browser suites and the
   44-stage MCP-to-extension suite passed. Two public-product reads in sequence

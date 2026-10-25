@@ -1,4 +1,8 @@
-# วิธีทำงาน ShopKud Affiliate — 1.5.4
+# วิธีทำงาน ShopKud Affiliate — 1.5.6
+
+`rank_affiliate_products.query` ต้องเป็นคำค้นหน้าร้านสั้น ๆ ไม่ใช่โจทย์ผู้ใช้ทั้งย่อหน้า
+ตัวอย่าง: `power bank 25000mAh` เก็บเหตุผล เงื่อนไขไม่เอาสินค้าใด เกณฑ์ร้าน และ
+เป้าหมายการจัดอันดับไว้ใน Dashboard report กับ argument เฉพาะของเครื่องมือ
 
 ## ขอบเขตของรุ่นนี้
 
@@ -22,7 +26,7 @@ social research หรือแหล่งข้อมูลที่ผู้�
 4. ประเมิน purchase intent จากพฤติกรรม/คำถามที่มีหลักฐาน ไม่ใช้ยอดวิวเท่ากับความต้องการซื้อ
 5. การบอกว่าร้านยิงแอด บูสต์ หรือทำการตลาดดี ต้องมีหลักฐานภายนอกเฉพาะ ห้ามเดาจากค่าคอม ยอดขาย หรือป้าย Mall
 6. เริ่มด้วย `present_research_report(status="working",…)` แล้วเก็บ `report_id`; ส่ง ID นี้เข้า `rank_affiliate_products(report_id=…)` เพื่อผูก brief กับผลสินค้าแม้ข้อความค้นต่างกัน
-7. ตรวจ finalist ด้วย `get_product_detail(product_url=…,open_if_missing=true,view="brief")` เสมอ; ถ้าลืม `open_if_missing=true` แท็บที่เครื่องมือปิดไปแล้วจะคืน `product_page_not_open`
+7. Review หลักฐานที่ `rank_affiliate_products` อ่านจากหน้า Affiliate ไว้แล้ว (`detail_verified`, `detail_missing_fields`, `variant_info`) ไม่เปิด detail ซ้ำเพื่ออ่านค่าเดิม เรียก `get_product_detail(product_url=…,open_if_missing=true,view="brief")` เพิ่มเฉพาะเมื่อโจทย์ต้องยืนยันรุ่น/ตัวเลือกจากหน้าสินค้าสาธารณะและผล rank ยังขาดหลักฐานนั้น
 8. ปิดงานด้วย `present_research_report(report_id=…,trace_id=trace.trace_id,status="completed",product_decisions=…)`; เมื่อ completed ต้องมี signal พร้อม rationale และ citation อย่างน้อยหนึ่งรายการ
 9. แสดงเฉพาะ research summary, score ที่ Agent อธิบายได้, rationale และ citation ไม่เปิดเผย private chain-of-thought
 
@@ -123,7 +127,7 @@ ID ที่รับได้เป็น lowercase hex 16 ตัวเท่�
 
 ผลระบุจำนวนหน้าที่สแกน ผู้สมัครที่ตรวจรายละเอียด และข้อจำกัดเสมอ จึงไม่ใช่การยืนยันว่าครบทั้งตลาด ป้าย Mall กับยอดขายเป็นเพียงหลักฐานที่หน้าแสดง ไม่ใช่คะแนนรวมร้าน และเครื่องมือไม่เดางบโฆษณาหรือ seller rating
 
-`winner_status="metric_leader_pending_agent_review"` หมายถึงอันดับหนึ่งตามสูตรเท่านั้น ก่อนแนะนำผู้ใช้ Agent ต้องอ่าน finalist แล้วจำแนกแต่ละรายการเป็น `target`, `accessory`, `bundle_or_variant_ambiguous` หรือ `unrelated` ตรวจสินค้าหลัก/รุ่น/สเปก/ตัวเลือก/คุณค่า/ร้านและหลักฐาน หากมี public product URL ให้ใช้ `get_product_detail(product_url=…,view="brief")` เพื่อดู model/spec/variant evidence ใส่ `target_model` เฉพาะรหัสรุ่นสั้น เช่น `A1695`; ชื่อรุ่นแบบวลีให้ตรวจจาก title/description/spec evidence โดย Agent รายการที่กำกวมหรือขัดกันไม่ผ่าน ถ้าไม่มีรายการผ่านให้คืน “ยังไม่มี verified target” และอธิบายสิ่งที่ขาด ห้ามเลือกจากค่าคอมหรือยอดขายแทน
+`winner_status="metric_leader_pending_agent_review"` หมายถึงอันดับหนึ่งตามสูตรเท่านั้น ก่อนแนะนำผู้ใช้ Agent ต้องอ่าน finalist แล้วจำแนกแต่ละรายการเป็น `target`, `accessory`, `bundle_or_variant_ambiguous` หรือ `unrelated` ผล rank ที่มี `detail_verified=true` ผ่านการอ่านหน้ารายละเอียด Affiliate แล้ว ให้ตรวจ `detail_missing_fields`, `variant_info`, รุ่น/สเปก/ตัวเลือก/คุณค่า/ร้านและหลักฐานจากผลนั้นโดยไม่เปิดแท็บซ้ำ เรียก `get_product_detail(product_url=…,view="brief")` เพิ่มเฉพาะเมื่อผู้ใช้ต้องการ model/spec/variant evidence จากหน้าสินค้าสาธารณะที่ยังขาด ใส่ `target_model` เฉพาะรหัสรุ่นสั้น เช่น `A1695`; รายการที่กำกวมหรือขัดกันไม่ผ่าน ถ้าไม่มีรายการผ่านให้คืน “ยังไม่มี verified target” และอธิบายสิ่งที่ขาด ห้ามเลือกจากค่าคอมหรือยอดขายแทน
 
 ใช้ `scan_products(query=…,max_pages=…,max_products=…)` และอ่านแคชด้วย `get_scan_products(view="brief")` เฉพาะงานค้นแบบกำหนดเองที่ playbook ยังครอบคลุม การกรอง `query` ในเครื่องมืออ่านแคชไม่ใช่การค้น Shopee ใหม่ ชื่อรายการอาจไม่ใส่รหัสรุ่น จึงควรตรวจรายละเอียดเฉพาะผู้เข้ารอบ ไม่ค้นซ้ำแบบไร้ขอบเขต
 
@@ -161,7 +165,7 @@ ID ที่รับได้เป็น lowercase hex 16 ตัวเท่�
 
 ## 6. รับและบันทึกลิงก์ทางการครั้งเดียวเมื่อสั่ง
 
-ตรวจ `get_product_history(product_id=…,limit=…)` ก่อน ใช้ลิงก์เดิมที่ถูกสินค้าหากยังใช้ได้ เว้นแต่เจ้าของสั่งสร้างใหม่ ประสานกับผู้ทำงานอื่นเพื่อไม่กดซ้ำ ประวัตินี้ไม่กู้ลิงก์ที่ไม่เคยบันทึกและไม่ใช่ประวัติ Chrome
+ตรวจ `get_product_history(product_id=…,limit=…)` ก่อน ใช้ลิงก์เดิมที่ถูกสินค้าหากยังใช้ได้ เว้นแต่เจ้าของสั่งสร้างใหม่ ประสานกับผู้ทำงานอื่นเพื่อไม่กดซ้ำ ประวัตินี้ไม่กู้ลิงก์ที่ไม่เคยบันทึกและไม่ใช่ประวัติ Chrome หากคืน `workspace_disabled` ให้บอกเจ้าของเปิด embedded local workspace ด้วย `shopkud-mcp enable-workspace`; ไม่ต้องติดตั้งฐานข้อมูลหรือสลับไป full profile
 
 เมื่อเจ้าของสั่งรับลิงก์ ใช้ `get_product_detail(offer_url=…,open_if_missing=true,open_link_dialog=true,save=true,view="brief")` ครั้งเดียว โดยไม่ใส่ `page_id` เครื่องมือเลือก/เปิดแท็บเบื้องหลังที่เป็นของเครื่องมือเอง รอ Chrome โหลดครบ ลงทะเบียนและยืนยันหน้าตรง จากนั้นรอข้อมูลสินค้าแล้วเปิดกล่องลิงก์ทางการ ไม่ต้องให้เจ้าของกดแท็บ ไม่กดคัดลอก ไม่เปลี่ยนสี/SKU/SubID
 

@@ -70,7 +70,9 @@ function harness(options={}){
   }
   async function runTimers(delay){const pending=[];for(const [id,timer] of [...timers])if(timer.delay===delay){timers.delete(id);pending.push(Promise.resolve(timer.fn()));}await new Promise(resolve=>setImmediate(resolve));await Promise.all(pending);}
   async function command(operation,args={}){return resultFor(send(operation,args),operation);}
-  return {ports,tabs,creates,updates,removals,executions,permissionChecks,permissionMutations,command,send,resultFor,runTimers,options};
+  function completeTab(id){const tab=tabs.get(id);if(!tab)return;tab.status="complete";tabsUpdated.fire(id,{status:"complete"},tab);}
+  const hasTimer=delay=>[...timers.values()].some(timer=>timer.delay===delay);
+  return {ports,tabs,creates,updates,removals,executions,permissionChecks,permissionMutations,command,send,resultFor,runTimers,completeTab,hasTimer,options};
 }
 
 async function main(){
@@ -172,14 +174,31 @@ async function main(){
   assert.equal(claimedResult.ok,true,"an active tool tab is preserved as user-claimed while automation continues in a new tab");
   assert.equal(claimed.creates.length,2);assert.equal(claimed.updates.length,0);assert.equal(claimed.tabs.get(500).url,PRODUCT);
 
+  const settles=harness();
+  await settles.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
+  await new Promise(resolve=>setImmediate(resolve));
+  settles.tabs.get(500).status="loading";
+  const settlingId=settles.send("read_listing",{product_url:PRODUCT,open_if_missing:true});
+  for(let i=0;i<20 && !settles.hasTimer(30000);i++)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(settles.hasTimer(30000),true,"the second listing read waits for the tracked tab");
+  settles.completeTab(500);
+  const settledResult=await settles.resultFor(settlingId);
+  assert.equal(settledResult.ok,true,`a tracked inactive listing may finish loading before the next read: ${JSON.stringify(settledResult)}`);
+
   for(const tab of [
     {id:41,url:PRODUCT,active:false,status:"loading"},
     {id:42,url:OTHER,active:false,status:"complete"},
   ]){
     const blocked=harness();
     await blocked.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
+    await new Promise(resolve=>setImmediate(resolve));
     blocked.tabs.set(500,{...tab,id:500});
-    const result=await blocked.command("read_listing",{product_url:OTHER,open_if_missing:true});
+    const pending=blocked.send("read_listing",{product_url:OTHER,open_if_missing:true});
+    if(tab.status==="loading"){
+      for(let i=0;i<20 && !blocked.hasTimer(30000);i++)await new Promise(resolve=>setImmediate(resolve));
+      await blocked.runTimers(30000);
+    }
+    const result=await blocked.resultFor(pending);
     assert.ok(["product_page_not_open","listing_tab_not_idle","listing_context_changed"].includes(result.error),`${tab.status==="loading"?"loading":"user-changed"} tab is not reusable`);
     assert.equal(blocked.updates.length,0);assert.equal(blocked.creates.length,1);
   }

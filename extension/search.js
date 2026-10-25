@@ -2,6 +2,7 @@
   "use strict";
   const selector='input.ant-input[type="text"][placeholder="ค้นหาสินค้าช้อปปี้ทั้งหมด"]';
   const visible=e=>Boolean(e.getClientRects().length) && !e.disabled;
+  const controls=()=>[...document.querySelectorAll(selector)].filter(visible);
   const fail=(error,outcome="not_applied")=>({ok:false,error,outcome,retry_automatically:false});
   // The selector is the observed Thai affiliate-page contract, not a guessed API.
   async function run({args,records,selectionStates,active,cancelled,scan}) {
@@ -18,11 +19,11 @@
       [...document.querySelectorAll('iframe[src*="captcha"],.captcha,#captcha,[data-testid="captcha"]')].some(visible)?"challenge_detected":null;
     const signature=()=>JSON.stringify(records().map(r=>[r.product_id,r.name]));
     try {
-      const deadline=performance.now()+15000;
+      const deadline=performance.now()+30000;
       let input;
       while(performance.now()<deadline) {
         const stop=stopped();if(stop)return fail(stop);
-        const matches=[...document.querySelectorAll(selector)].filter(visible);
+        const matches=controls();
         if(matches.length>1)return fail("search_controls_ambiguous");
         if(matches.length===1){input=matches[0];break;}
         await new Promise(resolve=>setTimeout(resolve,100));
@@ -52,7 +53,7 @@
       // so a fresh live search still has an observable result transition.
       if(input.value.trim()===query && records().length){
         setValue("");submit();
-        const resetDeadline=performance.now()+15000;
+        const resetDeadline=performance.now()+30000;
         let resetConfirmed=false;
         while(performance.now()<resetDeadline){
           const stop=stopped();if(stop)return fail(stop,"unconfirmed");
@@ -60,14 +61,21 @@
           if(reset!==before){before=reset;resetConfirmed=true;break;}
           await new Promise(resolve=>setTimeout(resolve,100));
         }
-        if(input.value!=="" || !resetConfirmed)return fail("search_reset_unconfirmed","unconfirmed");
+        const matches=controls();
+        if(matches.length!==1 || matches[0].value!=="" || !resetConfirmed)return fail("search_reset_unconfirmed","unconfirmed");
+        input=matches[0];
       }
       setValue(query);submit();
-      const resultDeadline=performance.now()+15000;
+      const resultDeadline=performance.now()+30000;
       let stable=0,last=null;
       while(performance.now()<resultDeadline) {
         const stop=stopped();if(stop)return fail(stop,"unconfirmed");
-        if(!input.isConnected || input.value!==query)return fail("search_context_changed","unconfirmed");
+        const matches=controls();
+        if(matches.length>1)return fail("search_controls_ambiguous","unconfirmed");
+        if(matches.length===1){
+          input=matches[0];
+          if(input.value.trim() && input.value.trim()!==query)return fail("search_context_changed","unconfirmed");
+        }
         const after=signature();
         if(records().length && after!==before){stable=after===last?stable+1:1;last=after;}else stable=0;
         if(stable>=3) {

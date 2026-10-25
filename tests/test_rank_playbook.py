@@ -100,6 +100,10 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["ok"])
         self.assertEqual([row["product_id"] for row in result["results"]], ["1", "2"])
         self.assertEqual(result["winner"]["commission_thb_per_order"], 2904.5)
+        self.assertTrue(result["winner"]["detail_verified"])
+        self.assertEqual(result["winner"]["detail_source"], "affiliate_offer_detail")
+        self.assertEqual(result["winner"]["detail_missing_fields"], [])
+        self.assertEqual(result["winner"]["variant_info"], {})
         self.assertFalse(result["candidate_verification_partial"])
         self.assertEqual(result["exclusions"], {
             "not_mall": 1, "mall_excluded": 0, "sold_below_minimum": 1, "price_above_maximum": 0,

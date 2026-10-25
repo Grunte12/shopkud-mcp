@@ -390,6 +390,19 @@ async function cleanupAutomationTabs() {
 }
 const listingURL = value => typeof value==="string" && /^https:\/\/shopee\.co\.th\/product\/[1-9][0-9]{0,19}\/[1-9][0-9]{0,19}$/u.test(value) && !/[\r\n]/u.test(value);
 const listingFailure = error => ({ok:false,error,outcome:"not_completed",retry_automatically:false});
+async function waitForListingTab(tabId,url,task,timeoutMs=30000) {
+  const ready=tab=>Boolean(tab && tab.url===url && tab.active===false && tab.status==="complete");
+  const initial=await tabInfo(tabId);if(ready(initial))return true;
+  if(!initial || initial.url!==url || initial.active!==false || task.cancelled)return false;
+  return await new Promise(resolve=>{
+    let done=false;
+    const finish=value=>{if(done)return;done=true;clearTimeout(timer);chrome.tabs.onUpdated.removeListener(update);if(task.finishWait===cancel)task.finishWait=null;resolve(value);};
+    const check=async()=>{if(task.cancelled)return finish(false);finish(ready(await tabInfo(tabId)));};
+    const update=(id,change)=>{if(id===tabId && change.status==="complete")void check();};
+    const cancel=()=>finish(false),timer=setTimeout(cancel,timeoutMs);
+    task.finishWait=cancel;chrome.tabs.onUpdated.addListener(update);
+  });
+}
 async function listingPermissionState() {
   const manifest=chrome.runtime.getManifest();
   const [scripting,host,combined]=await Promise.all([
@@ -416,7 +429,7 @@ async function readListing(args,task) {
   if(task.cancelled)return listingFailure("cancelled");
   if(listingEntry && (!current || current.url!==listingEntry.url))return listingFailure("listing_context_changed");
   if(current?.active===true){claimedEntries.add(current.id);listingEntry=null;current=null;}
-  if(current && (current.active!==false || current.status!=="complete"))return listingFailure("listing_tab_not_idle");
+  if(current && (current.active!==false || !await waitForListingTab(current.id,listingEntry.url,task)))return listingFailure("listing_tab_not_idle");
   const navigating=!listingEntry || listingEntry.url!==url;
   if(navigating && !args.open_if_missing)return listingFailure("product_page_not_open");
   if(!await chrome.permissions.contains(listingAccess))return await listingPermissionFailure();
@@ -433,15 +446,7 @@ async function readListing(args,task) {
       await chrome.tabs.update(listingEntry.tab,{url,active:false});
     }
     if(task.cancelled)return listingFailure("cancelled");
-    const loaded=await new Promise(resolve=>{
-      let done=false;
-      const finish=value=>{if(done)return;done=true;clearTimeout(timer);chrome.tabs.onUpdated.removeListener(update);task.finishWait=null;resolve(value);};
-      const update=(id,change)=>{if(id===listingEntry?.tab && change.status==="complete")finish(true);};
-      const timer=setTimeout(()=>finish(false),15000);
-      task.finishWait=()=>finish(false);chrome.tabs.onUpdated.addListener(update);
-      tabInfo(listingEntry.tab).then(tab=>{if(tab?.status==="complete")finish(true);});
-      if(task.cancelled)finish(false);
-    });
+    const loaded=await waitForListingTab(listingEntry.tab,url,task);
     if(task.cancelled)return listingFailure("cancelled");
     if(!loaded)return {...listingFailure("listing_unconfirmed"),outcome:"unconfirmed"};
   }

@@ -133,6 +133,29 @@ async function main() {
     results.push("delayed search input availability");
 
     await reset(page);
+    const remounted = await page.evaluate(async query => {
+      const input = document.querySelector("input"), rows = document.querySelector("#rows");
+      let scans = 0;
+      input.addEventListener("keydown", event => {
+        if(event.key!=="Enter")return;
+        setTimeout(() => {
+          const replacement=input.cloneNode();
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(replacement,query);
+          input.replaceWith(replacement);
+          rows.innerHTML='<div class="product-row" data-id="remounted">ผลหลัง Shopee สร้างช่องค้นใหม่</div>';
+        },100);
+      });
+      const result=await ShopKudSearch.run({args:{query,start_page:1,max_pages:1,max_products:5},
+        records:()=>[...rows.children].map(row=>({product_id:row.dataset.id,name:row.textContent})),
+        selectionStates:()=>[],active:()=>true,cancelled:()=>false,
+        scan:async()=>{scans++;return {ok:true};}});
+      return {result,scans};
+    },QUERY);
+    assert.equal(remounted.result.ok,true);
+    assert.equal(remounted.scans,1);
+    results.push("Shopee search input remount keeps the same read-only search alive");
+
+    await reset(page);
     const selected = await page.evaluate(async query => {
       const input = document.querySelector("input"); let inputs = 0, scans = 0;
       input.addEventListener("input", () => inputs++);

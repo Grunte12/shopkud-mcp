@@ -231,7 +231,7 @@
     variant_info:variant,spec_evidence:specEvidence,model_evidence:modelEvidence,seller_info,product_metrics,shipping_info,gallery,gallery_complete:false,
     metadata_source:product?"exact_product_json_ld":null,
     layout_evidence:{main_found:Boolean(main),matched_product_metadata:products.length,
-      reader_revision:"0.11.6-seller-variants",seller_panel_found:Boolean(sellerPanel),product_summary_found:Boolean(summaryPanel),
+      reader_revision:"0.11.8-seller-variants",seller_panel_found:Boolean(sellerPanel),product_summary_found:Boolean(summaryPanel),
       seller_fields:sellerPanel?[...sellerPanel.querySelectorAll('a,h2,h3,span,div')].filter(node=>visible(node) && (node.children.length===0 || [...node.childNodes].some(child=>child.nodeType===3 && text(child.textContent)))).slice(0,35).map(node=>({tag:node.tagName,class:text(node.className,100),text:text([...node.childNodes].filter(child=>child.nodeType===3).map(child=>child.textContent).join(' '),120),href:node.tagName==='A'?text(node.getAttribute('href'),200):null})):[],
       blocks,identity_signals:identitySignals.map(value=>text(value,2048)),image_candidates:imageCandidates,model_label_contexts:modelContexts,
       headings:main?[...main.querySelectorAll("h1,h2,h3")].slice(0,12).filter(visible).map(node=>text(node.textContent,80)):[],

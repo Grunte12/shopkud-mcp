@@ -115,6 +115,8 @@ class PaginationToolsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(mcp._tool_manager._tools),GUIDED_TOOLS)
         self.assertEqual(len(mcp._tool_manager._tools),19)
         self.assertIn("rank_affiliate_products",mcp._tool_manager._tools)
+        self.assertIn("get_product_history",mcp._tool_manager._tools)
+        self.assertNotIn("find_link",mcp._tool_manager._tools)
         self.assertNotIn("scan_products",mcp._tool_manager._tools)
         self.assertNotIn("go_to_page",mcp._tool_manager._tools)
         self.assertIn("guided profile intentionally hides",mcp.instructions)

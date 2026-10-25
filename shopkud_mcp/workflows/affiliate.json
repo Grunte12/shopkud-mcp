@@ -1,6 +1,6 @@
 {
   "id": "shopkud-affiliate",
-  "version": "1.5.4",
+  "version": "1.5.6",
   "skill": "skills/shopkud-affiliate/SKILL.md",
   "guide": "skills/shopkud-affiliate/references/workflow.md",
   "purpose": "ตรวจรุ่นและร้าน เทียบค่าคอมตามช่องทาง เตรียมภาพอ้างอิง และเก็บลิงก์ทางการครั้งเดียวเมื่อได้รับคำสั่ง",
@@ -22,7 +22,7 @@
       "groups": {
         "system": ["get_workflow_guide", "list_pages", "reload_extension", "selector_health"],
         "research": ["present_research_report", "rank_affiliate_products", "get_product_detail", "search_products_for_content", "get_product_media"],
-        "links": ["create_link", "verify_link", "batch_create_links", "find_link"],
+        "links": ["create_link", "verify_link", "batch_create_links", "get_product_history"],
         "performance": ["import_report_csv", "sales_by", "get_conversions", "get_earnings_summary"],
         "missions": ["list_missions", "enroll_mission"]
       }

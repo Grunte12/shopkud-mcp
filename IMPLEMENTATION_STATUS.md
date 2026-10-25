@@ -1,6 +1,6 @@
 # ShopKud P0 / P1 / P2 checklist
 
-Version 0.11.6. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
+Version 0.11.8. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
 
 The standalone runtime, cache/freshness behavior, trust boundaries, and
 agent-installed macOS topology are documented in
@@ -25,7 +25,7 @@ Status words: **done** means the behavior exists in code, **tested** means an of
 | P0-5 | Read a short link when the link box is hidden inside an open Get Link dialog | done, tested, flagged | `extension/linkcapture.js`, `detail.js` | `tests/test_linkcapture.cjs`, `tests/hidden-link-evals.cjs` |
 | P0-6 | Attribute imported conversion aggregates by SubID | done, tested, flagged | `sales_by`, `get_conversions` | `tests/test_sales_by.py`, `tests/test_fullspec.py` |
 | P0-7 | Offer lookup with social vs video commission and Extra Com | done, tested, flagged | `get_offer`, `project_offer` | `tests/test_fullspec.py`, `tests/detail-evals.cjs` |
-| P0-8 | Intent-safe ranked discovery with one sequential browser lane shared by rank and exact detail, hard identity/product-type gates, shared concurrent results, per-call traces, and mandatory Agent finalist review before recommendation | done, tested, flagged | `rank_affiliate_products`, `get_product_detail`, guide 1.5.4 | `tests/test_rank_playbook.py`, `evals/rank-playbook.py`, `evals/LUNA_TOOL_SELECTION_2026-10-24.md`, `docs/LIVE_ACCEPTANCE_0.11.6_2026-10-25.md` |
+| P0-8 | Intent-safe ranked discovery with one sequential browser lane shared by rank and exact detail, hard identity/product-type gates, shared concurrent results, per-call traces, and mandatory Agent finalist review before recommendation | done, tested, flagged | `rank_affiliate_products`, `get_product_detail`, guide 1.5.6 | `tests/test_rank_playbook.py`, `evals/rank-playbook.py`, `evals/LUNA_TOOL_SELECTION_2026-10-24.md`, `docs/LIVE_ACCEPTANCE_0.11.6_2026-10-25.md` |
 | P0-9 | One reusable full-page Dashboard binds brief, run and saved project by exact IDs; it shows cited Agent research, per-product decisions, deterministic Shopee results, comparison and evidence. Agents update data rather than edit UI code. The Side Panel tracks bounded stages and a safe line-by-line developer log. | done, tested | `extension/dashboard.*`, `extension/sidepanel.*`, `present_research_report`, `playbook_event`, `developer_event` | `tests/test_research_report.py`, `tests/dashboard-evals.cjs`, `tests/live-telemetry.cjs`, `tests/sidepanel-evals.cjs`, `tests/test_guides.py` |
 
 ## P1

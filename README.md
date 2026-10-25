@@ -12,7 +12,9 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.11.6** - Exact report/run binding, visible Agent product decisions, and serialized browser reads for concurrent agents. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+**Version 0.11.8** - Resilient live search, single-pass finalist evidence, recoverable local product history, and clearer storefront-query guidance. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+
+Latest live evidence: [ShopKud 0.11.8 acceptance](docs/LIVE_ACCEPTANCE_0.11.8_2026-10-26.md). Launch/demo direction: [Launch & Demo Video Brief](docs/LAUNCH_DEMO_BRIEF.md).
 
 Installing for another user or coding agent: read [AGENTS.md](AGENTS.md) and
 [docs/INSTALL_FOR_AGENTS.md](docs/INSTALL_FOR_AGENTS.md). ShopKud is standalone;
@@ -20,9 +22,10 @@ no MCP gateway, Docker daemon, or external database is required.
 
 Architecture and trust boundaries: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Cheap-model tool-selection evidence: [evals/LUNA_TOOL_SELECTION_2026-10-24.md](evals/LUNA_TOOL_SELECTION_2026-10-24.md).
+Launch/demo direction: [docs/LAUNCH_DEMO_BRIEF.md](docs/LAUNCH_DEMO_BRIEF.md).
 
-This is the public **0.11.6** release. The Python package and extension both
-declare **0.11.6**. Synthetic offline tests do not certify the
+This is the public **0.11.8** release. The Python package and extension both
+declare **0.11.8**. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
 ## Current capabilities
@@ -88,6 +91,17 @@ shopkud-mcp set-tool-profile --config /absolute/private/shopkud-state/config.jso
 
 Restart only ShopKud after changing profiles. The connected MCP client can then
 rediscover the selected catalog.
+
+### What's New in 0.11.8
+
+- Live search survives Shopee replacing its search input after submit while
+  trusted user input, ambiguous controls, route changes and challenges still stop safely.
+- Ranked finalists now disclose the Affiliate detail evidence already read by
+  the deterministic workflow; Agents review it instead of reopening the same page.
+- The 19-tool guided profile exposes `get_product_history` so returning users
+  can recover a saved product/link without switching to the 58-tool debug profile.
+- Guide 1.5.6 separates mandatory Agent review from optional public-product
+  model/variant inspection and explains the embedded workspace opt-in.
 
 ### What's New in 0.11.6
 

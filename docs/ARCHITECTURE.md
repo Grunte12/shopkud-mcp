@@ -131,7 +131,7 @@ New installations expose 19 guided tools in six groups:
 | Links | `create_link` | Create one explicitly authorized affiliate link with SubIDs |
 | Links | `verify_link` | Verify saved ownership/target evidence without opening the tracking link |
 | Links | `batch_create_links` | Run a sequential, checkpointed authorized link batch |
-| Links | `find_link` | Find an existing registry link before creating another |
+| Links | `get_product_history` | Recover a previously saved product/link before creating another |
 | Performance | `import_report_csv` | Preview then digest-bind an owner-supplied aggregate report import |
 | Performance | `sales_by` | Aggregate imported performance by a supported dimension |
 | Performance | `get_conversions` | Read mapped and unmapped aggregate conversion evidence separately |

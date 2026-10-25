@@ -1,6 +1,6 @@
 # ShopKud P0–P2 report
 
-Version 0.11.6. Public branch `main`.
+Version 0.11.8. Public branch `main`.
 
 The service stays extension-only. It does not sign Affiliate Open API requests, follow `s.shopee.co.th` redirects, or store buyer or order identifiers. Remote MCP remains loopback plus a bearer token.
 
@@ -27,7 +27,7 @@ including the new Dashboard interaction/safety matrix and tab-lifecycle tests.
 Product discovery now has two explicit decision layers. Deterministic code
 rejects obvious query, hard-identity and product/accessory mismatches before
 ranking. The returned winner remains a metric leader pending Agent review; the
-bundled 1.5.4 skill/playbook requires the Agent to inspect product type, exact
+bundled 1.5.6 skill/playbook requires the Agent to inspect product type, exact
 model/variant, value, store evidence and evidence sufficiency before making a
 recommendation. The Dashboard and Side Panel preserve that distinction.
 
