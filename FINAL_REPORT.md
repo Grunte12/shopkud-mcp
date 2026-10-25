@@ -19,7 +19,7 @@ The requirement-by-requirement checklist, test commands, and live-UI assumptions
 
 ## Tests
 
-`python3 -m unittest discover -s tests -p 'test_*.py'` — 227 tests, passing.
+`python3 -m unittest discover -s tests -p 'test_*.py'` — 228 tests, passing.
 
 This release also passed 23 directly executed Node/DOM/Playwright suites,
 including the new Dashboard interaction/safety matrix and tab-lifecycle tests.

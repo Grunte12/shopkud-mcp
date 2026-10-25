@@ -55,7 +55,7 @@ Matched pattern ids update the evidence notes in `SELECTOR_EVIDENCE.md`. A miss 
 This release candidate was exercised against the owner's current signed-in
 Chrome profile without creating a link or changing Shopee state.
 
-- Python: 227/227 tests passed.
+- Python: 228/228 tests passed.
 - Repeated-search browser contract: 11/11 tests passed, including a second
   identical live query after the page already showed that query.
 - Extension/DOM suites passed for search, detail, listing, pagination, reviews,

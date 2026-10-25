@@ -6,7 +6,7 @@ The standalone runtime, cache/freshness behavior, trust boundaries, and
 agent-installed macOS topology are documented in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-Release verification: 227 Python tests plus 23 directly executed
+Release verification: 228 Python tests plus 23 directly executed
 Node/DOM/Playwright suites pass. They cover the Dashboard, Side Panel,
 tab lifecycle and the existing synthetic Shopee readers/actions. Native
 Messaging/live-account acceptance remains operator-specific. Live Shopee markup
