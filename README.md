@@ -12,7 +12,7 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.10.6** - Extension-only P0, P1, and P2 affiliate tools. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+**Version 0.11.0** - Visual product-research Dashboard and guided ShopKud v1 workflow. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 Installing for another user or coding agent: read [AGENTS.md](AGENTS.md) and
 [docs/INSTALL_FOR_AGENTS.md](docs/INSTALL_FOR_AGENTS.md). ShopKud is standalone;
@@ -21,8 +21,8 @@ no MCP gateway, Docker daemon, or external database is required.
 Architecture and trust boundaries: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Cheap-model tool-selection evidence: [evals/LUNA_TOOL_SELECTION_2026-10-24.md](evals/LUNA_TOOL_SELECTION_2026-10-24.md).
 
-This is the public **0.10.6** release. The Python package and extension both
-declare **0.10.6**. Synthetic offline tests do not certify the
+This is the public **0.11.0** release. The Python package and extension both
+declare **0.11.0**. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
 ## Current capabilities
@@ -39,8 +39,12 @@ current Shopee UI, all product variants, or every account configuration.
   constraints; empty sets are explained and never relaxed automatically
 - ✅ Explicit freshness: live by default, or caller-approved 60-second/10-minute
   reuse; concurrent identical live calls share only the same in-flight observation
-- ✅ Live Chrome Side Panel for per-invocation stages, queue/cache state, latency,
-  success/effectiveness, browser operations and bounded response-token estimates
+- ✅ Full-page Chrome Dashboard for research progress, cited market signals,
+  winner, side-by-side product comparison and clickable evidence
+- ✅ Compact Chrome Side Panel for per-invocation stages, queue/cache state,
+  latency, success/effectiveness, browser operations and bounded response-token estimates
+- ✅ One `ShopKud` Chrome Tab Group for extension-owned work; finished inactive
+  tabs close automatically while tabs claimed by the user stay open
 - ✅ Developer Working Log streams Agent tool calls and code execution line by
   line with redacted arguments, source/function, operation, progress and the
   bounded result summary returned to the Agent
@@ -60,14 +64,16 @@ interacting with the logged-in Shopee Affiliate pages.
 ### Tool profiles
 
 New installs use the **guided** profile: 19 complete workflows and bounded
-actions grouped as system, research, links, performance, missions and content.
+actions grouped as system, research, links, performance and missions.
 For example, `rank_affiliate_products` accepts a product query and performs the
 bounded search, trust filtering, channel verification and ranking itself. The
 agent does not compose pagination, scan reads and detail calls by hand.
 
-The 57-tool **full** profile remains available for compatibility, diagnostics
-and custom workflows. Existing installations without a profile stay on `full`
-so upgrading never silently removes a tool.
+The 58-tool **full** profile remains available for compatibility, diagnostics
+and custom workflows. Media generation, upload and posting are intentionally
+outside ShopKud v1; they belong to the separate Shopee Affiliate Kit. Existing
+installations without a profile stay on `full` so upgrading never silently
+removes a tool.
 
 ```sh
 shopkud-mcp set-tool-profile --config /absolute/private/shopkud-state/config.json guided
@@ -77,6 +83,21 @@ shopkud-mcp set-tool-profile --config /absolute/private/shopkud-state/config.jso
 
 Restart only ShopKud after changing profiles. The connected MCP client can then
 rediscover the selected catalog.
+
+### What's New in 0.11.0
+
+- Clicking the extension opens a bright, desktop-only research Dashboard with
+  cited market signals, purchase intent, a dominant recommendation, horizontal
+  product comparison, saved candidates and direct evidence links.
+- The compact Side Panel remains available as a live tracker and developer log.
+- Agents can publish bounded external research summaries with HTTPS citations
+  through `present_research_report`; ShopKud keeps those judgments visibly
+  separate from deterministic Shopee observations.
+- Extension-owned work tabs share one `ShopKud` Chrome Tab Group and close after
+  successful work unless the user activates a tab for manual review.
+- The guided profile remains 19 tools: the new research presentation tool
+  replaces the out-of-scope video-draft tool. Media generation and posting stay
+  in the separate Shopee Affiliate Kit.
 
 ### What's New in 0.10.6
 

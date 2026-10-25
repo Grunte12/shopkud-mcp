@@ -65,7 +65,9 @@ This is a browser-extension installation and requires the owner's confirmation.
 2. Enable Developer mode.
 3. Choose **Load unpacked** and select this repository's `extension/` directory.
 4. Record the extension ID shown by Chrome. Do not infer or hardcode it.
-5. Open the ShopKud Side Panel and grant only the optional site permissions needed for the requested feature.
+5. Click the ShopKud toolbar icon once to open the full Dashboard. Use its
+   **Live tracker** control when the owner wants the compact Side Panel.
+6. Grant only the optional site permissions needed for the requested feature.
 
 Never create a separate Chrome profile unless the owner asks. Never export login state.
 
@@ -140,4 +142,6 @@ Restart only the ShopKud service afterward. This creates a private `workspace.sq
 - Result freshness is caller-selected: the default `live` does not reuse an earlier completed result, `recent` = 60 seconds, and `fast` = 10 minutes. Concurrent identical `live` calls that began before the first finished may share that one in-flight observation.
 - Cache responses disclose age and observation timestamps.
 - Research results are kept in memory for at most 64 distinct requests; entries older than 10 minutes are pruned on the next research call. Restarting the worker clears them. This does not change the default live-read policy.
-- Closing the Side Panel does not stop the worker; opening it shows live traces for the current extension session.
+- Closing the Dashboard or Side Panel does not stop the worker. Extension-owned
+  work tabs are grouped under `ShopKud` and close after successful work unless
+  the owner activates one for manual review.

@@ -1,16 +1,16 @@
 # ShopKud P0 / P1 / P2 checklist
 
-Version 0.10.6. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
+Version 0.11.0. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
 
 The standalone runtime, cache/freshness behavior, trust boundaries, and
 agent-installed macOS topology are documented in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-Release verification: 224 Python tests plus 24 executable Node/DOM/Playwright
-suites pass. The isolated E2E path covers authenticated MCP, Native Messaging,
-MV3, a synthetic Shopee page, one official Get Link click, local history save,
-owner-tab preservation and blocked non-fixture network. Live Shopee markup is
-still operator-verified where marked `flagged` below.
+Release verification: 227 Python tests plus 23 directly executed
+Node/DOM/Playwright suites pass. They cover the Dashboard, Side Panel,
+tab lifecycle and the existing synthetic Shopee readers/actions. Native
+Messaging/live-account acceptance remains operator-specific. Live Shopee markup
+is still operator-verified where marked `flagged` below.
 
 Status words: **done** means the behavior exists in code, **tested** means an offline fixture covers it, **flagged** means a live Shopee page or an owner choice still has to confirm an assumption.
 
@@ -26,7 +26,7 @@ Status words: **done** means the behavior exists in code, **tested** means an of
 | P0-6 | Attribute imported conversion aggregates by SubID | done, tested, flagged | `sales_by`, `get_conversions` | `tests/test_sales_by.py`, `tests/test_fullspec.py` |
 | P0-7 | Offer lookup with social vs video commission and Extra Com | done, tested, flagged | `get_offer`, `project_offer` | `tests/test_fullspec.py`, `tests/detail-evals.cjs` |
 | P0-8 | Deterministic ranked discovery with one sequential browser lane, shared concurrent results, and per-call timing/outcome/context traces | done, tested, flagged | `rank_affiliate_products` | `tests/test_rank_playbook.py`, `evals/rank-playbook.py` |
-| P0-9 | Live Side Panel shows bounded per-agent stages, a line-by-line developer Working Log, the exact bounded result summary returned to the Agent, and current-session eval metrics without page HTML, cookies, private reasoning, or agent token claims | done, tested | `extension/sidepanel.*`, `playbook_event`, `developer_event` | `tests/live-telemetry.cjs`, `tests/sidepanel-evals.cjs`, `tests/test_guides.py` |
+| P0-9 | Full-page Dashboard shows cited Agent research, deterministic Shopee results, comparison and evidence; the Side Panel tracks bounded stages and a safe line-by-line developer log | done, tested | `extension/dashboard.*`, `extension/sidepanel.*`, `present_research_report`, `playbook_event`, `developer_event` | `tests/dashboard-evals.cjs`, `tests/live-telemetry.cjs`, `tests/sidepanel-evals.cjs`, `tests/test_guides.py` |
 
 ## P1
 
@@ -45,7 +45,7 @@ Status words: **done** means the behavior exists in code, **tested** means an of
 | ID | Requirement | Status | Where | Tests |
 |---|---|---|---|---|
 | P2-1 | Video level, active days, qualifying clips, Tuesday refresh | done, tested, flagged | `get_video_level` | `tests/test_fullspec.py` |
-| P2-2 | Video draft plan only; never upload or publish | done, tested, flagged | `create_video_draft`, `extension/surfaces.js` | `tests/test_fullspec.py`, `tests/test_surfaces.cjs` |
+| P2-2 | Legacy full-profile video draft plan only; never upload or publish; excluded from the public 19-tool guided v1 | done, tested, flagged | `create_video_draft`, `extension/surfaces.js` | `tests/test_fullspec.py`, `tests/test_surfaces.cjs` |
 | P2-3 | Replace Shopee URLs in text with registry links | done, tested | `convert_links_in_text` | `tests/test_fullspec.py` |
 | P2-4 | Local daily posting cap per platform | done, tested | `posting_budget`, `set_posting_cap` | `tests/test_fullspec.py` |
 | P2-5 | JSON/CSV export with formula-neutralized cells | done, tested | `export` / `export_data` | `tests/test_fullspec.py` |

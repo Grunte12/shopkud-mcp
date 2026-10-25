@@ -1,10 +1,11 @@
 {
   "id": "shopkud-affiliate",
-  "version": "1.3.4",
+  "version": "1.4.0",
   "skill": "skills/shopkud-affiliate/SKILL.md",
   "guide": "skills/shopkud-affiliate/references/workflow.md",
   "purpose": "ตรวจรุ่นและร้าน เทียบค่าคอมตามช่องทาง เตรียมภาพอ้างอิง และเก็บลิงก์ทางการครั้งเดียวเมื่อได้รับคำสั่ง",
   "stages": [
+    {"id": "external-market-research", "tools": ["present_research_report"]},
     {"id": "discover-rank", "tools": ["rank_affiliate_products"]},
     {"id": "custom-discover", "tools": ["scan_products", "get_scan_products"]},
     {"id": "verify-product-seller", "tools": ["get_product_detail"]},
@@ -20,11 +21,10 @@
       "purpose": "ค่าเริ่มต้นสำหรับผู้ใช้ใหม่: งานครบขั้นและ action ที่มีขอบเขตชัด โดยซ่อน browser/storage primitives",
       "groups": {
         "system": ["get_workflow_guide", "list_pages", "reload_extension", "selector_health"],
-        "research": ["rank_affiliate_products", "get_product_detail", "search_products_for_content", "get_product_media"],
+        "research": ["present_research_report", "rank_affiliate_products", "get_product_detail", "search_products_for_content", "get_product_media"],
         "links": ["create_link", "verify_link", "batch_create_links", "find_link"],
         "performance": ["import_report_csv", "sales_by", "get_conversions", "get_earnings_summary"],
-        "missions": ["list_missions", "enroll_mission"],
-        "content": ["create_video_draft"]
+        "missions": ["list_missions", "enroll_mission"]
       }
     },
     "full": {

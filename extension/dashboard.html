@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>ShopKud · คัดสินค้า</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <svg class="symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+    <linearGradient id="bag-fill" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ffab61"/><stop offset=".5" stop-color="#ff642d"/><stop offset="1" stop-color="#e93718"/></linearGradient>
+    <symbol id="mascot" viewBox="0 0 100 100">
+      <path d="M35 31V23c0-21 29-21 29 0v8" fill="none" stroke="#dd3d1b" stroke-width="8"/><path d="M35 29V23c0-20 28-20 28 0" fill="none" stroke="#ffb36c" stroke-width="3" stroke-linecap="round"/>
+      <path d="M23 27 76 31 80 84Q51 94 20 80Z" fill="url(#bag-fill)" stroke="#ffb27e" stroke-width="2" stroke-linejoin="round"/><path d="m75 32-2 47 7 5" fill="#dc391a" opacity=".45"/>
+      <path d="M31 42q5-5 10-1m13 1q5-3 10 2" fill="none" stroke="#542b29" stroke-width="3" stroke-linecap="round"/><ellipse cx="36" cy="53" rx="6" ry="8" fill="#fff9ef"/><ellipse cx="59" cy="55" rx="6" ry="8" fill="#fff9ef"/>
+      <ellipse cx="38" cy="54" rx="3.2" ry="5" fill="#38272a"/><ellipse cx="57" cy="56" rx="3.2" ry="5" fill="#38272a"/><circle cx="39" cy="52" r="1.3" fill="white"/><circle cx="58" cy="54" r="1.3" fill="white"/>
+      <ellipse cx="28" cy="64" rx="5" ry="3" fill="#ff9b94"/><ellipse cx="67" cy="65" rx="5" ry="3" fill="#ff9b94"/><path d="M40 65q7 3 15 0-1 14-8 13-6-1-7-13" fill="#672b2b"/><path d="M44 74q4-5 9-1-5 9-9 1" fill="#ff9b94"/>
+      <path d="m21 68-7 12" stroke="#c57d31" stroke-width="7" stroke-linecap="round"/><circle cx="21" cy="53" r="14" fill="#cdeafa" fill-opacity=".9" stroke="#edb24f" stroke-width="5"/><path d="M13 50q2-7 9-6" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"/><ellipse cx="16" cy="76" rx="7" ry="6" fill="#fff9f0" stroke="#edcdbc"/>
+      <path d="m84 17 2 5 5 2-5 2-2 5-2-5-5-2 5-2Z" fill="#f7b52f"/>
+    </symbol>
+    <symbol id="search" viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m16 16 5 5M8 11l2 2 4-5"/></symbol>
+    <symbol id="bookmark" viewBox="0 0 24 24"><path d="M6 4h12v17l-6-4-6 4Z"/></symbol>
+    <symbol id="pulse" viewBox="0 0 24 24"><path d="M2 13h5l3-8 4 15 3-9 2 2h3"/></symbol>
+    <symbol id="external" viewBox="0 0 24 24"><path d="M14 4h6v6m0-6L10 14M10 5H5v15h14v-5"/></symbol>
+    <symbol id="bag" viewBox="0 0 24 24"><path d="M5 8h14l1 13H4ZM8 9V6a4 4 0 0 1 8 0v3"/></symbol>
+    <symbol id="crown" viewBox="0 0 24 24"><path d="m3 7 4 4 5-7 5 7 4-4-2 12H5ZM6 16h12"/></symbol>
+    <symbol id="panel" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M14 4v16m3-12h1m-1 4h1"/></symbol>
+    <symbol id="shield" viewBox="0 0 24 24"><path d="m12 3 8 3v6c0 4-5 8-8 9-3-1-8-5-8-9V6Z"/><path d="m8 12 3 3 5-6"/></symbol>
+  </defs></svg>
+
+  <a class="skip-link" href="#main">ข้ามไปเนื้อหา</a>
+  <header class="topbar">
+    <a class="brand" href="dashboard.html" aria-label="ShopKud หน้าคัดสินค้า"><svg class="brand-mascot" aria-hidden="true"><use href="#mascot"/></svg><span><strong><span>Shop</span>Kud</strong><small>คัดอย่างมีหลักฐาน</small></span></a>
+    <nav class="main-nav" role="tablist" aria-label="พื้นที่ทำงาน">
+      <button id="tab-research" role="tab" aria-selected="true" aria-controls="view-research" data-view="research"><svg class="icon" aria-hidden="true"><use href="#search"/></svg>คัดสินค้า</button>
+      <button id="tab-saved" role="tab" aria-selected="false" aria-controls="view-saved" tabindex="-1" data-view="saved"><svg class="icon" aria-hidden="true"><use href="#bookmark"/></svg>บันทึก<span id="saved-count" class="count">0</span></button>
+      <button id="tab-live" role="tab" aria-selected="false" aria-controls="view-live" tabindex="-1" data-view="live"><svg class="icon" aria-hidden="true"><use href="#pulse"/></svg>Agent Live<span id="active-dot" class="status-dot" hidden></span></button>
+    </nav>
+    <div class="toolbar-actions"><span id="connection" class="connection" role="status"><i></i><span>กำลังเชื่อมต่อ</span></span><button id="open-tracker" class="button quiet"><svg class="icon" aria-hidden="true"><use href="#panel"/></svg>เปิดตัวติดตาม</button></div>
+  </header>
+
+  <main id="main" class="workspace" tabindex="-1">
+    <p id="notice" class="notice" role="status" hidden></p>
+    <section id="view-research" class="view" role="tabpanel" aria-labelledby="tab-research">
+      <div class="page-heading"><div><h1 id="query-heading">มาคัดสินค้าที่ใช่กัน</h1><p id="query-caption">ให้ Agent ค้นตลาด แล้วเลือกจากข้อมูลที่ตรวจสอบได้</p></div><div class="heading-note"><svg aria-hidden="true"><use href="#mascot"/></svg><p>รู้ที่มา<br><strong>ก่อนเลือกสินค้า</strong></p></div></div>
+      <section class="journey-panel" aria-labelledby="journey-heading">
+        <div class="journey-summary"><div><h2 id="journey-heading">เส้นทางการคัดสินค้า</h2><p id="journey-status" role="status" aria-live="polite">พร้อมรับงานจาก Agent</p></div><span id="journey-time" class="subtle"></span></div>
+        <ol id="journey" class="journey">
+          <li data-stage="niche"><span class="step-number">1</span><div><strong>หาโอกาส</strong><small>กลุ่มตลาด / โจทย์</small></div></li>
+          <li data-stage="trend"><span class="step-number">2</span><div><strong>อ่านสัญญาณ</strong><small>เทรนด์ / ความอยากซื้อ</small></div></li>
+          <li data-stage="store_research"><span class="step-number">3</span><div><strong>ตรวจบริบท</strong><small>ร้าน / การตลาด</small></div></li>
+          <li data-stage="scan"><span class="step-number">4</span><div><strong>ค้น Shopee</strong><small>ราคา / ค่าคอม</small></div></li>
+          <li data-stage="detail"><span class="step-number">5</span><div><strong>ตรวจรายละเอียด</strong><small>หลักฐานสินค้า</small></div></li>
+          <li data-stage="recommendation"><span class="step-number">6</span><div><strong>เปรียบเทียบ & เลือก</strong><small>คำแนะนำที่มีที่มา</small></div></li>
+        </ol>
+      </section>
+
+      <div class="decision-grid">
+        <section class="market-panel panel" aria-labelledby="market-heading">
+          <div class="panel-heading"><h2 id="market-heading">ตลาดกำลังบอกอะไร</h2><span class="source-badge agent-source">Agent วิเคราะห์</span></div>
+          <p class="source-explainer">ข้อสรุปจากการค้นคว้าภายนอก ไม่ใช่ข้อมูลที่ ShopKud อ่านจาก Shopee</p>
+          <div id="market-empty" class="empty-market"><svg class="icon" aria-hidden="true"><use href="#search"/></svg><h3>ยังไม่มีงานวิจัยภายนอก</h3><p>Agent ยังไม่ได้เผยแพร่เทรนด์หรือความต้องการซื้อสำหรับโจทย์นี้ คุณยังตรวจผลจาก Shopee ทางขวาได้</p></div>
+          <div id="market-content" hidden>
+            <h3 id="report-headline" class="report-headline"></h3><p id="report-summary" class="report-summary"></p>
+            <div class="report-meta"><span id="report-confidence"></span><time id="report-time"></time></div>
+            <div id="intent-block" class="intent-block" hidden><strong>เหตุผลที่คนอาจซื้อ</strong><p id="purchase-intent"></p></div>
+            <div class="signals-heading"><h3>สัญญาณประกอบการเลือก</h3><span>คะแนนประเมินโดย Agent / 100</span></div>
+            <div id="signals" class="signals"></div>
+            <p id="signals-empty" class="subtle" hidden>ยังไม่มีสัญญาณหรือคะแนนที่เผยแพร่</p>
+            <details id="more-signals" class="more-signals" hidden><summary>ดูสัญญาณเพิ่มเติม</summary><div id="additional-signals" class="signals"></div></details>
+            <div class="report-sources"><h3>แหล่งข้อมูลของรายงาน</h3><div id="report-citations" class="citation-list"></div></div>
+          </div>
+        </section>
+
+        <section class="decision-panel" aria-labelledby="decision-heading">
+          <div class="panel-heading"><h2 id="decision-heading">ตัวเลือกจากหลักฐานจริง</h2><span class="source-badge shopee-source"><svg class="icon" aria-hidden="true"><use href="#shield"/></svg>ShopKud ตรวจพบ</span></div>
+          <div id="product-empty" class="empty-products panel"><svg aria-hidden="true"><use href="#mascot"/></svg><h3 id="product-empty-title">พร้อมค้นตัวเลือกให้คุณ</h3><p id="product-empty-copy">บอก Agent ว่าต้องการสินค้าแบบไหน งบเท่าไร และเน้นค่าคอมหรือยอดขาย ผลที่ตรวจแล้วจะมาอยู่ตรงนี้</p><span>ไม่ซื้อสินค้าและไม่โพสต์แทนคุณ</span></div>
+          <article id="winner" class="winner" hidden>
+            <div class="winner-topline"><span class="winner-label"><svg class="icon" aria-hidden="true"><use href="#crown"/></svg>ตัวเลือกที่คุ้มสุดในชุดนี้</span><span id="winner-freshness"></span></div>
+            <div class="winner-product"><div class="winner-picture"><img id="winner-image" alt="" hidden><span class="image-fallback" id="winner-fallback"><svg class="icon" aria-hidden="true"><use href="#bag"/></svg><small>ไม่มีภาพสินค้า</small></span></div><div class="winner-copy"><span id="winner-trust" class="trust"></span><h3 id="winner-name"></h3><p id="winner-shop" class="product-shop"></p><p id="winner-reason" class="winner-reason"></p></div></div>
+            <dl class="winner-metrics"><div><dt>ราคา</dt><dd id="winner-price"></dd></div><div><dt>ค่าคอม / ออเดอร์</dt><dd id="winner-commission"></dd><small id="winner-rate"></small></div><div><dt>ยอดขายที่เห็น</dt><dd id="winner-sold"></dd><small>ไม่ใช่ยอดขายต่อเดือน</small></div></dl>
+            <div class="winner-actions"><a id="winner-open" class="button primary" target="_blank" rel="noopener noreferrer">ดูบน Shopee Affiliate<svg class="icon" aria-hidden="true"><use href="#external"/></svg></a><button id="winner-save" class="button save-button"><svg class="icon" aria-hidden="true"><use href="#bookmark"/></svg><span>เก็บไว้</span></button></div>
+            <div class="winner-footnote"><time id="winner-observed"></time><span id="winner-channel"></span></div>
+          </article>
+          <div class="decision-note"><svg class="icon" aria-hidden="true"><use href="#shield"/></svg><p>ราคา ค่าคอม และยอดขายคือสิ่งที่เห็นเวลาตรวจ ไม่ใช่การรับรองยอดขายในอนาคต</p></div>
+        </section>
+      </div>
+
+      <section id="comparison-section" class="comparison-section" aria-labelledby="comparison-heading" hidden>
+        <div class="section-heading"><div><h2 id="comparison-heading">วางเทียบ แล้วค่อยเลือก</h2><p id="comparison-caption"></p></div><div class="comparison-tools"><label for="comparison-sort">เรียงตาม</label><select id="comparison-sort"><option value="rank">อันดับจาก ShopKud</option><option value="commission">ค่าคอมต่อออเดอร์</option><option value="price">ราคาต่ำไปสูง</option><option value="sold">ยอดขายที่เห็น</option></select></div></div>
+        <div id="comparison-grid" class="comparison-grid" tabindex="0" role="region" aria-label="สินค้าเปรียบเทียบ เลื่อนแนวนอนเพื่อดูทั้งหมด"></div>
+      </section>
+
+      <section class="evidence-panel panel" aria-labelledby="evidence-heading">
+        <div class="section-heading"><div><h2 id="evidence-heading">รู้ว่าตรวจอะไร และยังไม่รู้อะไร</h2><p>แยกข้อเท็จจริงจากข้อประเมิน เพื่อให้คุณตัดสินใจได้เอง</p></div><span id="coverage-badge" class="source-badge">ยังไม่มีผลตรวจ</span></div>
+        <div class="evidence-columns"><div><h3>ขอบเขตข้อมูลจาก Shopee</h3><dl id="coverage-facts" class="coverage-facts"></dl><div id="exclusions" class="exclusions"></div></div><div><h3>ข้อจำกัดที่ควรรู้</h3><ul id="unknowns" class="unknowns"></ul><p id="coverage-note" class="subtle"></p></div></div>
+      </section>
+    </section>
+
+    <section id="view-saved" class="view" role="tabpanel" aria-labelledby="tab-saved" hidden>
+      <div class="page-heading"><div><h1>สินค้าที่เก็บไว้</h1><p>เก็บใน Chrome เครื่องนี้เท่านั้น · ใช้รายการเดียวกับตัวติดตามด้านข้าง</p></div></div>
+      <p id="saved-empty" class="empty-state panel">ยังไม่มีสินค้าที่บันทึก กด “เก็บไว้” จากหน้าคัดสินค้าเพื่อกลับมาเปรียบเทียบภายหลัง</p>
+      <div id="saved-grid" class="saved-grid"></div>
+    </section>
+
+    <section id="view-live" class="view" role="tabpanel" aria-labelledby="tab-live" hidden>
+      <div class="page-heading"><div><h1>Agent Live</h1><p>ดูขั้นตอน ผลที่ส่งให้ Agent และสถานะงาน · ไม่แสดง private reasoning</p></div><button id="clear-completed" class="button quiet" disabled>ล้างงานที่จบแล้ว</button></div>
+      <dl id="live-metrics" class="live-metrics panel"></dl>
+      <div class="live-layout"><section class="logs-panel panel"><div class="panel-heading"><h2>Working log</h2><div class="log-actions"><button id="follow-logs" class="button small" aria-pressed="true">ตามสด</button><button id="clear-logs" class="button small quiet" disabled>ล้าง Log</button></div></div><p class="subtle">คำสั่งและผลลัพธ์ที่ระบบตัดข้อมูลลับแล้ว</p><div id="log-shell" class="log-shell" tabindex="0" role="region" aria-label="บันทึกการทำงาน"><ol id="log-list"></ol><p id="logs-empty">รอ MCP tool call แรก…</p></div><div class="log-footer"><span><i class="agent-key"></i>Agent request</span><span><i class="code-key"></i>Code execution</span><strong id="log-count">0 รายการ</strong></div></section><section class="runs-panel panel"><div class="panel-heading"><h2>งานในเซสชันนี้</h2><span id="run-count" class="count">0</span></div><ol id="run-list" class="run-list"></ol><p id="runs-empty" class="subtle">ยังไม่มีงานในเซสชันนี้</p></section></div>
+    </section>
+    <footer class="workspace-footer"><span>ShopKud · Product Research Workspace</span><span id="version">ส่วนขยาย —</span><span>ข้อมูลอยู่กับคุณในเครื่องนี้</span></footer>
+  </main>
+
+  <template id="product-template"><article class="product-card"><div class="product-card-top"><span class="product-position"></span><button class="card-save" aria-label="เก็บสินค้า" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#bookmark"/></svg></button></div><div class="product-picture"><img alt="" hidden><span class="image-fallback"><svg class="icon" aria-hidden="true"><use href="#bag"/></svg><small>ไม่มีภาพสินค้า</small></span></div><div class="product-card-body"><span class="trust"></span><h3 class="product-name"></h3><p class="product-shop"></p><dl class="product-metrics"></dl><p class="product-reason"></p><time class="product-observed"></time><a class="product-link" target="_blank" rel="noopener noreferrer">ดูบน Shopee Affiliate<svg class="icon" aria-hidden="true"><use href="#external"/></svg></a></div></article></template>
+  <script src="dashboard.js"></script>
+</body>
+</html>

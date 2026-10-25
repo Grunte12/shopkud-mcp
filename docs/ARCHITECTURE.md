@@ -27,7 +27,9 @@ ShopKud Chrome extension
   - validates the native host and command allowlist
   - reads only supported visible Shopee surfaces
   - executes bounded, explicitly requested actions
-  - streams live telemetry to the Side Panel
+  - renders results in a full-page Dashboard
+  - streams compact live telemetry to the Side Panel
+  - groups extension-owned work tabs and closes them after use
       |
       v
 Shopee pages in the user's existing Chrome profile
@@ -90,6 +92,27 @@ chosen constraints. ShopKud returns exclusion counts and possible relaxations,
 but never weakens the user's constraints silently. The agent or user decides
 whether to retry with different criteria.
 
+## Human and Agent surfaces
+
+The Agent uses MCP for communication and decisions. The owner reads the actual
+research result in the Extension Dashboard:
+
+1. An Agent may gather external niche, trend, purchase-intent or store evidence
+   with its own configured research tools.
+2. `present_research_report` sends a bounded summary and HTTPS citations to the
+   local Dashboard. These fields remain explicitly Agent-authored judgments.
+3. `rank_affiliate_products` performs the Shopee search, filters, detail checks
+   and ranking as deterministic code.
+4. The Dashboard combines the two evidence classes without pretending an
+   external claim came from Shopee. Product links and source citations stay
+   clickable so the owner can trace the recommendation.
+5. The Side Panel shows current stage, health and a safe developer log while the
+   Dashboard stays optimized for non-technical review.
+
+Extension-created Shopee tabs and the Dashboard share one Chrome Tab Group.
+Inactive automation tabs close after their operation completes. If the owner
+activates a work tab, ShopKud relinquishes ownership and leaves it open.
+
 ## Tool surface
 
 New installations expose 19 guided tools in six groups:
@@ -104,6 +127,7 @@ New installations expose 19 guided tools in six groups:
 | Research | `get_product_detail` | Read visible facts for one exact affiliate offer |
 | Research | `search_products_for_content` | Prepare a reviewable research set without selecting products |
 | Research | `get_product_media` | Return previously observed, allowlisted product media URLs |
+| Research | `present_research_report` | Render cited Agent research and purchase-intent signals in the local Dashboard |
 | Links | `create_link` | Create one explicitly authorized affiliate link with SubIDs |
 | Links | `verify_link` | Verify saved ownership/target evidence without opening the tracking link |
 | Links | `batch_create_links` | Run a sequential, checkpointed authorized link batch |
@@ -114,9 +138,9 @@ New installations expose 19 guided tools in six groups:
 | Performance | `get_earnings_summary` | Read the latest stored aggregate earnings snapshot |
 | Missions | `list_missions` | Read mission records already tracked in the local workspace |
 | Missions | `enroll_mission` | Preview or record an already-completed Shopee enrollment locally; never clicks Shopee |
-| Content | `create_video_draft` | Prepare caption, hashtags and products; never upload or publish |
-
-The 57-tool full profile remains available for diagnostics and custom clients.
+The 58-tool full profile remains available for diagnostics, legacy content
+drafts and custom clients. Media generation and posting are intentionally not
+part of the recommended ShopKud v1 surface.
 It is not the recommended agent-facing surface because it exposes primitives
 that the guided workflows already compose safely.
 
@@ -148,12 +172,13 @@ paths have their own tests.
 
 ## Observability
 
-Each guided workflow emits bounded stages and final metrics to the Side Panel:
+Each guided workflow emits bounded stages and final metrics to the Dashboard
+and Side Panel tracker:
 queue wait, browser operations, cache status, latency, response size, success
 and effectiveness. The token number is an output-size estimate only; MCP cannot
 observe the calling model's private input, reasoning, or output token usage.
 
-The developer Working Log is a separate session-only stream. It shows Agent
+The developer Working Log is a separate session-only Side Panel stream. It shows Agent
 tool calls, allowlisted/redacted argument summaries, Python/extension source
 locations, function or browser-operation names, progress and completion/failure
 events as they happen. Completed tool calls include a bounded summary of the

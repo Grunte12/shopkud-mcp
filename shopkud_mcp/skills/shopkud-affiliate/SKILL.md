@@ -1,6 +1,6 @@
 ---
 name: shopkud-affiliate
-description: ใช้ ShopKud MCP คัดข้อเสนอ Shopee Affiliate ไทย ตรวจรุ่น ตัวเลือก ร้าน ค่าคอมตามช่องทาง และเตรียมภาพอ้างอิงหรือลิงก์ส่งต่อ ไม่ใช่เครื่องมือซื้อ โพสต์ หรือเจนสื่อ
+description: ใช้ ShopKud MCP คัดข้อเสนอ Shopee Affiliate ไทยด้วย workflow, strategy และหลักฐานที่ตรวจสอบย้อนกลับได้ พร้อมแสดงผลบน Dashboard ไม่ใช่เครื่องมือซื้อ โพสต์ หรือเจนสื่อ
 ---
 
 # คัดสินค้า Affiliate ด้วย ShopKud
@@ -8,6 +8,9 @@ description: ใช้ ShopKud MCP คัดข้อเสนอ Shopee Affilia
 ก่อนใช้ ShopKud ทำงาน Affiliate ครั้งแรก ต้องอ่าน [วิธีทำงานและตัวอย่าง](references/workflow.md) แล้วทำตามคู่มือรุ่นนี้ ใช้หลักฐานและข้อจำกัดจากผลเครื่องมือเป็นหลัก ไม่ต้องอ่านคู่มือเต็มซ้ำต่อสินค้า
 
 - เริ่มจากสินค้าที่เจ้าของกำหนดและประโยชน์ต่อผู้ซื้อ อย่าเปลี่ยนสินค้าหรือกลยุทธ์แบรนด์เอง
+- ShopKud รุ่นนี้ specialize เรื่องค้น คัด เปรียบเทียบ และยืนยันสินค้าเท่านั้น งานสร้างวิดีโอ/ภาพ การจัดคิว และการโพสต์เป็น workflow ของ Shopee Affiliate Kit แยกต่างหาก ห้ามอ้างว่า ShopKud ทำสิ่งเหล่านั้น
+- ถ้าโจทย์ต้องใช้ niche, trend, purchase intent, การแข่งขัน, ความน่าเชื่อถือ หรือการสนับสนุนการตลาดของร้าน ให้ Agent ใช้เครื่องมือ research ภายนอกที่ตนมีและสรุปเฉพาะเหตุผลที่ใช้ตัดสินใจพร้อม HTTPS citation ผ่าน `present_research_report` ข้อมูลเหล่านี้เป็น Agent-authored research ไม่ใช่สิ่งที่ ShopKud อ่านจาก Shopee ห้ามเปิดเผย private chain-of-thought และห้ามเปลี่ยนความเห็นให้เป็นข้อเท็จจริง
+- เริ่ม report แบบ `status="working"` ได้เมื่อมีความคืบหน้าที่มีความหมายต่อผู้ใช้ แล้วอัปเดต `report_id` เดิมเมื่อมีหลักฐานเพิ่ม รายงาน `completed` ต้องมี citation อย่างน้อยหนึ่งรายการ Human interface หลักคือ Dashboard; แชทใช้สั่งงานและถามต่อ แต่คำแนะนำ ลิงก์ และหลักฐานต้องอ่านตรวจได้บน Dashboard
 - งานคัดสินค้าใช้ `rank_affiliate_products` เป็นค่าเริ่มต้น ให้เอเจนต์แปลงเจตนาผู้ใช้เป็น `ranking_goal`, `freshness` และตัวกรอง แล้วให้โค้ดสแกน กรอง ตรวจค่าคอมตามช่องทาง และจัดอันดับในคำสั่งเดียว ค่าเริ่มต้นคือ Mall เท่านั้น ยอดขายอย่างน้อย 500 และไม่พรีออเดอร์; งานค้นกว้างต้องส่ง `mall_only=false,min_sold=0,exclude_preorder=false` ชัดเจน และงานไม่เอา Mall ใช้ `exclude_mall=true` ห้ามคลายเงื่อนไขเองเมื่อไม่พบสินค้า
 - ถ้ามี Product ID หรือ Offer URL อยู่แล้ว ห้ามค้นตลาดซ้ำ ใช้ `get_product_detail(product_id=…,open_if_missing=true,view="brief")` หรือ `offer_url=…` โดยตรง และตอบกลับด้วย `offer_url`/`product_url` ที่คลิกได้ ห้ามส่งเพียงเลข ID หรือขอ short link เพื่อดูสินค้าที่รู้รหัสแล้ว
 - ใช้ `scan_products` และ `get_scan_products` เฉพาะงานค้นแบบกำหนดเองที่ playbook ยังครอบคลุม ไม่สแกนซ้ำเพื่ออ่านสินค้าเดิม

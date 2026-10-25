@@ -1,8 +1,10 @@
 "use strict";
 const HOST = "org.shopkud.mcp";
+const EXTENSION_ROOT = typeof chrome.runtime.getURL==="function" ? chrome.runtime.getURL("") : `chrome-extension://${chrome.runtime.id}/`;
 const pages = new Map();
 const inFlight = new Map();
 const ownedEntries = new Map();
+const claimedEntries = new Set();
 const opening = new Map();
 const uncertainEntries = new Set();
 let entryBusy = false;
@@ -19,10 +21,96 @@ const telemetryRuns = new Map();
 const telemetryLimit = 60;
 let developerLogs = [];
 const developerLogLimit = 500;
+const researchReports = new Map();
+const researchReportLimit = 20;
+let dashboardTabId = null;
 const telemetryStages = new Set(["queued","lane_started","cache_hit","scan_started","scan_completed","candidates_loaded","detail_checks_started","detail_check","ranking","completed","failed"]);
 let telemetryHydrated = false;
 let telemetryHydrating = null;
 const finite = value => typeof value === "number" && Number.isFinite(value);
+const productId = value => typeof value==="string" && /^[1-9][0-9]{0,19}$/u.test(value);
+function sanitizeCitation(value) {
+  if(!value || typeof value!=="object" || typeof value.title!=="string" || !value.title.trim() || value.title.length>240 || typeof value.url!=="string" || value.url.length>2048)return null;
+  try {const url=new URL(value.url);if(url.protocol!=="https:" || !url.hostname || url.username || url.password)return null;return {title:value.title.trim(),url:url.href};}
+  catch{return null;}
+}
+function sanitizeResearchReport(value) {
+  if(!value || typeof value!=="object" || value.schema_version!==1 || !/^[0-9a-f]{16}$/u.test(value.report_id||"") ||
+      typeof value.query!=="string" || !value.query.trim() || value.query.length>120 || !["working","completed"].includes(value.status) ||
+      !["niche","trend","purchase_intent","store_research","recommendation"].includes(value.stage) ||
+      typeof value.headline!=="string" || !value.headline.trim() || value.headline.length>180 ||
+      typeof value.summary!=="string" || !value.summary.trim() || value.summary.length>1600 ||
+      typeof value.purchase_intent!=="string" || value.purchase_intent.length>1000 || !["low","medium","high"].includes(value.confidence) ||
+      !Number.isSafeInteger(value.updated_at_unix_ms) || !Array.isArray(value.signals) || value.signals.length>12 ||
+      !Array.isArray(value.citations) || value.citations.length>12)return null;
+  const citations=value.citations.map(sanitizeCitation).filter(Boolean);
+  const signals=[];
+  for(const raw of value.signals){
+    if(!raw || typeof raw!=="object" || !["trend","purchase_intent","competition","trust","marketing_support","price"].includes(raw.kind) ||
+        typeof raw.label!=="string" || !raw.label.trim() || raw.label.length>120 || typeof raw.value!=="string" || !raw.value.trim() || raw.value.length>120 ||
+        raw.score!==null && (!Number.isInteger(raw.score) || raw.score<0 || raw.score>100) ||
+        typeof raw.rationale!=="string" || !raw.rationale.trim() || raw.rationale.length>600 ||
+        !Array.isArray(raw.source_indexes) || raw.source_indexes.length>3 ||
+        raw.source_indexes.some(index=>!Number.isInteger(index) || index<0 || index>=citations.length))continue;
+    signals.push({kind:raw.kind,label:raw.label.trim(),value:raw.value.trim(),score:raw.score,
+      rationale:raw.rationale.trim(),source_indexes:[...raw.source_indexes]});
+  }
+  if(value.status==="completed" && !citations.length)return null;
+  return {schema_version:1,report_id:value.report_id,query:value.query.trim(),status:value.status,stage:value.stage,
+    headline:value.headline.trim(),summary:value.summary.trim(),purchase_intent:value.purchase_intent.trim(),
+    confidence:value.confidence,updated_at_unix_ms:value.updated_at_unix_ms,signals,citations};
+}
+function sanitizeDashboard(value) {
+  if(!value || typeof value!=="object" || value.schema_version!==1 || typeof value.query!=="string" || value.query.length>120 ||
+      !["social","shopee_live","shopee_video"].includes(value.channel) || !["live","recent","fast"].includes(value.freshness) ||
+      typeof value.partial_market_coverage!=="boolean" || typeof value.cache_hit!=="boolean" || !finite(value.cache_age_ms) || value.cache_age_ms<0 ||
+      !Array.isArray(value.results) || value.results.length>10)return undefined;
+  const safeOffer=value=>{
+    try {const url=new URL(value);return url.origin==="https://affiliate.shopee.co.th" && !url.username && !url.password && !url.search && !url.hash && /^\/offer\/product_offer\/[1-9][0-9]{0,19}$/u.test(url.pathname)?url.href:null;}
+    catch{return null;}
+  };
+  const safeImage=value=>{
+    try {const url=new URL(value);return url.protocol==="https:" && !url.username && !url.password && /(?:^|\.)(?:susercontent|shopeemobile)\.com$/u.test(url.hostname)?url.href:null;}
+    catch{return null;}
+  };
+  const rows=[];
+  for(const raw of value.results){
+    if(!raw || typeof raw!=="object" || !productId(raw.product_id) || typeof raw.name!=="string" || !raw.name || raw.name.length>240)continue;
+    const offer_url=safeOffer(raw.offer_url);if(!offer_url)continue;
+    const numeric={};
+    for(const key of ["price_min_thb","price_max_thb","sold","commission_pct","commission_thb_per_order","extra_commission_pct","shopee_commission_pct","ranking_score"]){
+      if(raw[key]===null || raw[key]===undefined)continue;
+      if(!finite(raw[key]) || raw[key]<0)continue;
+      numeric[key]=raw[key];
+    }
+    rows.push({product_id:raw.product_id,name:raw.name,offer_url,image_url:safeImage(raw.image_url),mall:raw.mall===true,
+      channel:["social","shopee_live","shopee_video"].includes(raw.channel)?raw.channel:value.channel,
+      offer_end_date:typeof raw.offer_end_date==="string"?raw.offer_end_date.slice(0,64):null,
+      observed_at:typeof raw.observed_at==="string"?raw.observed_at.slice(0,64):null,
+      trust_basis:Array.isArray(raw.trust_basis)?raw.trust_basis.filter(item=>item==="mall").slice(0,4):[],...numeric});
+  }
+  const criteria={};
+  const rawCriteria=value.criteria && typeof value.criteria==="object"?value.criteria:{};
+  for(const key of ["mall_only","exclude_mall","min_sold","min_commission_thb","min_commission_pct","max_price_thb","exclude_preorder","ranking_goal","rank_by","freshness"]){
+    const item=rawCriteria[key];
+    if(item===null || ["string","number","boolean"].includes(typeof item))criteria[key]=typeof item==="string"?item.slice(0,120):item;
+  }
+  const scan={};
+  const rawScan=value.scan && typeof value.scan==="object"?value.scan:{};
+  for(const key of ["pages_scanned","unique_products","reached_end","stop_reason","next_page","outcome"]){
+    const item=rawScan[key];if(item===null || ["string","number","boolean"].includes(typeof item))scan[key]=typeof item==="string"?item.slice(0,120):item;
+  }
+  const exclusions={};
+  if(value.exclusions && typeof value.exclusions==="object")for(const [key,item] of Object.entries(value.exclusions).slice(0,16))if(/^[a-z_]{1,48}$/u.test(key) && Number.isInteger(item) && item>=0)exclusions[key]=item;
+  const relaxation_suggestions=(Array.isArray(value.relaxation_suggestions)?value.relaxation_suggestions:[]).slice(0,8).flatMap(item=>{
+    if(!item || typeof item!=="object" || typeof item.parameter!=="string" || typeof item.reason!=="string")return [];
+    const suggested=item.suggested;return [{parameter:item.parameter.slice(0,48),reason:item.reason.slice(0,120),suggested:suggested===null || ["string","number","boolean"].includes(typeof suggested)?suggested:null}];
+  });
+  const winner_product_id=productId(value.winner_product_id) && rows.some(row=>row.product_id===value.winner_product_id)?value.winner_product_id:null;
+  return {schema_version:1,query:value.query,channel:value.channel,criteria,results:rows,winner_product_id,scan,exclusions,
+    relaxation_suggestions,partial_market_coverage:value.partial_market_coverage,freshness:value.freshness,cache_hit:value.cache_hit,
+    cache_age_ms:value.cache_age_ms,observed_at:typeof value.observed_at==="string"?value.observed_at.slice(0,64):null};
+}
 function sanitizeTelemetry(value) {
   if(!value || typeof value!=="object" || value.schema_version!==1 || !/^[0-9a-f]{16}$/u.test(value.trace_id || "") ||
       !/^[0-9a-f]{16}$/u.test(value.swarm_id || "") || value.playbook!=="rank_affiliate_products" ||
@@ -42,7 +130,7 @@ function sanitizeTelemetry(value) {
     product_name:typeof value.product_name==="string"?value.product_name.slice(0,240):undefined,detail_ms:scalar("detail_ms"),
     verified_count:scalar("verified_count"),error_count:scalar("error_count"),success:scalar("success"),effective:scalar("effective"),
     response_bytes:scalar("response_bytes"),response_tokens_estimate:scalar("response_tokens_estimate"),
-    winner_product_id:scalar("winner_product_id"),error:typeof value.error==="string"?value.error.slice(0,120):undefined,
+    winner_product_id:scalar("winner_product_id"),dashboard:sanitizeDashboard(value.dashboard),error:typeof value.error==="string"?value.error.slice(0,120):undefined,
     latency_ms:latency,browser_operations:browser,
   };
 }
@@ -74,6 +162,12 @@ async function hydrateTelemetry() {
       const savedLogs=await chrome.storage?.session?.get?.("shopkudDeveloperLogs");
       developerLogs=(Array.isArray(savedLogs?.shopkudDeveloperLogs)?savedLogs.shopkudDeveloperLogs:[])
         .map(sanitizeDeveloperEvent).filter(Boolean).slice(-developerLogLimit);
+      const savedReports=await chrome.storage?.session?.get?.("shopkudResearchReports");
+      for(const report of (Array.isArray(savedReports?.shopkudResearchReports)?savedReports.shopkudResearchReports:[]).slice(-researchReportLimit)){
+        const safe=sanitizeResearchReport(report);if(safe)researchReports.set(safe.report_id,safe);
+      }
+      const savedDashboard=await chrome.storage?.session?.get?.("shopkudDashboardTabId");
+      if(Number.isInteger(savedDashboard?.shopkudDashboardTabId))dashboardTabId=savedDashboard.shopkudDashboardTabId;
     } catch {}
     telemetryHydrated=true;
     telemetryHydrating=null;
@@ -83,7 +177,8 @@ async function hydrateTelemetry() {
 function telemetrySnapshot() {
   return {ok:true,connected,extension_version:chrome.runtime.getManifest().version,
     runs:[...telemetryRuns.values()].sort((a,b)=>b.updated_at_unix_ms-a.updated_at_unix_ms),
-    developer_logs:developerLogs.slice()};
+    developer_logs:developerLogs.slice(),
+    research_reports:[...researchReports.values()].sort((a,b)=>b.updated_at_unix_ms-a.updated_at_unix_ms)};
 }
 function broadcastLive(kind="update") {
   try {chrome.runtime.sendMessage?.({type:"shopkud-live-update",kind,snapshot:telemetrySnapshot()},()=>{void chrome.runtime.lastError;});} catch {}
@@ -102,8 +197,18 @@ async function recordTelemetry(raw) {
   while(telemetryRuns.size>telemetryLimit)telemetryRuns.delete(telemetryRuns.keys().next().value);
   try {await chrome.storage?.session?.set?.({shopkudTelemetryRuns:[...telemetryRuns.values()]});} catch {}
   if(raw?.developer_event)await recordDeveloperEvent(raw.developer_event);
+  if(event.stage==="queued")ensureDashboard({active:false}).catch(()=>{});
+  if(["completed","failed"].includes(event.stage))setTimeout(()=>cleanupAutomationTabs(),800);
   broadcastLive("event");
   return {ok:true};
+}
+async function recordResearchReport(raw) {
+  const report=sanitizeResearchReport(raw);if(!report)return {ok:false,error:"invalid_report"};
+  await hydrateTelemetry();researchReports.delete(report.report_id);researchReports.set(report.report_id,report);
+  while(researchReports.size>researchReportLimit)researchReports.delete(researchReports.keys().next().value);
+  try {await chrome.storage?.session?.set?.({shopkudResearchReports:[...researchReports.values()]});} catch {}
+  ensureDashboard({active:false}).catch(()=>{});broadcastLive("research-report");
+  return {ok:true,report_id:report.report_id};
 }
 async function recordDeveloperEvent(raw) {
   const event=sanitizeDeveloperEvent(raw);
@@ -143,6 +248,61 @@ function tabInfo(tab) {
     resolve(error?null:current);
   }));
 }
+const dashboardUrl=()=>`${EXTENSION_ROOT}dashboard.html`;
+async function groupShopKudTab(tabId) {
+  if(!Number.isInteger(tabId) || typeof chrome.tabs?.group!=="function" || typeof chrome.tabGroups?.update!=="function")return null;
+  const tab=await tabInfo(tabId);if(!tab)return null;
+  const ids=new Set([tabId,...ownedEntries.values()]);
+  if(Number.isInteger(listingEntry?.tab))ids.add(listingEntry.tab);
+  if(Number.isInteger(dashboardTabId))ids.add(dashboardTabId);
+  const managed=(await Promise.all([...ids].map(tabInfo))).filter(item=>item?.windowId===tab.windowId);
+  if(!managed.length)return null;
+  const dashboard=managed.find(item=>item.id===dashboardTabId);
+  const grouped=dashboard && Number.isInteger(dashboard.groupId) && dashboard.groupId>=0
+    ? dashboard : managed.find(item=>Number.isInteger(item.groupId) && item.groupId>=0);
+  let groupId=grouped?.groupId ?? null;
+  try {
+    const tabIds=managed.map(item=>item.id);
+    groupId=await chrome.tabs.group(groupId===null?{tabIds}:{groupId,tabIds});
+    await chrome.tabGroups.update(groupId,{title:"ShopKud",color:"orange",collapsed:false});
+    return groupId;
+  } catch {return null;}
+}
+async function ensureDashboard({active=false,windowId=null}={}) {
+  await hydrateTelemetry();
+  let tab=Number.isInteger(dashboardTabId)?await tabInfo(dashboardTabId):null;
+  if(tab && typeof tab.url==="string" && !tab.url.startsWith(dashboardUrl()))tab=null;
+  if(!tab){
+    const create={url:dashboardUrl(),active:Boolean(active)};
+    if(Number.isInteger(windowId))create.windowId=windowId;
+    tab=await chrome.tabs.create(create);dashboardTabId=tab.id;
+    try {await chrome.storage?.session?.set?.({shopkudDashboardTabId:dashboardTabId});} catch {}
+  } else if(active && tab.active!==true)tab=await chrome.tabs.update(tab.id,{active:true});
+  await groupShopKudTab(tab.id);
+  if(active && Number.isInteger(tab.windowId) && typeof chrome.windows?.update==="function"){
+    try {await chrome.windows.update(tab.windowId,{focused:true});} catch {}
+  }
+  return tab;
+}
+async function closeOwnedTabIfIdle(tabId) {
+  if(!Number.isInteger(tabId) || tabBusy(tabId))return false;
+  if(claimedEntries.has(tabId)){
+    for(const [url,id] of ownedEntries)if(id===tabId)ownedEntries.delete(url);
+    if(listingEntry?.tab===tabId)listingEntry=null;
+    roster();return false;
+  }
+  if(typeof chrome.tabs?.remove!=="function")return false;
+  const current=await tabInfo(tabId);if(!current || current.active!==false)return false;
+  try {await chrome.tabs.remove(tabId);} catch {return false;}
+  for(const [url,id] of ownedEntries)if(id===tabId)ownedEntries.delete(url);
+  uncertainEntries.delete(tabId);for(const [id,page] of pages)if(page.tab===tabId)pages.delete(id);
+  if(listingEntry?.tab===tabId)listingEntry=null;
+  roster();return true;
+}
+async function cleanupAutomationTabs() {
+  const tabs=new Set([...ownedEntries.values()]);if(Number.isInteger(listingEntry?.tab))tabs.add(listingEntry.tab);
+  await Promise.all([...tabs].map(closeOwnedTabIfIdle));
+}
 const listingURL = value => typeof value==="string" && /^https:\/\/shopee\.co\.th\/product\/[1-9][0-9]{0,19}\/[1-9][0-9]{0,19}$/u.test(value) && !/[\r\n]/u.test(value);
 const listingFailure = error => ({ok:false,error,outcome:"not_completed",retry_automatically:false});
 async function listingPermissionState() {
@@ -181,7 +341,7 @@ async function readListing(args,task) {
       // Retain uncertainty even if create's outcome is unknown; never replay it.
       listingEntry={tab:null,url,uncertain:true};
       const opened=await chrome.tabs.create({url,active:false});
-      listingEntry.tab=opened.id;created=true;
+      listingEntry.tab=opened.id;created=true;await groupShopKudTab(opened.id);
     } else {
       listingEntry={tab:listingEntry.tab,url,uncertain:true};reused=true;
       await chrome.tabs.update(listingEntry.tab,{url,active:false});
@@ -265,7 +425,7 @@ async function openOfferOnce(args) {
       await chrome.tabs.update(tab,{url,active:false});
     } else {
       const newTab=await chrome.tabs.create({url,active:false});
-      tab=newTab.id;ownedEntries.set(url,tab);created=true;
+      tab=newTab.id;ownedEntries.set(url,tab);created=true;await groupShopKudTab(tab);
     }
   }
   const evidence={tab_id:tab,entry_url:url,created_tab:created,reused_tab:reused,owner_tab_changed:false,extension_version:chrome.runtime.getManifest().version};
@@ -361,7 +521,9 @@ function connect(automatic=false) {
         readListing(message.arguments,task).catch(()=>{
           if(listingEntry)listingEntry.uncertain=true;
           return {...listingFailure("listing_unconfirmed"),outcome:"unconfirmed"};
-        }).then(result=>{if(port===channel)channel.postMessage({type:"result",id:message.id,result});}).finally(()=>{if(listingTask===task)listingTask=null;});
+        }).then(result=>{if(port===channel)channel.postMessage({type:"result",id:message.id,result});
+          if(result?.ok===true)setTimeout(()=>closeOwnedTabIfIdle(listingEntry?.tab),800);
+        }).finally(()=>{if(listingTask===task)listingTask=null;});
         return;
       }
       if(message.page_id==="extension" && message.operation==="playbook_event") {
@@ -370,6 +532,10 @@ function connect(automatic=false) {
       }
       if(message.page_id==="extension" && message.operation==="developer_event") {
         recordDeveloperEvent(message.arguments).then(result=>{if(port===channel)channel.postMessage({type:"result",id:message.id,result});});
+        return;
+      }
+      if(message.page_id==="extension" && message.operation==="research_report") {
+        recordResearchReport(message.arguments).then(result=>{if(port===channel)channel.postMessage({type:"result",id:message.id,result});});
         return;
       }
       if(message.page_id==="extension" && message.operation==="reload_extension") {
@@ -407,6 +573,7 @@ function connect(automatic=false) {
           chrome.tabs.sendMessage(page.tab,{type:"shopkud-command",nonce:page.nonce,request_id:message.id,operation:message.operation,arguments:message.arguments},result=>{
             const error=chrome.runtime.lastError;inFlight.delete(message.id);
             if(port===channel)channel.postMessage({type:"result",id:message.id,result:error?{ok:false,error:"page_context_unavailable",outcome:"unconfirmed",retry_automatically:false}:result || {ok:false,error:"invalid_page_result",outcome:"unconfirmed",retry_automatically:false}});
+            if(!error && result?.ok===true)setTimeout(()=>closeOwnedTabIfIdle(page.tab),800);
           });
         })().catch(()=>reject("link_preflight_failed"));
         return;
@@ -418,28 +585,38 @@ function connect(automatic=false) {
         if(error) {
           pages.delete(page.page_id);roster();
           channel.postMessage({type:"result",id:message.id,result:{ok:false,error:"page_context_unavailable",outcome:"unconfirmed"}});
-        } else channel.postMessage({type:"result",id:message.id,result:result || {ok:false,error:"invalid_page_result",outcome:"unconfirmed"}});
+        } else {
+          channel.postMessage({type:"result",id:message.id,result:result || {ok:false,error:"invalid_page_result",outcome:"unconfirmed"}});
+          if(message.operation==="detail" && result?.ok===true)setTimeout(()=>closeOwnedTabIfIdle(page.tab),800);
+        }
       });
     });
   } catch {port=null;connected=false;state();broadcastLive("connection");scheduleReconnect();}
 }
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
-  if(sender.id===chrome.runtime.id && !sender.tab && message?.type==="shopkud-live-snapshot") {
+  const extensionPage=sender.id===chrome.runtime.id && (!sender.tab || typeof sender.url==="string" && sender.url.startsWith(EXTENSION_ROOT));
+  if(extensionPage && message?.type==="shopkud-live-snapshot") {
     hydrateTelemetry().then(()=>respond(telemetrySnapshot()));return true;
   }
-  if(sender.id===chrome.runtime.id && !sender.tab && message?.type==="shopkud-live-clear") {
+  if(extensionPage && message?.type==="shopkud-live-clear") {
     hydrateTelemetry().then(async()=>{
       for(const [id,run] of telemetryRuns)if(["completed","failed"].includes(run.status))telemetryRuns.delete(id);
       try {await chrome.storage?.session?.set?.({shopkudTelemetryRuns:[...telemetryRuns.values()]});} catch {}
       broadcastLive("clear");respond(telemetrySnapshot());
     });return true;
   }
-  if(sender.id===chrome.runtime.id && !sender.tab && message?.type==="shopkud-live-clear-logs") {
+  if(extensionPage && message?.type==="shopkud-live-clear-logs") {
     hydrateTelemetry().then(async()=>{
       developerLogs=[];
       try {await chrome.storage?.session?.set?.({shopkudDeveloperLogs:developerLogs});} catch {}
       broadcastLive("clear-logs");respond(telemetrySnapshot());
     });return true;
+  }
+  if(extensionPage && message?.type==="shopkud-open-tracker" && Number.isInteger(sender.tab?.windowId) && typeof chrome.sidePanel?.open==="function") {
+    chrome.sidePanel.open({windowId:sender.tab.windowId}).then(()=>respond({ok:true})).catch(()=>respond({ok:false,error:"side_panel_unavailable"}));return true;
+  }
+  if(extensionPage && message?.type==="shopkud-open-dashboard") {
+    ensureDashboard({active:true,windowId:sender.tab?.windowId}).then(tab=>respond({ok:true,tab_id:tab.id})).catch(()=>respond({ok:false,error:"dashboard_unavailable"}));return true;
   }
   if(sender.id!==chrome.runtime.id || sender.frameId!==0 || !Number.isInteger(sender.tab?.id))return false;
   let sameHost=false;
@@ -468,15 +645,22 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   return false;
 });
 chrome.tabs.onRemoved.addListener(tab=>{
+  if(dashboardTabId===tab){dashboardTabId=null;try {chrome.storage?.session?.remove?.("shopkudDashboardTabId");} catch {}}
   if(listingEntry?.tab===tab){listingTask && (listingTask.cancelled=true);listingTask?.finishWait?.();listingEntry=null;}
-  uncertainEntries.delete(tab);
+  uncertainEntries.delete(tab);claimedEntries.delete(tab);
   for(const [url,id] of ownedEntries)if(id===tab)ownedEntries.delete(url);
   opening.get(tab)?.finish({ok:false,error:"entry_tab_closed",outcome:"not_completed"});
   for(const [id,page] of pages) if(page.tab===tab) pages.delete(id);
   roster();
 });
+chrome.tabs.onActivated?.addListener?.(({tabId})=>{
+  const owned=[...ownedEntries.values()].includes(tabId) || listingEntry?.tab===tabId;
+  if(!owned)return;claimedEntries.add(tabId);
+  if(!tabBusy(tabId))closeOwnedTabIfIdle(tabId).catch(()=>{});
+});
 // Worker activation recovers existing pages once, including after extension reload.
-chrome.sidePanel?.setPanelBehavior?.({openPanelOnActionClick:true}).catch(()=>{});
+chrome.sidePanel?.setPanelBehavior?.({openPanelOnActionClick:false}).catch(()=>{});
+chrome.action?.onClicked?.addListener?.(tab=>{ensureDashboard({active:true,windowId:tab?.windowId}).catch(()=>{});});
 hydrateTelemetry().catch(()=>{});
 connect();
 recoverPages().catch(()=>{});

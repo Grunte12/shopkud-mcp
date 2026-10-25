@@ -3,171 +3,146 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ShopKud Live</title>
+  <title>ShopKud</title>
   <link rel="stylesheet" href="sidepanel.css">
 </head>
 <body>
+  <svg class="brand-symbols" aria-hidden="true" xmlns="http://www.w3.org/2000/svg"><defs>
+    <linearGradient id="bag-color" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#ff9a51"/><stop offset=".5" stop-color="#ff612d"/><stop offset="1" stop-color="#ed351b"/></linearGradient>
+    <symbol id="shopkud-mascot" viewBox="0 0 100 100">
+      <path d="M35 31V23c0-21 29-21 29 0v8" fill="none" stroke="#dd3d1b" stroke-width="8"/>
+      <path d="M35 29V23c0-20 28-20 28 0" fill="none" stroke="#ffb36c" stroke-width="3" stroke-linecap="round"/>
+      <path d="M23 27 76 31 80 84Q51 94 20 80Z" fill="url(#bag-color)" stroke="#ffb27e" stroke-width="2" stroke-linejoin="round"/>
+      <path d="m75 32-2 47 7 5" fill="#dc391a" opacity=".45"/>
+      <path d="M31 42q5-5 10-1m13 1q5-3 10 2" fill="none" stroke="#542b29" stroke-width="3" stroke-linecap="round"/>
+      <ellipse cx="36" cy="53" rx="6" ry="8" fill="#fff9ef"/><ellipse cx="59" cy="55" rx="6" ry="8" fill="#fff9ef"/>
+      <ellipse cx="38" cy="54" rx="3.2" ry="5" fill="#38272a"/><ellipse cx="57" cy="56" rx="3.2" ry="5" fill="#38272a"/>
+      <circle cx="39" cy="52" r="1.3" fill="white"/><circle cx="58" cy="54" r="1.3" fill="white"/>
+      <ellipse cx="28" cy="64" rx="5" ry="3" fill="#ff9b94"/><ellipse cx="67" cy="65" rx="5" ry="3" fill="#ff9b94"/>
+      <path d="M40 65q7 3 15 0-1 14-8 13-6-1-7-13" fill="#672b2b"/><path d="M44 74q4-5 9-1-5 9-9 1" fill="#ff9b94"/>
+      <path d="m21 68-7 12" stroke="#c57d31" stroke-width="7" stroke-linecap="round"/>
+      <circle cx="21" cy="53" r="14" fill="#cdeafa" fill-opacity=".9" stroke="#edb24f" stroke-width="5"/>
+      <path d="M13 50q2-7 9-6" fill="none" stroke="white" stroke-width="3" stroke-linecap="round"/>
+      <ellipse cx="16" cy="76" rx="7" ry="6" fill="#fff9f0" stroke="#edcdbc"/>
+      <path d="m84 17 2 5 5 2-5 2-2 5-2-5-5-2 5-2Z" fill="#f7b52f"/>
+    </symbol>
+  </defs></svg>
   <header class="toolbar">
     <div class="brand">
       <span class="mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24"><path d="M5 8.5h14l1 11H4l1-11Z"/><path d="M8 9V6.5a4 4 0 0 1 8 0V9"/></svg>
+        <svg viewBox="0 0 100 100"><use href="#shopkud-mascot"/></svg>
       </span>
-      <div>
-        <h1>ShopKud Live</h1>
-        <p id="version">ส่วนขยาย —</p>
-      </div>
+      <div><h1><span>Shop</span>Kud</h1><p id="version">ส่วนขยาย —</p></div>
     </div>
     <div id="connection" class="connection" data-state="offline" role="status" aria-live="polite">
-      <span class="status-dot" aria-hidden="true"></span>
-      <span>กำลังเชื่อมต่อ</span>
+      <span class="status-dot" aria-hidden="true"></span><span>กำลังเชื่อมต่อ</span>
     </div>
   </header>
 
+  <nav class="view-tabs" aria-label="มุมมอง ShopKud">
+    <button class="view-tab is-active" type="button" data-view-target="research" aria-selected="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4M8.5 11l1.7 1.8 3.5-4"/></svg>คัดสินค้า
+    </button>
+    <button class="view-tab" type="button" data-view-target="saved" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 4.5h11v16L12 17l-5.5 3.5z"/></svg>บันทึก <span id="saved-count" class="tab-count">0</span>
+    </button>
+    <button class="view-tab" type="button" data-view-target="live" aria-selected="false">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17h3l2-5 3 8 3-13 2 10h3"/></svg>Agent Live<span id="live-dot" class="live-dot" hidden aria-label="กำลังทำงาน"></span>
+    </button>
+  </nav>
+
   <main>
-    <section class="now" aria-labelledby="now-heading">
-      <div class="section-title">
-        <div>
-          <h2 id="now-heading">กำลังทำอะไรอยู่</h2>
-          <p id="now-caption">รอ Agent เรียก playbook</p>
+    <div class="view is-active" data-view="research">
+      <section class="now" aria-labelledby="now-heading">
+        <div class="section-title">
+          <div><h2 id="now-heading">Agent กำลังทำอะไร</h2><p id="now-caption">รอ Agent เรียก workflow คัดสินค้า</p></div>
+          <span id="live-badge" class="live-badge" hidden>สด</span>
         </div>
-        <span id="live-badge" class="live-badge" hidden>สด</span>
-      </div>
-      <div id="now-empty" class="empty-state">
-        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 17h3l2-5 3 8 3-13 2 10h3"/></svg>
-        <strong>ยังไม่มีงานที่กำลังรัน</strong>
-        <span>เมื่อ Agent เริ่มคัดสินค้า ขั้นตอนและตัวเลขจะขึ้นตรงนี้ทันที</span>
-      </div>
-      <div id="now-content" class="now-content" hidden>
-        <div class="now-hero">
-          <div class="now-copy">
-            <div class="query-row">
-              <p id="now-query" class="query"></p>
-              <span id="now-elapsed" class="elapsed">0 ms</span>
+        <div id="now-empty" class="agent-ready">
+          <span class="ready-orb" aria-hidden="true"><i></i></span>
+          <div><strong>พร้อมรับผลวิจัยจาก Agent</strong><span>ผลลัพธ์จะขึ้นบนหน้านี้อัตโนมัติ ไม่ต้องไล่อ่าน tool output ในแชท</span></div>
+        </div>
+        <div id="now-content" class="now-content" hidden>
+          <div class="now-hero">
+            <div class="now-copy">
+              <div class="query-row"><p id="now-query" class="query"></p><span id="now-elapsed" class="elapsed">0 ms</span></div>
+              <div class="stage-row" role="status" aria-live="polite" aria-atomic="true"><span id="now-stage" class="stage"></span><span id="now-detail" class="stage-detail"></span></div>
             </div>
-            <div class="stage-row" role="status" aria-live="polite" aria-atomic="true">
-              <span id="now-stage" class="stage"></span>
-              <span id="now-detail" class="stage-detail"></span>
-            </div>
+            <div id="now-dial" class="progress-dial" role="img" aria-label="ความคืบหน้า 0 เปอร์เซ็นต์"><div><strong id="now-percent">0%</strong><small>คืบหน้า</small></div></div>
           </div>
-          <div id="now-dial" class="progress-dial" role="img" aria-label="ความคืบหน้า 0 เปอร์เซ็นต์">
-            <div><strong id="now-percent">0%</strong><small>คืบหน้า</small></div>
+          <div class="progress-track" aria-hidden="true"><span id="now-progress"></span></div>
+          <ol id="journey" class="journey" aria-label="เส้นทางงานปัจจุบัน">
+            <li data-key="queue"><span></span><small>คิว</small></li><li data-key="scan"><span></span><small>สแกน</small></li><li data-key="detail"><span></span><small>ตรวจจริง</small></li><li data-key="rank"><span></span><small>จัดอันดับ</small></li><li data-key="done"><span></span><small>เสร็จ</small></li>
+          </ol>
+        </div>
+      </section>
+
+      <section id="research-empty" class="research-empty" aria-labelledby="research-empty-title">
+        <div class="empty-visual" aria-hidden="true"><svg viewBox="0 0 120 94"><rect x="10" y="18" width="42" height="57" rx="12"/><rect x="43" y="8" width="48" height="65" rx="13"/><rect x="76" y="26" width="34" height="48" rx="11"/><circle cx="86" cy="67" r="16"/><path d="m80 67 4 4 8-9"/></svg></div>
+        <h2 id="research-empty-title">คำแนะนำจะมาอยู่ตรงนี้</h2>
+        <p>บอก Agent ว่าอยากขายอะไร เน้นค่าคอม ยอดขาย หรือความสมดุล แล้ว ShopKud จะค้น ตรวจจริง และจัดอันดับให้</p>
+        <div class="prompt-example"><span>ลองบอก Agent</span><strong>“หาทีวีที่คอมคุ้ม ร้านน่าเชื่อถือ และขายได้จริง”</strong></div>
+      </section>
+
+      <div id="research-result" class="research-result" hidden>
+        <section class="research-summary" aria-labelledby="result-heading">
+          <div class="result-title-row"><div><h2 id="result-heading"></h2><p class="result-label">ผลวิจัยล่าสุด · <time id="result-time"></time></p></div><span class="result-mascot" aria-hidden="true"><svg viewBox="0 0 100 100"><use href="#shopkud-mascot"/></svg></span></div>
+          <div id="evidence-chips" class="evidence-chips" aria-label="ขอบเขตและความสดของหลักฐาน"></div>
+        </section>
+        <article id="winner-card" class="winner-card" aria-labelledby="winner-name">
+          <div class="winner-media"><img id="winner-image" src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="" hidden><span id="winner-fallback" class="product-fallback" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 8.5h14l1 11H4l1-11Z"/><path d="M8 9V6.5a4 4 0 0 1 8 0V9"/></svg></span><span class="winner-rank"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 7 4 4 5-7 5 7 4-4-2 12H5Z"/><path d="M6 16h12"/></svg>ตัวเลือกที่คุ้มสุด</span></div>
+          <div class="winner-body">
+            <div class="trust-row"><span id="winner-trust" class="trust-badge"></span><span id="winner-channel" class="channel-badge"></span></div>
+            <h2 id="winner-name"></h2><p id="winner-reason" class="winner-reason"></p>
+            <dl class="winner-metrics"><div><dt>ราคา</dt><dd id="winner-price"></dd></div><div><dt>ค่าคอม</dt><dd id="winner-commission"></dd></div><div><dt>ขายแล้ว</dt><dd id="winner-sold"></dd></div></dl>
+            <div class="winner-actions"><a id="winner-open" class="primary-action" target="_blank" rel="noopener noreferrer">เปิดดูสินค้า</a><button id="winner-save" class="save-action" type="button"></button></div>
           </div>
-        </div>
-        <div class="progress-track" aria-hidden="true"><span id="now-progress"></span></div>
-        <ol id="journey" class="journey" aria-label="เส้นทางงานปัจจุบัน">
-          <li data-key="queue"><span></span><small>คิว</small></li>
-          <li data-key="scan"><span></span><small>สแกน</small></li>
-          <li data-key="detail"><span></span><small>ตรวจจริง</small></li>
-          <li data-key="rank"><span></span><small>จัดอันดับ</small></li>
-          <li data-key="done"><span></span><small>เสร็จ</small></li>
-        </ol>
+        </article>
+        <section class="shortlist" aria-labelledby="shortlist-heading">
+          <div class="section-title compact"><div><h2 id="shortlist-heading">ตัวเลือกเปรียบเทียบ</h2><p id="shortlist-caption"></p></div></div>
+          <ol id="shortlist-list" class="product-list"></ol>
+        </section>
+        <details class="evidence-details">
+          <summary><span>หลักฐานและขอบเขตการค้น</span><strong id="coverage-summary"></strong></summary>
+          <div class="evidence-body"><dl id="coverage-facts"></dl><div id="exclusion-list" class="exclusion-list"></div><p id="coverage-note"></p></div>
+        </details>
       </div>
-    </section>
+    </div>
 
-    <section class="developer-console" aria-labelledby="console-heading">
-      <div class="section-title compact console-heading">
-        <div>
-          <h2 id="console-heading">Working log</h2>
-          <p>คำสั่งจาก Agent และฟังก์ชันที่โค้ดกำลังรันแบบสด</p>
-        </div>
-        <div class="console-actions">
-          <button id="follow-logs" class="console-button" type="button" aria-pressed="true">ตามสด</button>
-          <button id="clear-logs" class="console-button" type="button" disabled>ล้าง</button>
-        </div>
-      </div>
-      <div id="console-shell" class="console-shell" role="log" aria-live="polite" aria-relevant="additions">
-        <ol id="developer-log" class="developer-log"></ol>
-        <p id="developer-log-empty" class="console-empty"><span aria-hidden="true">$</span> รอ MCP tool call แรก…</p>
-      </div>
-      <div class="console-footer">
-        <span><i class="actor-key agent-key"></i>Agent request</span>
-        <span><i class="actor-key code-key"></i>Code execution</span>
-        <strong id="developer-log-count">0 lines</strong>
-      </div>
-      <p class="console-note">แสดง tool call, arguments ที่ตัดข้อมูลลับแล้ว, source/function, สรุปผล และภาพที่ส่งกลับให้ Agent — คำตอบสุดท้ายและ private reasoning ของ Agent ไม่ได้ถูกส่งกลับเข้า MCP จึงไม่สามารถแสดงได้</p>
-    </section>
+    <div class="view" data-view="saved" hidden>
+      <section class="saved-heading"><h2>สินค้าที่เก็บไว้</h2><p>ตัวเลือกของคุณถูกเก็บใน Chrome เครื่องนี้เท่านั้น</p></section>
+      <ol id="saved-list" class="product-list saved-list"></ol>
+      <section id="saved-empty" class="research-empty compact-empty"><h2>ยังไม่ได้เก็บสินค้า</h2><p>กด “เก็บไว้” จากผลวิจัย เพื่อรวมตัวเลือกที่อยากทำคอนเทนต์ต่อ</p></section>
+    </div>
 
-    <section class="metrics" aria-labelledby="metrics-heading">
-      <div class="section-title compact">
-        <h2 id="metrics-heading">ประสิทธิภาพรอบนี้</h2>
-        <span id="completed-count" class="muted">0 งาน</span>
-      </div>
-      <div class="gauge-grid" aria-label="ภาพรวมประสิทธิภาพ">
-        <div id="success-gauge" class="metric-gauge" role="img" aria-label="อัตราสำเร็จ ยังไม่มีข้อมูล">
-          <div class="gauge-ring"><strong id="success-rate">—</strong></div>
-          <span>สำเร็จ</span>
+    <div class="view" data-view="live" hidden>
+      <section class="developer-console" aria-labelledby="console-heading">
+        <div class="section-title compact console-heading"><div><h2 id="console-heading">Working log</h2><p>คำสั่งจาก Agent และโค้ดที่กำลังรันแบบสด</p></div><div class="console-actions"><button id="follow-logs" class="console-button" type="button" aria-pressed="true">ตามสด</button><button id="clear-logs" class="console-button" type="button" disabled>ล้าง</button></div></div>
+        <div id="console-shell" class="console-shell" role="log" aria-live="polite" aria-relevant="additions"><ol id="developer-log" class="developer-log"></ol><p id="developer-log-empty" class="console-empty"><span aria-hidden="true">$</span> รอ MCP tool call แรก…</p></div>
+        <div class="console-footer"><span><i class="actor-key agent-key"></i>Agent request</span><span><i class="actor-key code-key"></i>Code execution</span><strong id="developer-log-count">0 lines</strong></div>
+        <p class="console-note">แสดงเฉพาะ tool call, arguments ที่ตัดข้อมูลลับแล้ว และผลที่คืนให้ Agent — ไม่แสดง private reasoning</p>
+      </section>
+      <section class="metrics" aria-labelledby="metrics-heading">
+        <div class="section-title compact"><h2 id="metrics-heading">ประสิทธิภาพรอบนี้</h2><span id="completed-count" class="muted">0 งาน</span></div>
+        <div class="gauge-grid" aria-label="ภาพรวมประสิทธิภาพ">
+          <div id="success-gauge" class="metric-gauge" role="img" aria-label="อัตราสำเร็จ ยังไม่มีข้อมูล"><div class="gauge-ring"><strong id="success-rate">—</strong></div><span>สำเร็จ</span></div>
+          <div id="effective-gauge" class="metric-gauge" role="img" aria-label="อัตราได้ผู้ชนะ ยังไม่มีข้อมูล"><div class="gauge-ring"><strong id="effective-rate">—</strong></div><span>ได้ผู้ชนะ</span></div>
+          <div id="cache-gauge" class="metric-gauge" role="img" aria-label="อัตราใช้แคช ยังไม่มีข้อมูล"><div class="gauge-ring"><strong id="cache-rate">—</strong></div><span>ใช้ Cache</span></div>
         </div>
-        <div id="effective-gauge" class="metric-gauge" role="img" aria-label="อัตราได้ผู้ชนะ ยังไม่มีข้อมูล">
-          <div class="gauge-ring"><strong id="effective-rate">—</strong></div>
-          <span>ได้ผู้ชนะ</span>
-        </div>
-        <div id="cache-gauge" class="metric-gauge" role="img" aria-label="อัตราใช้แคช ยังไม่มีข้อมูล">
-          <div class="gauge-ring"><strong id="cache-rate">—</strong></div>
-          <span>ใช้ Cache</span>
-        </div>
-      </div>
-      <div class="latency-compare" aria-label="เปรียบเทียบ latency">
-        <div class="latency-row"><span>p50</span><div><i id="p50-bar"></i></div><strong id="p50">—</strong></div>
-        <div class="latency-row"><span>p95</span><div><i id="p95-bar"></i></div><strong id="p95">—</strong></div>
-      </div>
-      <div class="resource-strip">
-        <div>
-          <span class="resource-icon browser-icon" aria-hidden="true"></span>
-          <p><strong id="browser-ops">0</strong><small>Browser actions</small></p>
-        </div>
-        <div>
-          <span class="resource-icon token-icon" aria-hidden="true"></span>
-          <p><strong id="token-estimate">0</strong><small>Output tokens ≈</small></p>
-        </div>
-      </div>
-      <figure class="latency-viz">
-        <figcaption><span>Latency ล่าสุด</span><strong id="latency-range">ยังไม่มีข้อมูล</strong></figcaption>
-        <svg viewBox="0 0 320 62" preserveAspectRatio="none" role="img" aria-label="แนวโน้ม latency ของงานล่าสุด">
-          <path class="chart-grid" d="M0 15.5H320M0 31H320M0 46.5H320"/>
-          <path id="latency-area" class="latency-area" d=""/>
-          <polyline id="latency-line" class="latency-line" points=""/>
-          <g id="latency-points"></g>
-        </svg>
-        <div id="latency-single" class="latency-single" hidden><span aria-hidden="true"></span><small>มีข้อมูล 1 งาน · รออีก 1 งานเพื่อวาดแนวโน้ม</small></div>
-      </figure>
-      <p class="metric-note">Token จริงของโมเดลไม่ส่งผ่าน MCP จึงแสดงเฉพาะค่าประมาณจากขนาดผลลัพธ์</p>
-    </section>
-
-    <section class="activity" aria-labelledby="activity-heading">
-      <div class="section-title compact activity-heading">
-        <div>
-          <h2 id="activity-heading">Agent swarm</h2>
-          <p>ทุก invocation เรียงตามเวลาจริง</p>
-        </div>
-        <button id="clear-completed" class="quiet-button" type="button" disabled>ล้างงานจบแล้ว</button>
-      </div>
-      <ol id="run-list" class="run-list"></ol>
-      <p id="run-empty" class="empty-list">ยังไม่มี trace ใน session นี้</p>
-    </section>
+        <div class="latency-compare" aria-label="เปรียบเทียบ latency"><div class="latency-row"><span>p50</span><div><i id="p50-bar"></i></div><strong id="p50">—</strong></div><div class="latency-row"><span>p95</span><div><i id="p95-bar"></i></div><strong id="p95">—</strong></div></div>
+        <div class="resource-strip"><div><span class="resource-icon browser-icon" aria-hidden="true"></span><p><strong id="browser-ops">0</strong><small>Browser actions</small></p></div><div><span class="resource-icon token-icon" aria-hidden="true"></span><p><strong id="token-estimate">0</strong><small>Output tokens ≈</small></p></div></div>
+        <figure class="latency-viz"><figcaption><span>Latency ล่าสุด</span><strong id="latency-range">ยังไม่มีข้อมูล</strong></figcaption><svg viewBox="0 0 320 62" preserveAspectRatio="none" role="img" aria-label="แนวโน้ม latency ของงานล่าสุด"><path class="chart-grid" d="M0 15.5H320M0 31H320M0 46.5H320"/><path id="latency-area" class="latency-area" d=""/><polyline id="latency-line" class="latency-line" points=""/><g id="latency-points"></g></svg><div id="latency-single" class="latency-single" hidden><span aria-hidden="true"></span><small>มีข้อมูล 1 งาน · รออีก 1 งานเพื่อวาดแนวโน้ม</small></div></figure>
+      </section>
+      <section class="activity" aria-labelledby="activity-heading">
+        <div class="section-title compact activity-heading"><div><h2 id="activity-heading">Agent swarm</h2><p>ทุก invocation เรียงตามเวลาจริง</p></div><button id="clear-completed" class="quiet-button" type="button" disabled>ล้างงานจบแล้ว</button></div>
+        <ol id="run-list" class="run-list"></ol><p id="run-empty" class="empty-list">ยังไม่มี trace ใน session นี้</p>
+      </section>
+    </div>
   </main>
 
-  <template id="run-template">
-    <li class="run-item">
-      <span class="run-rail" aria-hidden="true"></span>
-      <div class="run-main">
-        <div class="run-topline">
-          <strong class="run-agent"></strong>
-          <span class="run-state"></span>
-          <time class="run-time"></time>
-        </div>
-        <p class="run-query"></p>
-        <p class="run-action"></p>
-        <div class="operation-viz" role="img"><span data-op="scan"></span><span data-op="read"></span><span data-op="detail"></span></div>
-        <p class="operation-legend"></p>
-        <div class="run-facts"></div>
-      </div>
-    </li>
-  </template>
-  <template id="developer-log-template">
-    <li class="console-line">
-      <time></time><span class="console-actor"></span><span class="console-progress"></span><code class="console-operation"></code><span class="console-message"></span><span class="console-detail"></span><span class="console-source"></span><span class="console-media"></span>
-    </li>
-  </template>
+  <template id="product-row-template"><li class="product-row"><span class="product-rank"></span><span class="row-thumb"><img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="" hidden><i aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 8.5h14l1 11H4l1-11Z"/><path d="M8 9V6.5a4 4 0 0 1 8 0V9"/></svg></i></span><div class="row-main"><strong class="row-name"></strong><p class="row-reason"></p><div class="row-metrics"></div></div><div class="row-actions"><a class="icon-action row-open" target="_blank" rel="noopener noreferrer" aria-label="เปิดดูสินค้า"><svg viewBox="0 0 24 24"><path d="M14 5h5v5M19 5l-8 8"/><path d="M18 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></a><button class="icon-action row-save" type="button" aria-label="เก็บสินค้า"><svg viewBox="0 0 24 24"><path d="M6.5 4.5h11v16L12 17l-5.5 3.5z"/></svg></button></div></li></template>
+  <template id="run-template"><li class="run-item"><span class="run-rail" aria-hidden="true"></span><div class="run-main"><div class="run-topline"><strong class="run-agent"></strong><span class="run-state"></span><time class="run-time"></time></div><p class="run-query"></p><p class="run-action"></p><div class="operation-viz" role="img"><span data-op="scan"></span><span data-op="read"></span><span data-op="detail"></span></div><p class="operation-legend"></p><div class="run-facts"></div></div></li></template>
+  <template id="developer-log-template"><li class="console-line"><time></time><span class="console-actor"></span><span class="console-progress"></span><code class="console-operation"></code><span class="console-message"></span><span class="console-detail"></span><span class="console-source"></span><span class="console-media"></span></li></template>
   <script src="sidepanel.js"></script>
 </body>
 </html>

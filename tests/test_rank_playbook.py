@@ -64,7 +64,9 @@ class PlaybookBroker:
             return {"ok": True, "kind": "product_detail", "product_id": self.detail_id,
                     "name": row["name"], "offer_url": row["product_url"],
                     "price_min_thb": row["price_min_thb"], "price_max_thb": row["price_max_thb"],
-                    "observed_at": "2026-10-24T00:00:00Z", "channels": [{
+                    "observed_at": "2026-10-24T00:00:00Z",
+                    "images": [{"url": f"https://down-th.img.susercontent.com/file/{self.detail_id}"}],
+                    "channels": [{
                         "channel": "shopee_video", "total_pct": pct,
                         "estimated_commission_thb": amount,
                         "extra_commission": {"pct": pct}, "shopee_commission": {"pct": 0},
@@ -104,6 +106,10 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[0]["stage"], "queued")
         self.assertEqual(events[-1]["stage"], "completed")
         self.assertEqual(events[-1]["success"], True)
+        self.assertEqual(events[-1]["dashboard"]["winner_product_id"], "1")
+        self.assertEqual(events[-1]["dashboard"]["results"][0]["image_url"],
+                         "https://down-th.img.susercontent.com/file/1")
+        self.assertEqual(events[-1]["dashboard"]["criteria"]["ranking_goal"], "commission_value")
         self.assertTrue(any(event["stage"] == "detail_check" for event in events))
 
     async def test_concurrent_identical_agents_share_one_scan(self):
