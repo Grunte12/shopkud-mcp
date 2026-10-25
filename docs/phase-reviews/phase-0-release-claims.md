@@ -1,10 +1,10 @@
 # Phase 0 review — release claims
 
-Date: 2026-10-26  
-State: phase verified; evidence commit pending  
-Base branch: `main`  
-Phase branch: `phase/0-release-claims`  
-Base SHA: `238160eb5316ea753bc2279e5bd7badabd8fe29d`  
+Date: 2026-10-26
+State: phase verified; evidence committed
+Base branch: `main`
+Phase branch: `phase/0-release-claims`
+Base SHA: `238160eb5316ea753bc2279e5bd7badabd8fe29d`
 Implementation tip before this evidence document: `b4728a005db0074bb2a3e1c3d83731878b07c392`
 
 ## Goal
@@ -131,7 +131,7 @@ future product. There is no application UI change; visual QA is not applicable.
 - [x] Remaining seller/variant/listing limits explicit.
 - [x] Changed paths limited to documentation.
 - [x] Phase verification recorded.
-- [ ] Evidence document committed.
+- [x] Evidence document committed.
 - [ ] Exact final SHA independently reviewed and authorized for push.
 - [ ] Approved SHA pushed and remote SHA confirmed.
 - [ ] GPT Bridge review reconciled for the pushed SHA.
