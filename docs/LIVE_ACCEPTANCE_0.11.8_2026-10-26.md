@@ -3,7 +3,11 @@
 Date: 2026-10-26  
 Runtime: Extension 0.11.8, workflow guide 1.5.6, guided 19-tool profile
 
-## Release gate
+## Acceptance snapshot
+
+This document records one read-only owner-runtime observation plus synthetic
+fixtures at commit `238160e`. It is historical evidence for release preparation,
+not a fresh-machine installation result or a substitute for candidate CI.
 
 - Python: 244/244 tests passed.
 - Browser/Extension: 27/27 suites passed.
@@ -13,8 +17,10 @@ Runtime: Extension 0.11.8, workflow guide 1.5.6, guided 19-tool profile
 
 ## Concurrent Luna black-box run
 
-Three low-cost Agent personas ran concurrently. They could not edit code and were
-limited to read-only research/detail/history actions.
+Three low-cost Agent personas were launched concurrently. They could not edit
+code and were limited to read-only research/detail/history actions. Their
+requests did not measurably overlap in the browser queue, so this run does not
+prove browser-lane contention handling.
 
 ### Value-focused power bank
 
@@ -65,11 +71,12 @@ The concurrent acceptance did not reproduce:
 ## Honest remaining boundary
 
 The optional public Shopee product-page reader can still return
-`listing_unconfirmed` when Shopee does not provide a stable background page.
-This does not invalidate verified Affiliate-page evidence: it leaves seller or
-variant fields unknown, and the Agent must abstain from claims that need those
-fields. It is a documented live-site boundary, not a fabricated fallback.
+`listing_unconfirmed`. The cause is unresolved; this snapshot does not establish
+whether it is a selector, navigation, account/layout or Shopee-page condition.
+It does not invalidate separately observed Affiliate-page evidence, but it
+leaves seller or variant fields unknown and the Agent must abstain from claims
+that need those fields.
 
-The core v1 launch path—bounded Affiliate discovery, channel verification,
-deterministic ranking, Agent finalist review, visual Dashboard and local
-history—passed this gate.
+The bounded Affiliate discovery, deterministic ranking, Agent finalist review,
+visual Dashboard and local-history paths were observed in this acceptance run.
+Seller/variant completion and the optional public listing read remain incomplete.
