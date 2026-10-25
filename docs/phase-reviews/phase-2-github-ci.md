@@ -1,7 +1,7 @@
 # Phase 2 review — GitHub CI
 
 Date: 2026-10-26
-State: CI portability repair locally verified; hosted rerun pending
+State: repaired workflow green; current Action-pin update awaiting hosted rerun
 Base branch: `main`
 Phase branch: `phase/2-github-ci`
 Base SHA: `c691ffd8de0602d9b61993531526a141bf4a8560`
@@ -50,8 +50,7 @@ browser profile, Shopee account, bearer token or personal machine.
 |---|---|
 | `ae3bb608fad37a891dcbef392b5ca580587aa6f3` | Add least-privilege GitHub CI and document its synthetic scope. |
 | `0e50a945f25677641aed15fdcf07bf7f8660e101` | Add the initial Phase 2 evidence document; later superseded by the portability repair. |
-
-The repair commit SHA is pending orchestrator review and commit.
+| `ade2030da509fea5a9f3ad8e626f6df7fe3827bb` | Replace macOS-only temporary paths, add a portability guard and update repair evidence. |
 
 The first pushed candidate, `0e50a945f25677641aed15fdcf07bf7f8660e101`,
 is superseded. Its hosted run exposed the portable-temp defect described below;
@@ -99,18 +98,22 @@ runtime and locked npm dependencies.
 
 ## Immutable Action references
 
-The following tag-to-SHA mappings were resolved from the official Action Git
-remotes before implementation:
+The following current stable tag-to-SHA mappings were resolved from the
+official Action Git remotes:
 
-- `actions/checkout` v4.2.2 —
-  `11bd71901bbe5b1630ceea73d27597364c9af683`
-- `actions/setup-python` v5.6.0 —
-  `a26af69be951a213d495a4c3e4e4022e16d87065`
-- `actions/setup-node` v4.4.0 —
-  `49933ea5288caeca8642d1e84afbd3f7d6820020`
+- `actions/checkout` v7.0.1 —
+  `3d3c42e5aac5ba805825da76410c181273ba90b1`
+- `actions/setup-python` v7.1.0 —
+  `6d4fd22b20465ccc0f7354476588e8df7c9ca0e0`
+- `actions/setup-node` v7.1.0 —
+  `949feb2413d6458794dcd2491c4babbbce0c15c1`
 
 Comments retain the human-readable versions; workflow execution uses only the
-immutable SHAs.
+immutable SHAs. Hosted run 40236760624 passed with the earlier pins, but GitHub
+annotated those Action releases because their internal runtime used deprecated
+Node 20. The current stable immutable pins address that avoidable deprecation;
+their hosted rerun is still required. The project deliberately continues to
+test its own Node-facing fixtures on Node 20.
 
 ## Security and data boundaries
 
@@ -149,12 +152,18 @@ known vulnerabilities. A future applicable finding will fail the job.
 | Full Python verification on Python 3.12.10 | Passed 244 unit tests, rank-playbook eval and broker-cancellation eval. |
 | Full Python verification on Python 3.11.16 | Passed 244 unit tests, rank-playbook eval and broker-cancellation eval. |
 | Python 3.13 local verification | Not available on this Mac; remains covered by the hosted matrix rerun. |
+| [Hosted repaired run 40236760624](https://github.com/Grunte12/shopkud-mcp/actions/runs/40236760624) on `ade2030` | Passed all four checks: `Python 3.11`, `Python 3.13`, `Browser and native fixtures`, and `Package and dependency audit`. The run verified the portable-temp repair and exact check names. |
+| Hosted annotations on run 40236760624 | Reported deprecated Node 20 runtimes inside the previously pinned Action releases; prompted the current stable immutable-pin update. |
+| `actionlint` v1.7.7 after the stable-pin update | Passed with no workflow findings. |
+| Ruby YAML/structure check after the stable-pin update | Passed; retained exactly three jobs, read-only contents permission and concurrency cancellation. |
 
 The initial hosted run proved the browser/native and package/audit paths, then
 found that Python fixtures assumed a macOS-only temporary directory. The repair
 uses `tempfile` exclusively, preserves the existing private-directory and
 cleanup semantics, and adds a release-consistency guard against recurrence. A
-fresh hosted rerun remains required because Python 3.13 is not installed locally.
+hosted run 40236760624 verified the repair, including Python 3.13. Because the
+Action pins changed after that run, the new candidate still needs one hosted
+rerun before merge.
 
 ## CI/CD impact
 
@@ -178,8 +187,8 @@ the first stable hosted run, which keeps rollback possible without lockout.
 
 ## Known risks and non-coverage
 
-- The first hosted run failed on a now-repaired portable-temp assumption. The
-  repaired candidate still needs a hosted rerun before merge.
+- The portable-temp repair passed hosted CI. The current candidate changes only
+  Action pins, so it still needs a hosted rerun before merge.
 - `ubuntu-latest` is intentionally floating; the Actions are immutable, but the
   hosted operating-system image can change. Test failures must be investigated,
   not suppressed.
@@ -197,7 +206,9 @@ the first stable hosted run, which keeps rollback possible without lockout.
 - Independent local review: pending for the final evidence-commit SHA.
 - Push authorization: pending for the final evidence-commit SHA.
 - Hosted CI: [run 40236078734](https://github.com/Grunte12/shopkud-mcp/actions/runs/40236078734)
-  failed on superseded SHA `0e50a94`; repaired-candidate rerun pending.
+  failed on superseded SHA `0e50a94`; [run 40236760624](https://github.com/Grunte12/shopkud-mcp/actions/runs/40236760624)
+  passed all four checks on repair SHA `ade2030`; a rerun for the current stable
+  Action pins remains pending.
 - GPT Bridge review: pending after the approved SHA is pushed.
 - Pull request / immutable review URL: pending.
 
@@ -215,7 +226,7 @@ the first stable hosted run, which keeps rollback possible without lockout.
 - [x] Evidence document committed.
 - [ ] Exact final SHA independently reviewed and authorized for push.
 - [ ] Approved SHA pushed and remote SHA confirmed.
-- [ ] Repaired candidate pushed and hosted GitHub Actions rerun green; exact
-  check names recorded.
+- [x] Portable-temp repair passed hosted CI; exact four check names recorded.
+- [ ] Current stable Action-pin candidate pushed and hosted CI green.
 - [ ] GPT Bridge review reconciled for the pushed SHA.
 - [ ] Phase merged into `main`.
