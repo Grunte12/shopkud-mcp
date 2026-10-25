@@ -150,7 +150,11 @@ ruleset was created.
 
 ## Review record
 
-- Independent review: pending for the final evidence-commit SHA.
+- Independent review of `3b6ba1fdeab7c50efa5c8ae40b8c1fd51e74ed10`
+  failed because the rollback list instructed removal of a Phase 5 ruleset even
+  though GitHub had not created one. The follow-up commit makes that rollback
+  step conditional on a later successful ruleset creation; fresh exact-SHA
+  review is pending.
 - Push authorization: granted in the approved public-release implementation
   plan; exact pushed SHA is pending.
 - Hosted CI: pending for the pushed final SHA.

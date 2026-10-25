@@ -80,7 +80,8 @@ in the rollback procedure below.
 Rollback requires a separately authorized GitHub settings change. Restore only
 the fields changed by this phase:
 
-1. Remove the Phase 5 `main` protection/ruleset.
+1. If a later authorized attempt successfully creates the Phase 5 `main`
+   ruleset, remove that ruleset; no ruleset exists from the current attempt.
 2. Re-enable Wiki and Projects.
 3. Disable automatic deletion of merged branches.
 4. Remove the five Phase 5 topics.
