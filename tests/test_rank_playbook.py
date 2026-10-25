@@ -62,7 +62,8 @@ class PlaybookBroker:
             pct, amount = self.amounts[self.detail_id]
             row = next(item for item in self.records if item["product_id"] == self.detail_id)
             return {"ok": True, "kind": "product_detail", "product_id": self.detail_id,
-                    "name": row["name"], "offer_url": row["product_url"],
+                    "name": row["name"], "offer_url": row["product_url"], "shop_id": "12345",
+                    "product_url": f"https://shopee.co.th/product/12345/{self.detail_id}",
                     "price_min_thb": row["price_min_thb"], "price_max_thb": row["price_max_thb"],
                     "observed_at": "2026-10-24T00:00:00Z",
                     "images": [{"url": f"https://down-th.img.susercontent.com/file/{self.detail_id}"}],
@@ -143,6 +144,9 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         } for row in first["commission_channels"]))
         self.assertEqual(first["commission_pct"], 5)
         self.assertEqual(first["commission_thb_per_order"], 2904.5)
+        self.assertEqual(first["shop_id"], "12345")
+        self.assertEqual(first["product_url"], f"https://shopee.co.th/product/12345/{first['product_id']}")
+        self.assertEqual(first["shop_url"], "https://shopee.co.th/shop/12345")
         self.assertEqual(sum(call[1] == "detail" for call in self.broker.calls), 2)
         self.assertEqual(result["trace"]["browser_operations"]["detail"], 2)
 

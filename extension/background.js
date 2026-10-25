@@ -71,6 +71,14 @@ function sanitizeDashboard(value) {
     try {const url=new URL(value);return url.origin==="https://affiliate.shopee.co.th" && !url.username && !url.password && !url.search && !url.hash && /^\/offer\/product_offer\/[1-9][0-9]{0,19}$/u.test(url.pathname)?url.href:null;}
     catch{return null;}
   };
+  const safeShopee=(value,kind,expectedProduct=null)=>{
+    try {
+      const url=new URL(value);if(url.origin!=="https://shopee.co.th" || url.username || url.password || url.search || url.hash)return null;
+      const match=(kind==="product"?/^\/product\/([1-9][0-9]{0,19})\/([1-9][0-9]{0,19})$/u:/^\/shop\/([1-9][0-9]{0,19})$/u).exec(url.pathname);
+      if(!match || kind==="product" && expectedProduct!==null && match[2]!==expectedProduct)return null;
+      return {url:url.href,shop_id:match[1]};
+    } catch{return null;}
+  };
   const safeImage=value=>{
     try {const url=new URL(value);return url.protocol==="https:" && !url.username && !url.password && /(?:^|\.)(?:susercontent|shopeemobile)\.com$/u.test(url.hostname)?url.href:null;}
     catch{return null;}
@@ -98,7 +106,10 @@ function sanitizeDashboard(value) {
       commission_channels.push(channel);
       if(commission_channels.length===3)break;
     }
-    rows.push({product_id:raw.product_id,name:raw.name,shop_name:typeof raw.shop_name==="string"&&raw.shop_name.trim()?raw.shop_name.trim().slice(0,240):null,offer_url,image_url:safeImage(raw.image_url),mall:raw.mall===true,
+    const productEvidence=safeShopee(raw.product_url,"product",raw.product_id),shopEvidence=safeShopee(raw.shop_url,"shop");
+    const shop_id=productEvidence?.shop_id && (!shopEvidence || shopEvidence.shop_id===productEvidence.shop_id)?productEvidence.shop_id:null;
+    rows.push({product_id:raw.product_id,name:raw.name,shop_id,shop_name:typeof raw.shop_name==="string"&&raw.shop_name.trim()?raw.shop_name.trim().slice(0,240):null,
+      offer_url,product_url:productEvidence?.url || null,shop_url:shop_id && shopEvidence?.shop_id===shop_id?shopEvidence.url:null,image_url:safeImage(raw.image_url),mall:raw.mall===true,
       channel:["social","shopee_live","shopee_video"].includes(raw.channel)?raw.channel:value.channel,
       offer_end_date:typeof raw.offer_end_date==="string"?raw.offer_end_date.slice(0,64):null,
       observed_at:typeof raw.observed_at==="string"?raw.observed_at.slice(0,64):null,

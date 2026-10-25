@@ -14,7 +14,7 @@ function fixture() {
       {channel:"shopee_video",commission_pct:null,commission_thb_per_order:null,extra_commission_pct:null}
     ]},
     {product_id:"10002",name:"Smart TV 50 นิ้ว · จอ 4K HDR",shop_name:"Home Electronics",price_min_thb:7990,price_max_thb:7990,sold:3400,commission_pct:6,commission_thb_per_order:479.4,mall:true,ranking_score:.88},
-    {product_id:"10003",name:"QLED TV 55 นิ้ว · สีสันคมชัด",shop_name:null,price_min_thb:12990,price_max_thb:12990,sold:1400,commission_pct:7,commission_thb_per_order:909.3,mall:true,ranking_score:.85},
+    {product_id:"10003",name:"QLED TV 55 นิ้ว · สีสันคมชัด",shop_name:null,shop_url:"https://shopee.co.th/shop/303",price_min_thb:12990,price_max_thb:12990,sold:1400,commission_pct:7,commission_thb_per_order:909.3,mall:true,ranking_score:.85},
     {product_id:"10004",name:"Smart TV 43 นิ้ว · สำหรับห้องเล็ก",shop_name:"Everyday Tech",price_min_thb:5990,price_max_thb:5990,sold:5600,commission_pct:5,commission_thb_per_order:299.5,mall:false,ranking_score:.82}
   ].map(product => ({...product,offer_url:`https://affiliate.shopee.co.th/offer/product_offer/${product.product_id}`,image_url:`https://down-th.img.susercontent.com/file/fixture-${product.product_id}`,channel:"social",observed_at:new Date(now-30000).toISOString()}));
   const dashboard = {schema_version:1,query:"ทีวี 4K สำหรับห้องนั่งเล่น",channel:"social",freshness:"live",cache_hit:false,cache_age_ms:0,partial_market_coverage:false,criteria:{ranking_goal:"balanced",min_sold:500},winner_product_id:"10001",observed_at:new Date(now-30000).toISOString(),scan:{pages_scanned:3,unique_products:42,reached_end:true,outcome:"completed"},exclusions:{sold_below_minimum:8,missing_fields:3},results:products};
@@ -73,6 +73,7 @@ async function run() {
     assert.equal(await page.locator("#winner-shop").textContent(),"Official TV Store");
     assert.equal(await page.locator("#winner-open").getAttribute("href"),"https://affiliate.shopee.co.th/offer/product_offer/10001");
     assert.equal(await page.locator("#comparison-grid .product-card").count(),4);
+    assert.equal(await page.locator('#comparison-grid [data-product-id="10003"] .shop-evidence-link').getAttribute("href"),"https://shopee.co.th/shop/303","missing store names get an actionable verified shop link");
     const commissionCard=page.locator('#comparison-grid [data-product-id="10001"]');
     const commissionDetails=commissionCard.locator(".commission-breakdown");
     assert.equal(await commissionDetails.count(),1,"channel breakdown is only present when channel rows exist");
@@ -116,6 +117,7 @@ async function run() {
     assert.match(await page.locator("#report-confidence").textContent(),/Agent.*ปานกลาง/u);
     assert.equal(await page.locator('[data-stage="detail"]').getAttribute("data-state"),"active");
     assert.match(await page.locator("#unknowns").textContent(),/ชื่อร้าน/u);
+    assert.match(await page.locator("#unknowns").textContent(),/ลิงก์เปิดร้านแทนการเดาชื่อ/u);
     assert.equal(await page.locator("#view-research .workspace-label").textContent(),"พื้นที่ทำงานคัดสินค้า Affiliate");
     const crossCategory=structuredClone(snapshot);
     const alternate=crossCategory.runs[0].dashboard;

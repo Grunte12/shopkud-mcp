@@ -1,6 +1,6 @@
 # ShopKud P0 / P1 / P2 checklist
 
-Version 0.11.2. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
+Version 0.11.3. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
 
 The standalone runtime, cache/freshness behavior, trust boundaries, and
 agent-installed macOS topology are documented in

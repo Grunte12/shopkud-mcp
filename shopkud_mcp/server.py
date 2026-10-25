@@ -924,6 +924,12 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 shopee = offer.get("shopee_commission") if type(offer.get("shopee_commission")) is dict else {}
                 image_url = next((image.get("url") for image in detail.get("images", [])
                                   if isinstance(image, dict) and isinstance(image.get("url"), str)), None)
+                product_match = re.fullmatch(
+                    r"https://shopee\.co\.th/product/([1-9][0-9]{0,19})/([1-9][0-9]{0,19})",
+                    detail.get("product_url") if type(detail.get("product_url")) is str else "",
+                )
+                shop_id = product_match.group(1) if product_match and product_match.group(2) == row.get("product_id") else None
+                product_url = product_match.group(0) if shop_id else None
                 commission_channels, seen_channels = [], set()
                 for item in detail_channels:
                     channel_name = item.get("channel") if type(item) is dict else None
@@ -942,6 +948,8 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                     })
                 verified.append({
                     "product_id": row.get("product_id"), "name": detail.get("name") or row.get("name"),
+                    "shop_id": shop_id, "shop_name": detail.get("shop_name") if type(detail.get("shop_name")) is str else None,
+                    "product_url": product_url, "shop_url": f"https://shopee.co.th/shop/{shop_id}" if shop_id else None,
                     "price_min_thb": detail.get("price_min_thb"), "price_max_thb": detail.get("price_max_thb"),
                     "sold": row.get("sold"), "mall": row.get("mall"), "channel": channel,
                     "commission_pct": offer.get("total_pct"), "commission_thb_per_order": amount,

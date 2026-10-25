@@ -1,6 +1,6 @@
 # ShopKud P0–P2 report
 
-Version 0.11.2. Public branch `main`.
+Version 0.11.3. Public branch `main`.
 
 The service stays extension-only. It does not sign Affiliate Open API requests, follow `s.shopee.co.th` redirects, or store buyer or order identifiers. Remote MCP remains loopback plus a bearer token.
 

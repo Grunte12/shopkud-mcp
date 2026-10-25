@@ -12,7 +12,7 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.11.2** - Decision-first commission comparison, visual product-research Dashboard, persistent Personal Workspace and guided ShopKud v1 workflow. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+**Version 0.11.3** - Actionable store evidence, decision-first commission comparison, visual product-research Dashboard and persistent Personal Workspace. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 Installing for another user or coding agent: read [AGENTS.md](AGENTS.md) and
 [docs/INSTALL_FOR_AGENTS.md](docs/INSTALL_FOR_AGENTS.md). ShopKud is standalone;
@@ -21,8 +21,8 @@ no MCP gateway, Docker daemon, or external database is required.
 Architecture and trust boundaries: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Cheap-model tool-selection evidence: [evals/LUNA_TOOL_SELECTION_2026-10-24.md](evals/LUNA_TOOL_SELECTION_2026-10-24.md).
 
-This is the public **0.11.2** release. The Python package and extension both
-declare **0.11.2**. Synthetic offline tests do not certify the
+This is the public **0.11.3** release. The Python package and extension both
+declare **0.11.3**. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
 ## Current capabilities
@@ -88,6 +88,16 @@ shopkud-mcp set-tool-profile --config /absolute/private/shopkud-state/config.jso
 
 Restart only ShopKud after changing profiles. The connected MCP client can then
 rediscover the selected catalog.
+
+### What's New in 0.11.3
+
+- Ranked products now carry the canonical public product and shop links already
+  evidenced by the Affiliate offer route.
+- When Shopee does not display a store name on the Affiliate page, the
+  Dashboard offers a direct store-inspection link instead of guessing a name
+  or presenting the missing evidence as a broken tool.
+- ShopKud does not automatically crawl every store page, avoiding extra tabs,
+  latency and anti-bot challenges during ordinary product ranking.
 
 ### What's New in 0.11.2
 

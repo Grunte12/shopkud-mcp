@@ -65,6 +65,7 @@
       const url = new URL(value);
       if(url.protocol !== "https:" || url.username || url.password) return null;
       if(kind === "offer" && (url.origin !== "https://affiliate.shopee.co.th" || url.search || url.hash || !/^\/offer\/product_offer\/[1-9][0-9]{0,19}$/u.test(url.pathname))) return null;
+      if(kind === "shop" && (url.origin !== "https://shopee.co.th" || url.search || url.hash || !/^\/shop\/[1-9][0-9]{0,19}$/u.test(url.pathname))) return null;
       if(kind === "image" && !/(?:^|\.)(?:susercontent|shopeemobile)\.com$/u.test(url.hostname)) return null;
       return url;
     } catch { return null; }
@@ -73,6 +74,16 @@
     const url = safeURL(value, kind);
     if(url) { anchor.href = url.href; anchor.removeAttribute("aria-disabled"); anchor.removeAttribute("tabindex"); }
     else { anchor.removeAttribute("href"); anchor.setAttribute("aria-disabled", "true"); anchor.setAttribute("tabindex", "-1"); }
+  }
+  function renderShop(element, product) {
+    element.replaceChildren();
+    const name = text(product.shop_name).trim();
+    if(name) { element.textContent = name; return; }
+    const url = safeURL(product.shop_url,"shop");
+    if(!url) { element.textContent = "Shopee ไม่แสดงชื่อร้าน"; return; }
+    const anchor = node("a","shop-evidence-link","เปิดร้านค้าเพื่อตรวจชื่อ ↗");
+    anchor.href = url.href; anchor.target = "_blank"; anchor.rel = "noopener noreferrer";
+    element.append(anchor);
   }
   function setImage(image, fallback, url, name) {
     const safe = safeURL(url, "image");
@@ -437,7 +448,7 @@
     setImage(card.querySelector("img"), card.querySelector(".image-fallback"), product.image_url, product.name);
     trust(card.querySelector(".trust"), product);
     card.querySelector(".product-name").textContent = product.name;
-    card.querySelector(".product-shop").textContent = text(product.shop_name) || "ไม่ทราบชื่อร้าน";
+    renderShop(card.querySelector(".product-shop"),product);
     const metrics = card.querySelector(".product-metrics");
     const metricChannel = {social:"Social",shopee_live:"Live",shopee_video:"Video"}[product.channel || dashboard?.channel] || "ช่องทาง";
     for(const [label,value] of [["ราคา",price(product)],[`คอม ${metricChannel}`,money(product.commission_thb_per_order)],["ยอดขายที่เห็น",count(product.sold)],["อัตราคอม",percent(product.commission_pct)]]) {
@@ -481,7 +492,7 @@
     setImage($("#winner-image"),$("#winner-fallback"),winner.image_url,winner.name);
     trust($("#winner-trust"),winner);
     $("#winner-name").textContent = winner.name;
-    $("#winner-shop").textContent = text(winner.shop_name) || "ไม่ทราบชื่อร้าน";
+    renderShop($("#winner-shop"),winner);
     $("#winner-reason").textContent = reason(winner,dashboard,true);
     $("#winner-price").textContent = price(winner);
     $("#winner-commission").textContent = money(winner.commission_thb_per_order);
@@ -506,7 +517,7 @@
     const unknowns = ["ยอดขายที่เห็นไม่ระบุช่วงเวลา จึงไม่ใช่ยอดขายรายเดือนหรืออัตราการเติบโต", "Shopee Mall เป็นสถานะร้านที่พบ ไม่ได้ยืนยันคุณภาพสินค้าหรือบริการทุกด้าน"];
     if(!report) unknowns.unshift("Agent ยังไม่ได้เผยแพร่เทรนด์ ความต้องการซื้อ หรือบริบทร้านสำหรับโจทย์นี้");
     else if(!array(report.citations).some(source => safeURL(source?.url))) unknowns.unshift("รายงาน Agent ยังไม่มีแหล่งอ้างอิงที่เปิดได้ ข้อประเมินนี้ยังตรวจย้อนกลับไม่ได้");
-    if(products.some(product => !text(product.shop_name))) unknowns.push("บางสินค้ายังไม่มีชื่อร้านในหลักฐานที่ส่งมา");
+    if(products.some(product => !text(product.shop_name))) unknowns.push("หน้า Affiliate ไม่แสดงชื่อร้านสำหรับบางสินค้า ShopKud จึงให้ลิงก์เปิดร้านแทนการเดาชื่อ");
     if(products.some(product => ["price_min_thb","commission_thb_per_order","sold"].some(key => !finite(product[key])))) unknowns.push("บางสินค้ามีข้อมูลราคา ค่าคอม หรือยอดขายไม่ครบ ช่องที่ไม่ทราบจะไม่ถูกแทนด้วยศูนย์");
     $("#unknowns").replaceChildren(...unknowns.map(value => node("li","",value)));
     $("#coverage-note").textContent = dashboard?.partial_market_coverage ? "สแกนเฉพาะบางหน้า ไม่ใช่การเปรียบเทียบสินค้าทั้งหมดใน Shopee" : "ข้อมูลอาจเปลี่ยนหลังเวลาที่ตรวจ ควรเปิดหน้าสินค้าตรวจอีกครั้งก่อนตัดสินใจ";

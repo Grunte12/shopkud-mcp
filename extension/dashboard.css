@@ -163,6 +163,9 @@ h3 { font-size: 14px; line-height: 1.5; }
 .trust[data-known="false"] { color: var(--muted); background: var(--surface-soft); }
 .winner-copy h3 { margin-top: 10px; font-size: 23px; line-height: 1.35; letter-spacing: -.02em; overflow-wrap: anywhere; }
 .product-shop { margin-top: 5px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.shop-evidence-link { color: var(--indigo); font-weight: 650; text-decoration: none; }
+.shop-evidence-link:hover { text-decoration: underline; }
+.shop-evidence-link:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; border-radius: 3px; }
 .winner-reason { margin-top: 12px; font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
 .winner-metrics { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 1px; margin: 2px 20px 0; padding: 14px 0; background: var(--surface-soft); border-radius: 14px; }
 .winner-metrics > div { min-width: 0; padding: 0 16px; }
