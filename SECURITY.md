@@ -12,9 +12,9 @@ promised.
 
 ## Reporting a vulnerability
 
-GitHub's repository API was checked read-only on 2026-10-26 and reported that
-Private Vulnerability Reporting is **disabled** for this repository. Therefore,
-there is currently no verified private GitHub reporting route to advertise.
+GitHub Private Vulnerability Reporting is enabled and its reporting form was
+verified on 2026-10-26 without submitting a test advisory. Report sensitive
+issues through [GitHub's private vulnerability form](https://github.com/Grunte12/shopkud-mcp/security/advisories/new).
 
 Do not open a public issue containing a bearer token, config file, cookie,
 Chrome profile, extension storage, personal sales data, raw conversion CSV,
@@ -22,9 +22,8 @@ affiliate-link receipt or live account capture. Do not send those values in
 chat to a maintainer or an Agent.
 
 For a non-sensitive bug, open a public issue with a sanitized reproduction. For
-a security issue that cannot be safely sanitized, keep the details private until
-the repository Security page exposes GitHub's **Report a vulnerability** action.
-This policy will be updated when that route is enabled and verified.
+a security issue, use the private vulnerability form. Do not move sensitive
+details into a public issue, chat, email or another unverified channel.
 
 A useful sanitized report contains:
 
