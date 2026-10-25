@@ -17,8 +17,11 @@ function fixture() {
     {product_id:"10003",name:"QLED TV 55 นิ้ว · สีสันคมชัด",shop_name:null,shop_url:"https://shopee.co.th/shop/303",price_min_thb:12990,price_max_thb:12990,sold:1400,commission_pct:7,commission_thb_per_order:909.3,mall:true,ranking_score:.85},
     {product_id:"10004",name:"Smart TV 43 นิ้ว · สำหรับห้องเล็ก",shop_name:"Everyday Tech",price_min_thb:5990,price_max_thb:5990,sold:5600,commission_pct:5,commission_thb_per_order:299.5,mall:false,ranking_score:.82}
   ].map(product => ({...product,offer_url:`https://affiliate.shopee.co.th/offer/product_offer/${product.product_id}`,image_url:`https://down-th.img.susercontent.com/file/fixture-${product.product_id}`,channel:"social",observed_at:new Date(now-30000).toISOString()}));
-  const dashboard = {schema_version:1,query:"ทีวี 4K สำหรับห้องนั่งเล่น",channel:"social",freshness:"live",cache_hit:false,cache_age_ms:0,partial_market_coverage:false,criteria:{ranking_goal:"balanced",target_kind:"product",required_terms:["4K"],min_sold:500},winner_product_id:"10001",winner_status:"metric_leader_pending_agent_review",review_required:true,candidate_verification_partial:false,observed_at:new Date(now-30000).toISOString(),scan:{pages_scanned:3,unique_products:42,reached_end:true,outcome:"completed"},exclusions:{sold_below_minimum:8,missing_fields:3},results:products};
-  const report = {schema_version:1,report_id:"e".repeat(16),query:dashboard.query,status:"completed",stage:"recommendation",headline:"จอใหญ่ ใช้ง่าย เป็นจุดตัดสินใจหลัก",summary:"กลุ่มที่กำลังเปลี่ยนทีวีให้ความสำคัญกับขนาดจอ ระบบที่ใช้ง่าย และความคุ้มค่า ควรเทียบรุ่น 50–55 นิ้วในงบใกล้เคียงกันก่อนเลือก",purchase_intent:"กำลังเปรียบเทียบรุ่นและราคาเพื่อเปลี่ยนทีวีเครื่องเดิม ไม่ใช่แค่ดูไอเดียแต่งห้อง",confidence:"medium",updated_at_unix_ms:now-40000,signals:[
+  const dashboard = {schema_version:1,report_id:"e".repeat(16),query:"ทีวี 4K สำหรับห้องนั่งเล่น",channel:"social",freshness:"live",cache_hit:false,cache_age_ms:0,partial_market_coverage:false,criteria:{ranking_goal:"balanced",target_kind:"product",required_terms:["4K"],min_sold:500},winner_product_id:"10001",winner_status:"metric_leader_pending_agent_review",review_required:true,candidate_verification_partial:false,observed_at:new Date(now-30000).toISOString(),scan:{pages_scanned:3,unique_products:42,reached_end:true,outcome:"completed"},exclusions:{sold_below_minimum:8,missing_fields:3},results:products};
+  const report = {schema_version:1,report_id:"e".repeat(16),trace_id:"a".repeat(16),query:dashboard.query,status:"completed",stage:"recommendation",headline:"จอใหญ่ ใช้ง่าย เป็นจุดตัดสินใจหลัก",summary:"กลุ่มที่กำลังเปลี่ยนทีวีให้ความสำคัญกับขนาดจอ ระบบที่ใช้ง่าย และความคุ้มค่า ควรเทียบรุ่น 50–55 นิ้วในงบใกล้เคียงกันก่อนเลือก",purchase_intent:"กำลังเปรียบเทียบรุ่นและราคาเพื่อเปลี่ยนทีวีเครื่องเดิม ไม่ใช่แค่ดูไอเดียแต่งห้อง",confidence:"medium",updated_at_unix_ms:now-40000,product_decisions:[
+    {product_id:"10001",status:"recommended",reason:"ตรงโจทย์ 4K ร้านมีหลักฐาน และสมดุลค่าคอมกับยอดขาย",source_indexes:[0,1]},
+    {product_id:"10003",status:"needs_evidence",reason:"ค่าคอมสูงกว่าแต่ยังไม่เห็นชื่อร้านจากหน้าที่ตรวจ",source_indexes:[1]}
+  ],signals:[
     {kind:"trend",label:"ความสนใจทีวีจอใหญ่",value:"มีสัญญาณบวก",score:78,rationale:"ความสนใจการค้นเพิ่มขึ้นในกลุ่มคำเกี่ยวกับทีวี 55 นิ้ว",source_indexes:[0]},
     {kind:"purchase_intent",label:"ความพร้อมตัดสินใจซื้อ",value:"เน้นเทียบรุ่นและราคา",score:84,rationale:"คำถามเรื่องราคาและรุ่นที่เหมาะกับห้อง บ่งชี้ว่ากำลังเลือกซื้อ",source_indexes:[1]},
     {kind:"competition",label:"การแข่งขันในกลุ่ม",value:"หลายรุ่นใกล้เคียงกัน",score:62,rationale:"ควรดูค่าคอมและยอดขายควบคู่ ไม่เลือกจากขนาดจออย่างเดียว",source_indexes:[1]},
@@ -71,8 +74,9 @@ async function run() {
     assert.equal(await page.locator("#query-heading").textContent(),snapshot.runs[0].dashboard.query);
     assert.equal(await page.locator("#winner-name").textContent(),snapshot.runs[0].dashboard.results[0].name);
     assert.equal(await page.locator("#winner-shop").textContent(),"Official TV Store");
-    assert.match(await page.locator(".winner-label").textContent(),/รอ Agent ตรวจ/u);
-    assert.match(await page.locator('#comparison-grid [data-product-id="10001"] .product-position').textContent(),/รอ Agent ตรวจ/u);
+    assert.match(await page.locator(".winner-label").textContent(),/Agent แนะนำ/u);
+    assert.match(await page.locator('#comparison-grid [data-product-id="10001"] .product-position').textContent(),/Agent แนะนำ/u);
+    assert.match(await page.locator("#winner-reason").textContent(),/ตรงโจทย์ 4K/u);
     assert.equal(await page.locator("#winner-open").getAttribute("href"),"https://affiliate.shopee.co.th/offer/product_offer/10001");
     assert.equal(await page.locator("#comparison-grid .product-card").count(),4);
     assert.equal(await page.locator('#comparison-grid [data-product-id="10003"] .shop-evidence-link').getAttribute("href"),"https://shopee.co.th/shop/303","missing store names get an actionable verified shop link");
@@ -129,6 +133,7 @@ async function run() {
     crossCategory.runs[0].query=alternate.query;
     crossCategory.research_reports[0].query=alternate.query;
     crossCategory.research_reports[0].headline="กล้องและแบตคือจุดตัดสินใจหลัก";
+    crossCategory.research_reports[0].product_decisions=[{product_id:"20001",status:"recommended",reason:"ตรงงบและโจทย์ถ่ายวิดีโอ",source_indexes:[0]}];
     await page.evaluate(value=>__pushSnapshot(value),crossCategory);
     assert.equal(await page.locator("#query-heading").textContent(),alternate.query,"one static shell renders a different product category");
     assert.equal(await page.locator("#winner-name").textContent(),alternate.results[0].name);
@@ -200,10 +205,14 @@ async function run() {
     assert.equal(await page.locator("#report-citations a").count(),1);
     assert.equal(await page.locator("#signals .signal").first().locator("a").count(),1);
     assert.equal(await page.locator('a[href^="javascript:"]').count(),0);
-    const mismatched=structuredClone(snapshot);mismatched.research_reports[0].query="เครื่องฟอกอากาศ";mismatched.research_reports[0].updated_at_unix_ms=Date.now()+1000;
+    const mismatched=structuredClone(snapshot);mismatched.research_reports[0].query="โจทย์การตลาด: ห้องนั่งเล่นสำหรับครอบครัว";mismatched.research_reports[0].updated_at_unix_ms=Date.now()+1000;
     await page.evaluate(value=>__pushSnapshot(value),mismatched);
-    assert.equal(await page.locator("#winner").isVisible(),false,"different research queries are not combined");
-    assert.equal(await page.locator("#comparison-section").isVisible(),false);
+    assert.equal(await page.locator("#winner").isVisible(),true,"an exact report ID binds a user brief even when its search query differs");
+    assert.equal(await page.locator("#query-heading").textContent(),mismatched.research_reports[0].query);
+    const stale=structuredClone(snapshot);stale.runs[0].trace_id="f".repeat(16);stale.runs[0].dashboard.report_id="d".repeat(16);
+    await page.evaluate(value=>__pushSnapshot(value),stale);
+    assert.equal(await page.locator("#market-empty").isVisible(),true,"an old report is not attached to a new run by similar query");
+    assert.equal(await page.locator("#winner").isVisible(),true,"unbound Shopee evidence remains visible without inventing Agent reasoning");
     const noReport=structuredClone(snapshot);noReport.research_reports=[];
     await page.evaluate(value=>__pushSnapshot(value),noReport);
     assert.equal(await page.locator("#market-empty").isVisible(),true);
@@ -231,6 +240,7 @@ async function run() {
     empty.runs[0].dashboard.results=[];
     empty.runs[0].dashboard.winner_product_id=null;
     empty.runs[0].dashboard.partial_market_coverage=true;
+    empty.research_reports[0].product_decisions=[];
     await page.evaluate(value=>__pushSnapshot(value),empty);
     await page.locator("#tab-research").click();
     assert.match(await page.locator("#product-empty-copy").textContent(),/ไม่ได้แปลว่าทั้งตลาดไม่มีสินค้า/u);

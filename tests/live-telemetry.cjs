@@ -37,10 +37,11 @@ async function run(){
   assert.equal(snapshot.developer_logs[0].actor,"agent");
   assert.equal(snapshot.developer_logs[0].operation,"rank_affiliate_products");
   assert.deepEqual(snapshot.developer_logs[0].media,["https://down-th.img.susercontent.com/file/result.jpg"]);
-  const report={schema_version:1,report_id:"9".repeat(16),query:"ทีวี",status:"completed",stage:"recommendation",
+  const report={schema_version:1,report_id:"9".repeat(16),trace_id:"a".repeat(16),query:"ทีวี",status:"completed",stage:"recommendation",
     headline:"คนกำลังหา Smart TV ราคาเข้าถึงง่าย",summary:"สัญญาณภายนอกชี้ว่าความคุ้มและความน่าเชื่อถือสำคัญกว่าขนาดจอเพียงอย่างเดียว",
     purchase_intent:"ผู้ซื้อเปรียบเทียบราคา ประกัน และรีวิวก่อนตัดสินใจ",confidence:"medium",updated_at_unix_ms:Date.now(),
     signals:[{kind:"purchase_intent",label:"Purchase intent",value:"สูง",score:78,rationale:"มีคำถามเรื่องราคาและประกันซ้ำ",source_indexes:[0]}],
+    product_decisions:[],
     citations:[{title:"โพสต์สาธารณะบน X",url:"https://x.com/example/status/1"},{title:"บทวิเคราะห์ตลาด",url:"https://example.com/tv-market"}]};
   ports[0].onMessage.fire({type:"command",id:"8".repeat(32),page_id:"extension",operation:"research_report",arguments:report});
   await new Promise(resolve=>setTimeout(resolve,0));
@@ -48,9 +49,10 @@ async function run(){
   runtimeMessage.fire({type:"shopkud-live-snapshot"},{id:"extension-id"},value=>{snapshot=value;});
   await new Promise(resolve=>setTimeout(resolve,0));
   assert.equal(snapshot.research_reports.length,1);
+  assert.equal(snapshot.research_reports[0].trace_id,"a".repeat(16));
   assert.equal(snapshot.research_reports[0].signals[0].score,78);
   assert.equal(snapshot.research_reports[0].citations[1].url,"https://example.com/tv-market");
-  const dashboard={schema_version:1,query:"ทีวี",channel:"shopee_video",freshness:"live",cache_hit:false,cache_age_ms:0,partial_market_coverage:false,
+  const dashboard={schema_version:1,report_id:"9".repeat(16),query:"ทีวี",channel:"shopee_video",freshness:"live",cache_hit:false,cache_age_ms:0,partial_market_coverage:false,
     criteria:{ranking_goal:"balanced",mall_only:true,min_sold:500},winner_product_id:"26570814201",observed_at:"2026-10-25T12:00:00Z",
     scan:{pages_scanned:3,unique_products:42,reached_end:true},exclusions:{not_mall:5},relaxation_suggestions:[],results:[
       {product_id:"26570814201",name:"Philips NA331 Air Fryer",offer_url:"https://affiliate.shopee.co.th/offer/product_offer/26570814201",image_url:"https://down-th.img.susercontent.com/file/result.jpg",mall:true,channel:"shopee_video",price_min_thb:3899,sold:1200,commission_pct:6.5,commission_thb_per_order:236.02,trust_basis:["mall"]},
@@ -65,7 +67,19 @@ async function run(){
   assert.equal(snapshot.runs[0].dashboard.results.length,2);
   assert.equal(snapshot.runs[0].dashboard.results[0].image_url,"https://down-th.img.susercontent.com/file/result.jpg");
   assert.equal(snapshot.runs[0].dashboard.results[1].image_url,null);
+  assert.equal(snapshot.runs[0].dashboard.report_id,"9".repeat(16));
   assert.equal(snapshot.runs[0].dashboard.criteria.ranking_goal,"balanced");
+  const reviewed={...report,product_decisions:[{product_id:"26570814201",status:"recommended",reason:"ตรงโจทย์และมีหลักฐานอ้างอิง",source_indexes:[0]}]};
+  ports[0].onMessage.fire({type:"command",id:"6".repeat(32),page_id:"extension",operation:"research_report",arguments:reviewed});
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(ports[0].messages.at(-1).result.ok,true);
+  runtimeMessage.fire({type:"shopkud-live-snapshot"},{id:"extension-id"},value=>{snapshot=value;});
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(snapshot.research_reports[0].product_decisions[0].status,"recommended");
+  ports[0].onMessage.fire({type:"command",id:"7".repeat(32),page_id:"extension",operation:"research_report",arguments:{...reviewed,report_id:"7".repeat(16)}});
+  await new Promise(resolve=>setTimeout(resolve,0));
+  assert.equal(ports[0].messages.at(-1).result.ok,false);
+  assert.equal(ports[0].messages.at(-1).result.error,"decision_run_mismatch");
   console.log(JSON.stringify({ok:true,checks:["native telemetry is validated and stored","safe developer events stream line-by-line","agent research reports require bounded cited evidence","extension snapshot exposes connection, research, and run state"]}));
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});

@@ -22,6 +22,10 @@ MAX_CALL_TIMEOUT = 120.0
 HANDSHAKE_TIMEOUT = 10.0
 ABANDONED_RESULT_TTL = 90.0
 MAX_ABANDONED_CALLS = MAX_PAGES
+QUEUED_EXTENSION_OPERATIONS = frozenset({
+    "open_offer", "entry_info", "read_listing", "detail", "playbook_event",
+    "developer_event", "research_report",
+})
 ALLOWED_OPERATIONS = frozenset({
     "snapshot", "selections", "prepare", "apply", "export", "clear",
     "pagination", "navigate", "scan", "scan_read", "review", "detail", "open_offer", "entry_info", "search_scan", "read_listing",
@@ -280,13 +284,15 @@ class Broker:
         peer = next(iter(candidates), None)
         if peer is None:
             raise BrokerError("disconnected" if extension_target else "unknown_page")
-        # Entry commands share the extension target with telemetry. Wait before
-        # dispatch, never replay a command whose outcome is unknown.
-        if operation == "open_offer":
-            deadline = asyncio.get_running_loop().time() + float(timeout)
+        deadline = asyncio.get_running_loop().time() + float(timeout)
+        # Read-only extension work and telemetry share one native channel. Queue
+        # before dispatch; a queued cancellation never reaches the browser.
+        if operation in QUEUED_EXTENSION_OPERATIONS:
             while page_id in self._busy_pages:
                 if asyncio.get_running_loop().time() >= deadline:
                     raise BrokerError("busy")
+                if peer.closed:
+                    raise BrokerError("disconnected")
                 await asyncio.sleep(0.01)
             if peer.closed:
                 raise BrokerError("disconnected")
@@ -310,7 +316,10 @@ class Broker:
             peer.writer.write(frame)
             command_queued = True
             await peer.writer.drain()
-            return await asyncio.wait_for(asyncio.shield(future), timeout=float(timeout))
+            remaining = deadline - asyncio.get_running_loop().time()
+            if remaining <= 0:
+                raise asyncio.TimeoutError
+            return await asyncio.wait_for(asyncio.shield(future), timeout=remaining)
         except asyncio.CancelledError:
             if command_queued and peer.pending.get(command_id) is pending and not peer.closed:
                 abandoned_count = sum(

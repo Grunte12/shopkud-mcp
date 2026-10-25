@@ -93,9 +93,10 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
                   "allowed_origins": ["chrome-extension://" + "a" * 32 + "/"]}
         _, mcp, _ = create_service(config, self.broker)
         self.tool = mcp._tool_manager._tools["rank_affiliate_products"].fn
+        self.detail_tool = mcp._tool_manager._tools["get_product_detail"].fn
 
     async def test_filters_then_ranks_only_verified_video_commission(self):
-        result = await self.tool("ทีวี")
+        result = await self.tool("ทีวี", report_id="d"*16)
         self.assertTrue(result["ok"])
         self.assertEqual([row["product_id"] for row in result["results"]], ["1", "2"])
         self.assertEqual(result["winner"]["commission_thb_per_order"], 2904.5)
@@ -125,6 +126,8 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(events[-1]["dashboard"]["results"][0]["image_url"],
                          "https://down-th.img.susercontent.com/file/1")
         self.assertEqual(events[-1]["dashboard"]["criteria"]["ranking_goal"], "commission_value")
+        self.assertEqual(events[-1]["dashboard"]["report_id"], "d"*16)
+        self.assertEqual(result["trace"]["report_id"], "d"*16)
         self.assertTrue(any(event["stage"] == "detail_check" for event in events))
 
     async def test_results_include_all_known_channel_commissions_from_the_same_detail_read(self):
@@ -224,6 +227,19 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(second["trace"]["cache_hit"])
         self.assertEqual(sum(call[1] == "search_scan" for call in self.broker.calls), 1)
         self.assertTrue(any(call[1] == "playbook_event" and call[2]["stage"] == "cache_hit" for call in self.broker.calls))
+
+    async def test_standalone_detail_waits_for_the_whole_rank_browser_lane(self):
+        rank=asyncio.create_task(self.tool("ทีวี",freshness="live"))
+        await asyncio.sleep(0.001)
+        detail=asyncio.create_task(self.detail_tool(product_id="1",open_if_missing=True,view="brief"))
+        ranked,read=await asyncio.gather(rank,detail)
+        self.assertTrue(ranked["ok"])
+        self.assertTrue(read["ok"])
+        completed=max(index for index,call in enumerate(self.broker.calls)
+                      if call[1]=="playbook_event" and call[2]["stage"]=="completed")
+        standalone=max(index for index,call in enumerate(self.broker.calls)
+                       if call[1]=="open_offer" and call[2]["offer_url"].endswith("/1"))
+        self.assertGreater(standalone,completed)
 
     async def test_agent_can_choose_ranking_goal_without_rebuilding_the_workflow(self):
         commission = await self.tool("ทีวี", ranking_goal="commission_value", freshness="live")

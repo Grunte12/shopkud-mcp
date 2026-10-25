@@ -20,7 +20,7 @@ function event(){
 }
 
 function harness(options={}){
-  const ports=[],tabs=new Map(),creates=[],updates=[],executions=[],permissionChecks=[],permissionMutations=[];
+  const ports=[],tabs=new Map(),creates=[],updates=[],removals=[],executions=[],permissionChecks=[],permissionMutations=[];
   const runtimeMessage=event(),tabsRemoved=event(),tabsUpdated=event();
   let nextCommand=0;
   const chrome={runtime:{id:"fixture-extension",lastError:null,getManifest:()=>({version:manifest.version,optional_permissions:manifest.optional_permissions||[],optional_host_permissions:manifest.optional_host_permissions||[]}),getURL:file=>`chrome-extension://fixture/${file}`,onMessage:runtimeMessage,
@@ -42,12 +42,12 @@ function harness(options={}){
     }},
     tabs:{onRemoved:tabsRemoved,onUpdated:tabsUpdated,
       query(_query,callback){const result=[...tabs.values()].map(t=>({...t}));if(callback)callback(result);return Promise.resolve(result);},
-      get(id,callback){const tab=tabs.get(id);if(callback)callback(tab);return Promise.resolve(tab);},
+      get(id,callback){const tab=tabs.get(id);if(options.deferGet)return options.deferGet.then(()=>{callback?.(tab);return tab;});if(callback)callback(tab);return Promise.resolve(tab);},
       create(info,callback){const id=500+creates.length;creates.push({id,...info});if(options.createFails)return Promise.reject(new Error("synthetic create failure"));const tab={id,url:info.url,active:info.active,status:"complete"};tabs.set(id,tab);if(callback)callback(tab);return Promise.resolve(tab);},
       update(id,info,callback){updates.push({id,info});if(options.updateFails){chrome.runtime.lastError={message:"synthetic update failure"};callback?.();chrome.runtime.lastError=null;return Promise.reject(new Error("synthetic update failure"));}
         const tab=tabs.get(id);if(!tab){callback?.();return Promise.reject(new Error("missing tab"));}
         Object.assign(tab,info,{status:"complete"});tabsUpdated.fire(id,{status:"complete"},tab);if(callback)callback(tab);return Promise.resolve(tab);
-      }}
+      },remove(id){removals.push(id);tabs.delete(id);tabsRemoved.fire(id);return Promise.resolve();}}
   };
   const timers=new Map();let timerId=0;
   const context=vm.createContext({chrome,URL,Map,Set,Promise,Object,Array,Number,String,RegExp,
@@ -68,8 +68,9 @@ function harness(options={}){
     }
     throw new Error(`${operation} did not complete`);
   }
+  async function runTimers(delay){const pending=[];for(const [id,timer] of [...timers])if(timer.delay===delay){timers.delete(id);pending.push(Promise.resolve(timer.fn()));}await new Promise(resolve=>setImmediate(resolve));await Promise.all(pending);}
   async function command(operation,args={}){return resultFor(send(operation,args),operation);}
-  return {ports,tabs,creates,updates,executions,permissionChecks,permissionMutations,command,send,resultFor,options};
+  return {ports,tabs,creates,updates,removals,executions,permissionChecks,permissionMutations,command,send,resultFor,runTimers,options};
 }
 
 async function main(){
@@ -141,6 +142,17 @@ async function main(){
   assert.equal(repeat.updates.length,0,"same-URL requests never navigate");
   assert.equal(repeat.executions.length,2);
 
+  const cleanupRace=harness();
+  assert.equal((await cleanupRace.command("read_listing",{product_url:PRODUCT,open_if_missing:true})).ok,true);
+  let releaseGet;cleanupRace.options.deferGet=new Promise(resolve=>{releaseGet=resolve;});
+  const cleanup=cleanupRace.runTimers(800);
+  await new Promise(resolve=>setImmediate(resolve));
+  const nextId=cleanupRace.send("read_listing",{product_url:OTHER,open_if_missing:true});
+  releaseGet();await cleanup;
+  const raceResult=await cleanupRace.resultFor(nextId);
+  assert.equal(raceResult.ok,true,`an old cleanup timer cannot close a tab claimed by the next read: ${JSON.stringify(raceResult)}`);
+  assert.equal(cleanupRace.removals.length,0);
+
   const owner=harness({tabs:[{id:31,url:PRODUCT,active:false,status:"complete"}]});
   assert.equal((await owner.command("read_listing",{product_url:PRODUCT,open_if_missing:false})).error,"product_page_not_open");
   assert.equal(owner.creates.length,0);assert.equal(owner.executions.length,0,"an owner-created matching tab is never adopted");
@@ -153,8 +165,14 @@ async function main(){
   jsonEqual(switched,{...PRODUCT_RESULT,source_url:OTHER,product_id:"789",entry:{tab_id:500,entry_url:OTHER,created_tab:false,reused_tab:true,owner_tab_changed:false,extension_version:manifest.version},retry_automatically:false});
   assert.equal(cross.creates.length,1);assert.equal(cross.updates.length,1);
 
+  const claimed=harness();
+  await claimed.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
+  claimed.tabs.set(500,{id:500,url:PRODUCT,active:true,status:"complete"});
+  const claimedResult=await claimed.command("read_listing",{product_url:OTHER,open_if_missing:true});
+  assert.equal(claimedResult.ok,true,"an active tool tab is preserved as user-claimed while automation continues in a new tab");
+  assert.equal(claimed.creates.length,2);assert.equal(claimed.updates.length,0);assert.equal(claimed.tabs.get(500).url,PRODUCT);
+
   for(const tab of [
-    {id:40,url:PRODUCT,active:true,status:"complete"},
     {id:41,url:PRODUCT,active:false,status:"loading"},
     {id:42,url:OTHER,active:false,status:"complete"},
   ]){
@@ -162,7 +180,7 @@ async function main(){
     await blocked.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
     blocked.tabs.set(500,{...tab,id:500});
     const result=await blocked.command("read_listing",{product_url:OTHER,open_if_missing:true});
-    assert.ok(["product_page_not_open","listing_tab_not_idle","listing_context_changed"].includes(result.error),`${tab.active?"active":tab.status==="loading"?"loading":"user-changed"} tab is not reusable`);
+    assert.ok(["product_page_not_open","listing_tab_not_idle","listing_context_changed"].includes(result.error),`${tab.status==="loading"?"loading":"user-changed"} tab is not reusable`);
     assert.equal(blocked.updates.length,0);assert.equal(blocked.creates.length,1);
   }
 

@@ -80,8 +80,8 @@
     const name = text(product.shop_name).trim();
     if(name) { element.textContent = name; return; }
     const url = safeURL(product.shop_url,"shop");
-    if(!url) { element.textContent = "Shopee ไม่แสดงชื่อร้าน"; return; }
-    const anchor = node("a","shop-evidence-link","เปิดร้านค้าเพื่อตรวจชื่อ ↗");
+    if(!url) { element.textContent = "ยังอ่านชื่อร้านไม่ได้"; return; }
+    const anchor = node("a","shop-evidence-link","ยังอ่านชื่อร้านไม่ได้ · เปิดร้านตรวจ ↗");
     anchor.href = url.href; anchor.target = "_blank"; anchor.rel = "noopener noreferrer";
     element.append(anchor);
   }
@@ -136,18 +136,29 @@
     const identity = projectIdentity(entry), previous = history.find(item => projectIdentity(item) === identity);
     return [{...previous,...entry,saved_at:previous?.saved_at || entry.saved_at},...history.filter(item => projectIdentity(item) !== identity)].slice(0,historyLimit);
   }
+  function reportForRun(run) {
+    if(!run)return null;
+    const reportId=text(run.dashboard?.report_id);
+    if(reportId)return state.research_reports.find(item=>item.report_id===reportId) || null;
+    return state.research_reports.find(item=>text(item.trace_id)===text(run.trace_id) && text(run.trace_id)) || null;
+  }
+  function runForReport(report, runs) {
+    if(!report)return null;
+    if(text(report.trace_id))return runs.find(run=>text(run.trace_id)===text(report.trace_id)) || null;
+    return runs.find(run=>text(run.dashboard?.report_id)===text(report.report_id) && text(report.report_id)) || null;
+  }
   function projectForRun(run) {
     const dashboard = run?.dashboard;
     if(run?.status !== "completed" || dashboard?.schema_version !== 1 || !text(dashboard.query)) return null;
     try {
       const savedDashboard = JSON.parse(JSON.stringify(dashboard));
       savedDashboard.results = validProducts(savedDashboard.results);
-      const report = state.research_reports.find(item => normalizeQuery(item.query) === normalizeQuery(dashboard.query));
+      const report = reportForRun(run);
       let savedReport = null;
       try { if(report) savedReport = JSON.parse(JSON.stringify(report)); } catch {}
       return {id:projectIdentity({trace_id:run.trace_id,query:dashboard.query,updated_at_unix_ms:run.updated_at_unix_ms,dashboard}),trace_id:text(run.trace_id),query:dashboard.query,
         updated_at_unix_ms:number(run.updated_at_unix_ms) || timestamp(dashboard.observed_at),saved_at:new Date().toISOString(),dashboard:savedDashboard,
-        report:savedReport && normalizeQuery(savedReport.query) === normalizeQuery(dashboard.query) ? savedReport : null};
+        report:savedReport};
     } catch { return null; }
   }
   function recordCompletedProjects() {
@@ -276,6 +287,9 @@
     if(goal === "balanced") return winner ? `อันดับหนึ่งตามเกณฑ์สมดุลค่าคอมต่อออเดอร์กับยอดขายที่เห็น${review}` : "ผ่านเกณฑ์คัดกรอง · เปรียบเทียบค่าคอมกับยอดขายที่เห็นก่อนเลือก";
     return "ผ่านเงื่อนไขและการจัดอันดับของงานนี้ · ไม่ใช่คำรับรองยอดขาย";
   }
+  function productDecision(productId) {
+    return array(current.report?.product_decisions).find(item=>item?.product_id===productId) || null;
+  }
   function trust(element, product) {
     element.textContent = product.mall === true ? "Shopee Mall" : "ยังไม่มีหลักฐาน Mall";
     element.dataset.known = String(product.mall === true);
@@ -284,12 +298,11 @@
     const completed = state.runs.filter(run => run?.status === "completed" && run.dashboard?.schema_version === 1).sort((a,b) => number(b.updated_at_unix_ms) - number(a.updated_at_unix_ms));
     const latestReport = state.research_reports[0] || null;
     let run = completed[0] || null;
-    // Never combine evidence for two different research queries into one recommendation.
-    if(latestReport && run && normalizeQuery(latestReport.query) !== normalizeQuery(run.dashboard.query) && number(latestReport.updated_at_unix_ms) > number(run.updated_at_unix_ms)) {
-      run = completed.find(item => normalizeQuery(item.dashboard.query) === normalizeQuery(latestReport.query)) || null;
+    let report = reportForRun(run);
+    if(latestReport && (!run || number(latestReport.updated_at_unix_ms) > number(run.updated_at_unix_ms))) {
+      run=runForReport(latestReport,completed);report=latestReport;
     }
-    const query = text(run?.dashboard.query) || text(latestReport?.query);
-    const report = state.research_reports.find(item => normalizeQuery(item.query) === normalizeQuery(query)) || null;
+    const query = text(report?.query) || text(run?.dashboard.query);
     return {run, dashboard:run?.dashboard || null, report, query};
   }
   function renderJourney() {
@@ -443,9 +456,13 @@
   }
   function productCard(product, rank, dashboard, saved = false, projectQuery = null) {
     const card = $("#product-template").content.firstElementChild.cloneNode(true);
-    const winner = !saved && product.product_id === dashboard?.winner_product_id;
+    const decision=saved?null:productDecision(product.product_id);
+    const reviewed=!saved && current.report?.status==="completed" && current.report?.stage==="recommendation" && array(current.report?.product_decisions).length>0;
+    const winner = !saved && (reviewed ? decision?.status==="recommended" : product.product_id === dashboard?.winner_product_id);
     card.dataset.productId = product.product_id; card.dataset.winner = String(winner);
-    card.querySelector(".product-position").textContent = saved ? `จากโจทย์ ${text(product.saved_query) || "ไม่ระบุ"}` : winner ? "อันดับ 1 · รอ Agent ตรวจ" : `อันดับ ${rank}`;
+    const decisionLabel={recommended:"Agent แนะนำ",rejected:"Agent ตัดออก",needs_evidence:"รอหลักฐานเพิ่ม",candidate:"ตัวเลือกสำรอง"}[decision?.status];
+    card.dataset.decision=decision?.status || "unreviewed";
+    card.querySelector(".product-position").textContent = saved ? `จากโจทย์ ${text(product.saved_query) || "ไม่ระบุ"}` : decisionLabel ? `${decisionLabel} · อันดับ ${rank}` : winner ? "อันดับ 1 · รอ Agent ตรวจ" : `อันดับ ${rank}`;
     setImage(card.querySelector("img"), card.querySelector(".image-fallback"), product.image_url, product.name);
     trust(card.querySelector(".trust"), product);
     card.querySelector(".product-name").textContent = product.name;
@@ -456,7 +473,7 @@
       const group = node("div"); group.append(node("dt","",label), node("dd","",value)); metrics.append(group);
     }
     commissionBreakdown(product,metrics);
-    card.querySelector(".product-reason").textContent = saved ? "ข้อมูล ณ เวลาที่บันทึก · เปิดสินค้าตรวจราคาและค่าคอมอีกครั้ง" : reason(product,dashboard,winner);
+    card.querySelector(".product-reason").textContent = saved ? "ข้อมูล ณ เวลาที่บันทึก · เปิดสินค้าตรวจราคาและค่าคอมอีกครั้ง" : text(decision?.reason) || reason(product,dashboard,winner);
     card.querySelector(".product-observed").textContent = `ตรวจ ${observed(product.observed_at || dashboard?.observed_at)}`;
     setLink(card.querySelector(".product-link"), product.offer_url);
     saveControl(card.querySelector(".card-save"), product, saved ? product.saved_query : projectQuery || current.query);
@@ -484,17 +501,21 @@
   function renderWinner() {
     const dashboard = current.dashboard;
     const products = validProducts(dashboard?.results).slice(0,10);
-    const winner = products.find(product => product.product_id === dashboard?.winner_product_id);
+    const decisions=array(current.report?.product_decisions);
+    const reviewed=current.report?.status==="completed" && current.report?.stage==="recommendation" && decisions.length>0;
+    const recommended=reviewed?decisions.find(item=>item?.status==="recommended"):null;
+    const winner = products.find(product => product.product_id === (reviewed?recommended?.product_id:dashboard?.winner_product_id));
     $("#winner").hidden = !winner;
     $("#product-empty").hidden = Boolean(winner);
-    $("#product-empty-title").textContent = dashboard ? "ยังไม่พบสินค้าที่ผ่านเกณฑ์ในรอบนี้" : "พร้อมค้นตัวเลือกให้คุณ";
-    $("#product-empty-copy").textContent = dashboard ? `ตรวจ ${count(dashboard.scan?.unique_products)} สินค้า จาก ${count(dashboard.scan?.pages_scanned)} หน้า · ${dashboard.partial_market_coverage ? "ค้นเพียงบางส่วน ไม่ได้แปลว่าทั้งตลาดไม่มีสินค้า" : "ครบเฉพาะขอบเขตที่ขอ ไม่ใช่ทั้งตลาด"} ให้ Agent ตรวจเงื่อนไขและหลักฐานก่อนค้นต่อ` : "บอก Agent ว่าต้องการสินค้าแบบไหน งบเท่าไร และเน้นค่าคอมหรือยอดขาย ผลที่ตรวจแล้วจะมาอยู่ตรงนี้";
+    $("#product-empty-title").textContent = reviewed && !winner ? "Agent ยังไม่ยืนยันสินค้าแนะนำ" : dashboard ? "ยังไม่พบสินค้าที่ผ่านเกณฑ์ในรอบนี้" : "พร้อมค้นตัวเลือกให้คุณ";
+    $("#product-empty-copy").textContent = reviewed && !winner ? "ดูเหตุผลของแต่ละตัวเลือกด้านล่าง รายการที่ถูกตัดออกหรือรอหลักฐานจะไม่ถูกแสดงเป็นตัวเลือกดีที่สุด" : dashboard ? `ตรวจ ${count(dashboard.scan?.unique_products)} สินค้า จาก ${count(dashboard.scan?.pages_scanned)} หน้า · ${dashboard.partial_market_coverage ? "ค้นเพียงบางส่วน ไม่ได้แปลว่าทั้งตลาดไม่มีสินค้า" : "ครบเฉพาะขอบเขตที่ขอ ไม่ใช่ทั้งตลาด"} ให้ Agent ตรวจเงื่อนไขและหลักฐานก่อนค้นต่อ` : "บอก Agent ว่าต้องการสินค้าแบบไหน งบเท่าไร และเน้นค่าคอมหรือยอดขาย ผลที่ตรวจแล้วจะมาอยู่ตรงนี้";
     if(!winner) return;
+    $("#winner-label-text").textContent=reviewed?"ตัวเลือกที่ Agent แนะนำ":"อันดับ 1 ตามเกณฑ์ · รอ Agent ตรวจ";
     setImage($("#winner-image"),$("#winner-fallback"),winner.image_url,winner.name);
     trust($("#winner-trust"),winner);
     $("#winner-name").textContent = winner.name;
     renderShop($("#winner-shop"),winner);
-    $("#winner-reason").textContent = reason(winner,dashboard,true);
+    $("#winner-reason").textContent = text(productDecision(winner.product_id)?.reason) || reason(winner,dashboard,true);
     $("#winner-price").textContent = price(winner);
     $("#winner-commission").textContent = money(winner.commission_thb_per_order);
     $("#winner-rate").textContent = `อัตราคอม ${percent(winner.commission_pct)}`;

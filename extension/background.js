@@ -38,13 +38,14 @@ function sanitizeCitation(value) {
 }
 function sanitizeResearchReport(value) {
   if(!value || typeof value!=="object" || value.schema_version!==1 || !/^[0-9a-f]{16}$/u.test(value.report_id||"") ||
+      value.trace_id!==null && value.trace_id!==undefined && !/^[0-9a-f]{16}$/u.test(value.trace_id) ||
       typeof value.query!=="string" || !value.query.trim() || value.query.length>120 || !["working","completed"].includes(value.status) ||
       !["niche","trend","purchase_intent","store_research","recommendation"].includes(value.stage) ||
       typeof value.headline!=="string" || !value.headline.trim() || value.headline.length>180 ||
       typeof value.summary!=="string" || !value.summary.trim() || value.summary.length>1600 ||
       typeof value.purchase_intent!=="string" || value.purchase_intent.length>1000 || !["low","medium","high"].includes(value.confidence) ||
       !Number.isSafeInteger(value.updated_at_unix_ms) || !Array.isArray(value.signals) || value.signals.length>12 ||
-      !Array.isArray(value.citations) || value.citations.length>12)return null;
+      !Array.isArray(value.citations) || value.citations.length>12 || value.product_decisions!==undefined && (!Array.isArray(value.product_decisions) || value.product_decisions.length>10))return null;
   const citations=value.citations.map(sanitizeCitation).filter(Boolean);
   const signals=[];
   for(const raw of value.signals){
@@ -57,13 +58,32 @@ function sanitizeResearchReport(value) {
     signals.push({kind:raw.kind,label:raw.label.trim(),value:raw.value.trim(),score:raw.score,
       rationale:raw.rationale.trim(),source_indexes:[...raw.source_indexes]});
   }
+  const product_decisions=[],decisionIds=new Set();let recommended=0;
+  for(const raw of (value.product_decisions || [])){
+    if(!raw || typeof raw!=="object" || !productId(raw.product_id) || decisionIds.has(raw.product_id) ||
+        !["candidate","recommended","rejected","needs_evidence"].includes(raw.status) ||
+        typeof raw.reason!=="string" || !raw.reason.trim() || raw.reason.length>600 ||
+        !Array.isArray(raw.source_indexes) || raw.source_indexes.length>3 ||
+        raw.source_indexes.some(index=>!Number.isInteger(index) || index<0 || index>=citations.length))return null;
+    decisionIds.add(raw.product_id);if(raw.status==="recommended")recommended++;
+    product_decisions.push({product_id:raw.product_id,status:raw.status,reason:raw.reason.trim(),source_indexes:[...raw.source_indexes]});
+  }
+  if(recommended>1)return null;
   if(value.status==="completed" && !citations.length)return null;
-  return {schema_version:1,report_id:value.report_id,query:value.query.trim(),status:value.status,stage:value.stage,
+  return {schema_version:1,report_id:value.report_id,trace_id:value.trace_id || null,query:value.query.trim(),status:value.status,stage:value.stage,
     headline:value.headline.trim(),summary:value.summary.trim(),purchase_intent:value.purchase_intent.trim(),
-    confidence:value.confidence,updated_at_unix_ms:value.updated_at_unix_ms,signals,citations};
+    confidence:value.confidence,updated_at_unix_ms:value.updated_at_unix_ms,signals,product_decisions,citations};
+}
+function decisionsMatchRun(report) {
+  if(!report.product_decisions.length)return true;
+  const run=report.trace_id ? telemetryRuns.get(report.trace_id) : null;
+  if(!run || run.dashboard?.report_id!==report.report_id)return false;
+  const products=new Set((run.dashboard.results || []).map(item=>item?.product_id).filter(productId));
+  return report.product_decisions.every(decision=>products.has(decision.product_id));
 }
 function sanitizeDashboard(value) {
   if(!value || typeof value!=="object" || value.schema_version!==1 || typeof value.query!=="string" || value.query.length>120 ||
+      value.report_id!==null && value.report_id!==undefined && !/^[0-9a-f]{16}$/u.test(value.report_id) ||
       !["social","shopee_live","shopee_video"].includes(value.channel) || !["live","recent","fast"].includes(value.freshness) ||
       typeof value.partial_market_coverage!=="boolean" || typeof value.cache_hit!=="boolean" || !finite(value.cache_age_ms) || value.cache_age_ms<0 ||
       !Array.isArray(value.results) || value.results.length>10)return undefined;
@@ -109,6 +129,8 @@ function sanitizeDashboard(value) {
     const productEvidence=safeShopee(raw.product_url,"product",raw.product_id),shopEvidence=safeShopee(raw.shop_url,"shop");
     const shop_id=productEvidence?.shop_id && (!shopEvidence || shopEvidence.shop_id===productEvidence.shop_id)?productEvidence.shop_id:null;
     rows.push({product_id:raw.product_id,name:raw.name,shop_id,shop_name:typeof raw.shop_name==="string"&&raw.shop_name.trim()?raw.shop_name.trim().slice(0,240):null,
+      shop_name_source:["affiliate_detail","affiliate_search_card","public_seller_panel"].includes(raw.shop_name_source)?raw.shop_name_source:null,
+      shop_name_status:raw.shop_name_status==="observed"?"observed":"unavailable",
       offer_url,product_url:productEvidence?.url || null,shop_url:shop_id && shopEvidence?.shop_id===shop_id?shopEvidence.url:null,image_url:safeImage(raw.image_url),mall:raw.mall===true,
       channel:["social","shopee_live","shopee_video"].includes(raw.channel)?raw.channel:value.channel,
       offer_end_date:typeof raw.offer_end_date==="string"?raw.offer_end_date.slice(0,64):null,
@@ -136,7 +158,7 @@ function sanitizeDashboard(value) {
     const suggested=item.suggested;return [{parameter:item.parameter.slice(0,48),reason:item.reason.slice(0,120),suggested:suggested===null || ["string","number","boolean"].includes(typeof suggested)?suggested:null}];
   });
   const winner_product_id=productId(value.winner_product_id) && rows.some(row=>row.product_id===value.winner_product_id)?value.winner_product_id:null;
-  return {schema_version:1,query:value.query,channel:value.channel,criteria,results:rows,winner_product_id,scan,exclusions,
+  return {schema_version:1,report_id:value.report_id || null,query:value.query,channel:value.channel,criteria,results:rows,winner_product_id,scan,exclusions,
     relaxation_suggestions,partial_market_coverage:value.partial_market_coverage,freshness:value.freshness,cache_hit:value.cache_hit,
     cache_age_ms:value.cache_age_ms,review_required:value.review_required===true,
     winner_status:value.winner_status==="metric_leader_pending_agent_review"?value.winner_status:null,
@@ -153,7 +175,7 @@ function sanitizeTelemetry(value) {
   const latency = value.latency_ms && typeof value.latency_ms==="object" ? Object.fromEntries(Object.entries(value.latency_ms).filter(([,v])=>finite(v) && v>=0).slice(0,8)) : undefined;
   const browser = value.browser_operations && typeof value.browser_operations==="object" ? Object.fromEntries(Object.entries(value.browser_operations).filter(([,v])=>Number.isInteger(v) && v>=0).slice(0,8)) : undefined;
   return {
-    schema_version:1,trace_id:value.trace_id,swarm_id:value.swarm_id,sequence:value.sequence,playbook:value.playbook,
+    schema_version:1,trace_id:value.trace_id,report_id:/^[0-9a-f]{16}$/u.test(value.report_id||"")?value.report_id:null,swarm_id:value.swarm_id,sequence:value.sequence,playbook:value.playbook,
     query:value.query,stage:value.stage,status:value.status,occurred_at_unix_ms:value.occurred_at_unix_ms,
     elapsed_ms:value.elapsed_ms,queue_depth:scalar("queue_depth"),queue_wait_ms:scalar("queue_wait_ms"),cache_hit:scalar("cache_hit"),
     cache_age_ms:scalar("cache_age_ms"),max_pages:scalar("max_pages"),scan_ms:scalar("scan_ms"),pages_scanned:scalar("pages_scanned"),
@@ -224,7 +246,7 @@ async function hydrateTelemetry() {
         .map(sanitizeDeveloperEvent).filter(Boolean).slice(-developerLogLimit);
       const savedReports=await chrome.storage?.session?.get?.("shopkudResearchReports");
       for(const report of (Array.isArray(savedReports?.shopkudResearchReports)?savedReports.shopkudResearchReports:[]).slice(-researchReportLimit)){
-        const safe=sanitizeResearchReport(report);if(safe)researchReports.set(safe.report_id,safe);
+        const safe=sanitizeResearchReport(report);if(safe && decisionsMatchRun(safe))researchReports.set(safe.report_id,safe);
       }
       const savedDashboard=await chrome.storage?.session?.get?.("shopkudDashboardTabId");
       if(Number.isInteger(savedDashboard?.shopkudDashboardTabId))dashboardTabId=savedDashboard.shopkudDashboardTabId;
@@ -264,7 +286,8 @@ async function recordTelemetry(raw) {
 }
 async function recordResearchReport(raw) {
   const report=sanitizeResearchReport(raw);if(!report)return {ok:false,error:"invalid_report"};
-  await hydrateTelemetry();researchReports.delete(report.report_id);researchReports.set(report.report_id,report);
+  await hydrateTelemetry();if(!decisionsMatchRun(report))return {ok:false,error:"decision_run_mismatch"};
+  researchReports.delete(report.report_id);researchReports.set(report.report_id,report);
   while(researchReports.size>researchReportLimit)researchReports.delete(researchReports.keys().next().value);
   try {await chrome.storage?.session?.set?.({shopkudResearchReports:[...researchReports.values()]});} catch {}
   ensureDashboard({active:false}).catch(()=>{});broadcastLive("research-report");
@@ -292,7 +315,7 @@ function state() {
   for(const page of pages.values()) chrome.tabs.sendMessage(page.tab,{type:"shopkud-state",nonce:page.nonce,connected},()=>{void chrome.runtime.lastError;});
 }
 const detailOffer = url => offer(url) && /\/[1-9][0-9]{0,19}$/u.test(url);
-const tabBusy = tab => opening.has(tab) || [...inFlight.values()].some(task=>task.page.tab===tab);
+const tabBusy = tab => Boolean(listingTask && listingEntry?.tab===tab) || opening.has(tab) || [...inFlight.values()].some(task=>task.page.tab===tab);
 function attestOfferIdle(page) {
   return new Promise(resolve=>{
     const timer=setTimeout(()=>resolve(false),1500);
@@ -353,6 +376,8 @@ async function closeOwnedTabIfIdle(tabId) {
   }
   if(typeof chrome.tabs?.remove!=="function")return false;
   const current=await tabInfo(tabId);if(!current || current.active!==false)return false;
+  // A cleanup timer may pass the first check just before the next read starts.
+  if(tabBusy(tabId) || claimedEntries.has(tabId))return false;
   try {await chrome.tabs.remove(tabId);} catch {return false;}
   for(const [url,id] of ownedEntries)if(id===tabId)ownedEntries.delete(url);
   uncertainEntries.delete(tabId);for(const [id,page] of pages)if(page.tab===tabId)pages.delete(id);
@@ -390,6 +415,7 @@ async function readListing(args,task) {
   let current=listingEntry?await tabInfo(listingEntry.tab):null;
   if(task.cancelled)return listingFailure("cancelled");
   if(listingEntry && (!current || current.url!==listingEntry.url))return listingFailure("listing_context_changed");
+  if(current?.active===true){claimedEntries.add(current.id);listingEntry=null;current=null;}
   if(current && (current.active!==false || current.status!=="complete"))return listingFailure("listing_tab_not_idle");
   const navigating=!listingEntry || listingEntry.url!==url;
   if(navigating && !args.open_if_missing)return listingFailure("product_page_not_open");

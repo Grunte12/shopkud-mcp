@@ -36,6 +36,7 @@
   const heading=main?[...main.querySelectorAll("h1")].find(visible):null;
   const name=product?text(product.name):heading?text(heading.innerText):null;
   const variant={model:null,sku:null,color:null,selected_options:[],available_options:[]};
+  const optionLabel=/^(?:สี|color|รุ่น|model|ขนาด|size|ขนาดจอ|ความจุ|capacity|ตัวเลือก|แบบ|type)$/iu;
   const specEvidence=[];
   const record=(label,value,origin)=>{
     label=text(label,80);value=text(value);
@@ -67,7 +68,7 @@
     for(const group of [...main.querySelectorAll('[role="radiogroup"]')].slice(0,8)){
       if(!visible(group))continue;
       const label=text(group.getAttribute("aria-label"),80);
-      if(!/^(?:สี|color|รุ่น|model|ขนาด|size)$/iu.test(label))continue;
+      if(!optionLabel.test(label))continue;
       const options=[...group.querySelectorAll('[role="radio"]')].slice(0,30).filter(visible).map(option=>({value:text(option.getAttribute("aria-label") || option.innerText,120),selected:option.hasAttribute("aria-checked")?option.getAttribute("aria-checked")==="true":null,disabled:option.disabled===true || option.getAttribute("aria-disabled")==="true",source:"visible_aria_checked"})).filter(option=>option.value);
       variant.available_options.push({label,options:options.map(option=>option.value),option_evidence:options});
       const chosen=options.filter(option=>option.selected);
@@ -77,7 +78,7 @@
     for(const section of [...main.querySelectorAll("section")].slice(0,50)){
       const labelNode=[...section.children].find(child=>/^H[23]$/u.test(child.tagName));
       const label=labelNode && visible(labelNode)?text(labelNode.innerText,80):"";
-      if(!/^(?:สี|color|รุ่น|model|ขนาด|size)$/iu.test(label) || variant.available_options.some(group=>group.label===label))continue;
+      if(!optionLabel.test(label) || variant.available_options.some(group=>group.label===label))continue;
       const buttons=[...section.querySelectorAll("button")].slice(0,30).filter(visible);
       const options=buttons.map(button=>text(button.innerText,120)).filter(Boolean);
       if(!options.length)continue;
@@ -177,7 +178,7 @@
         const value=label.nextElementSibling;
         if(!value || !panel.contains(value) || !visible(value) || value.querySelectorAll("*").length>12)continue;
         const display=text(value.innerText,121);
-        if(display && display.length<=120 && valid(display))values.push(display);
+        if(display && display.length<=120 && !/^(?:-|–|N\/A)$/iu.test(display) && !/(?:^|\s)N\/A(?:$|\s)/iu.test(display) && valid(display))values.push(display);
         break;
       }
     }
@@ -194,6 +195,11 @@
     response_time:field(sellerPanel,/^(?:เวลาในการตอบกลับ|response time)$/iu,"visible_seller_panel")
   };
   if(sellerPanel){
+    if(!seller_info.name){
+      // Only explicit seller identity labels inside the unique shop panel.
+      const names=[...sellerPanel.querySelectorAll('[itemprop="name"],[aria-label="ชื่อร้านค้า"],[aria-label="Shop name"]')].filter(visible).map(node=>text(node.innerText,120)).filter(Boolean);
+      if(new Set(names).size===1)seller_info.name=observation(names[0],"visible_seller_panel");
+    }
     const badges=[...sellerPanel.querySelectorAll('img[alt],[aria-label],[class*="badge"]')].slice(0,30).filter(visible)
       .map(node=>text(node.getAttribute("alt") || node.getAttribute("aria-label") || node.innerText,120)).filter(value=>/^(?:shopee mall|mall)$/iu.test(value));
     if(new Set(badges).size===1)seller_info.mall_badge=observation(badges[0],"visible_seller_panel");
@@ -225,7 +231,9 @@
     variant_info:variant,spec_evidence:specEvidence,model_evidence:modelEvidence,seller_info,product_metrics,shipping_info,gallery,gallery_complete:false,
     metadata_source:product?"exact_product_json_ld":null,
     layout_evidence:{main_found:Boolean(main),matched_product_metadata:products.length,
-      reader_revision:"0.8.11-purchase-evidence",seller_panel_found:Boolean(sellerPanel),product_summary_found:Boolean(summaryPanel),blocks,identity_signals:identitySignals.map(value=>text(value,2048)),image_candidates:imageCandidates,model_label_contexts:modelContexts,
+      reader_revision:"0.11.6-seller-variants",seller_panel_found:Boolean(sellerPanel),product_summary_found:Boolean(summaryPanel),
+      seller_fields:sellerPanel?[...sellerPanel.querySelectorAll('a,h2,h3,span,div')].filter(node=>visible(node) && (node.children.length===0 || [...node.childNodes].some(child=>child.nodeType===3 && text(child.textContent)))).slice(0,35).map(node=>({tag:node.tagName,class:text(node.className,100),text:text([...node.childNodes].filter(child=>child.nodeType===3).map(child=>child.textContent).join(' '),120),href:node.tagName==='A'?text(node.getAttribute('href'),200):null})):[],
+      blocks,identity_signals:identitySignals.map(value=>text(value,2048)),image_candidates:imageCandidates,model_label_contexts:modelContexts,
       headings:main?[...main.querySelectorAll("h1,h2,h3")].slice(0,12).filter(visible).map(node=>text(node.textContent,80)):[],
       field_labels:[...new Set([...specEvidence.map(item=>item.label),...variant.available_options.map(item=>item.label)])].slice(0,20)},retry_automatically:false};
 })();

@@ -322,6 +322,52 @@ class BrokerTests(unittest.IsolatedAsyncioTestCase):
             await self.broker.call("extension", "open_offer", {"offer_url": PRODUCT_PAGE_URL + "/123"})
         self.assertEqual(caught.exception.code, "ambiguous_extension")
 
+    async def test_extension_read_and_report_share_one_serial_queue(self) -> None:
+        peer = await self.connect()
+        reading = asyncio.create_task(self.broker.call("extension", "read_listing", {"url": PRODUCT_PAGE_URL + "/123"}, timeout=2))
+        first = await peer.recv()
+        self.assertEqual(first["operation"], "read_listing")
+        reporting = asyncio.create_task(self.broker.call("extension", "research_report", {"report_id": "c"*16}, timeout=2))
+        await asyncio.sleep(0.03)
+        self.assertFalse(reporting.done())
+        await peer.send({"type":"result","id":first["id"],"result":{"ok":True,"product_id":"123"}})
+        self.assertEqual((await reading)["product_id"],"123")
+        second = await peer.recv()
+        self.assertEqual(second["operation"],"research_report")
+        await peer.send({"type":"result","id":second["id"],"result":{"ok":True}})
+        self.assertEqual(await reporting,{"ok":True})
+
+    async def test_two_detail_reads_on_one_page_serialize(self) -> None:
+        current=page(27)
+        peer=await self.connect(pages=[current])
+        first_task=asyncio.create_task(self.broker.call(current["page_id"],"detail",{},timeout=2))
+        first=await peer.recv()
+        second_task=asyncio.create_task(self.broker.call(current["page_id"],"detail",{},timeout=2))
+        await asyncio.sleep(0.03)
+        self.assertFalse(second_task.done())
+        await peer.send({"type":"result","id":first["id"],"result":{"ok":True,"read":1}})
+        self.assertEqual((await first_task)["read"],1)
+        second=await peer.recv()
+        await peer.send({"type":"result","id":second["id"],"result":{"ok":True,"read":2}})
+        self.assertEqual((await second_task)["read"],2)
+
+    async def test_queue_wait_and_execution_share_one_timeout_budget(self) -> None:
+        peer = await self.connect()
+        active = asyncio.create_task(self.broker.call("extension", "read_listing", {}, timeout=2))
+        first = await peer.recv()
+        started = asyncio.get_running_loop().time()
+        queued = asyncio.create_task(self.broker.call("extension", "research_report", {}, timeout=0.08))
+        await asyncio.sleep(0.05)
+        await peer.send({"type":"result","id":first["id"],"result":{"ok":True}})
+        self.assertEqual(await active,{"ok":True})
+        second = await peer.recv()
+        with self.assertRaises(BrokerError) as caught:
+            await queued
+        self.assertEqual(caught.exception.code,"timeout")
+        self.assertLess(asyncio.get_running_loop().time()-started,0.13)
+        self.assertEqual(second["operation"],"research_report")
+        await self.expect_closed(peer)
+
     async def test_entry_wait_timeout_and_cancel_never_dispatch(self) -> None:
         peer = await self.connect()
         active = asyncio.create_task(self.broker.call("extension", "research_report", {}, timeout=2))

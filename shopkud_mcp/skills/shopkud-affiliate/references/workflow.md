@@ -1,4 +1,4 @@
-# วิธีทำงาน ShopKud Affiliate — 1.5.2
+# วิธีทำงาน ShopKud Affiliate — 1.5.4
 
 ## ขอบเขตของรุ่นนี้
 
@@ -21,8 +21,10 @@ social research หรือแหล่งข้อมูลที่ผู้�
 3. ใช้แหล่งข้อมูลล่าสุดและหลากหลายเท่าที่จำเป็น โดยให้ HTTPS citation ที่ผู้ใช้กดตรวจได้
 4. ประเมิน purchase intent จากพฤติกรรม/คำถามที่มีหลักฐาน ไม่ใช้ยอดวิวเท่ากับความต้องการซื้อ
 5. การบอกว่าร้านยิงแอด บูสต์ หรือทำการตลาดดี ต้องมีหลักฐานภายนอกเฉพาะ ห้ามเดาจากค่าคอม ยอดขาย หรือป้าย Mall
-6. ส่งความคืบหน้าที่มีความหมายผ่าน `present_research_report(status="working",…)` และอัปเดต `report_id` เดิม; เมื่อ `completed` ต้องมี signal พร้อม rationale อย่างน้อยหนึ่งรายการและ citation อย่างน้อยหนึ่งรายการ
-7. แสดงเฉพาะ research summary, score ที่ Agent อธิบายได้, rationale และ citation ไม่เปิดเผย private chain-of-thought
+6. เริ่มด้วย `present_research_report(status="working",…)` แล้วเก็บ `report_id`; ส่ง ID นี้เข้า `rank_affiliate_products(report_id=…)` เพื่อผูก brief กับผลสินค้าแม้ข้อความค้นต่างกัน
+7. ตรวจ finalist ด้วย `get_product_detail(product_url=…,open_if_missing=true,view="brief")` เสมอ; ถ้าลืม `open_if_missing=true` แท็บที่เครื่องมือปิดไปแล้วจะคืน `product_page_not_open`
+8. ปิดงานด้วย `present_research_report(report_id=…,trace_id=trace.trace_id,status="completed",product_decisions=…)`; เมื่อ completed ต้องมี signal พร้อม rationale และ citation อย่างน้อยหนึ่งรายการ
+9. แสดงเฉพาะ research summary, score ที่ Agent อธิบายได้, rationale และ citation ไม่เปิดเผย private chain-of-thought
 
 Research report ไม่เปลี่ยนสูตร ranking ของ ShopKud อัตโนมัติ Agent ต้องแปลงข้อสรุปที่เจ้าของ
 ยอมรับเป็น `query`, `ranking_goal` และตัวกรองของ `rank_affiliate_products` อย่างชัดเจน
@@ -41,6 +43,11 @@ Dashboard เป็น renderer กลาง ไม่ใช่ frontend ที�
 หนึ่งงานใช้ `report_id` เดียวตั้งแต่ `working` จน `completed` อย่าสร้าง report ใหม่แยกทุก stage
 หรือใช้การแก้ codebase เป็นวิธีแสดงผล
 
+`product_decisions` คือคำตัดสินของ Agent ต่อรายการจากผล rank: `candidate`, `recommended`,
+`rejected` หรือ `needs_evidence` พร้อม reason และ citation indexes ได้ แนะนำได้ไม่เกินหนึ่งรายการ
+Dashboard จะแสดง hero เฉพาะรายการที่ Agent แนะนำหลังรายงาน recommendation เสร็จ ถ้าไม่มีรายการผ่าน
+ให้ตัดออกหรือรอหลักฐานตามจริง ห้ามปล่อย metric leader เป็นคำแนะนำโดยปริยาย
+
 ### รูปแบบรายงานที่เรียกได้ทันที
 
 `query` เป็นชื่อโจทย์สั้นไม่เกิน 120 ตัวอักษร ไม่ใช่ brief ทั้งย่อหน้า; `headline` ไม่เกิน 180,
@@ -58,7 +65,8 @@ ID ที่รับได้เป็น lowercase hex 16 ตัวเท่�
   "headline": "ยังยืนยันตัวเลือกไม่ได้ในขอบเขตที่ตรวจ",
   "summary": "สรุปสิ่งที่ตรวจพบและข้อจำกัดจากหลักฐานจริงของงานนี้",
   "citations": [{"title": "ชื่อหลักฐานจริง", "url": "https://example.com/evidence"}],
-  "signals": [{"kind": "trust", "label": "หลักฐานร้าน", "value": "ยังไม่ครบ", "rationale": "ระบุสิ่งที่หลักฐานยืนยันได้และสิ่งที่ขาด", "source_indexes": [0]}]
+  "signals": [{"kind": "trust", "label": "หลักฐานร้าน", "value": "ยังไม่ครบ", "rationale": "ระบุสิ่งที่หลักฐานยืนยันได้และสิ่งที่ขาด", "source_indexes": [0]}],
+  "product_decisions": [{"product_id": "123456789", "status": "needs_evidence", "reason": "ยังยืนยันร้านและรุ่นย่อยไม่ได้", "source_indexes": [0]}]
 }
 ```
 
@@ -74,8 +82,10 @@ ID ที่รับได้เป็น lowercase hex 16 ตัวเท่�
 งาน Affiliate ที่ต้องได้รายได้ต้องระบุค่าคอมช่องทางมากกว่า 0 เช่น
 `min_commission_pct=0.01` แม้จัดอันดับด้วยยอดขาย; 0 คอมยังใช้เป็นข้อมูลตลาดได้
 แต่ไม่ใช่คำแนะนำทำรายได้ในช่องทางนั้น
-`required_terms` ใช้เฉพาะคำที่จำเป็นต้องตรงในชื่อสินค้า อย่าเพิ่มการสะกด/หน่วยที่ผู้ใช้
-ไม่ได้บังคับเป็น hard gate; สเปกที่ชื่ออาจเขียนต่างกันให้ตรวจรายละเอียดก่อนแนะนำ
+`required_terms` ใช้เฉพาะ identity ที่ต้องตรงแบบ literal ในชื่อ เช่นแบรนด์หรือรหัสรุ่นที่ระบุชัด
+อย่าใส่คำหมวดทั่วไป (`Power Bank`, `ทีวี`) คำแปล/คำพ้อง หรือเกณฑ์ขั้นต่ำ/ช่วง
+(`อย่างน้อย 20000mAh`) เพราะชื่อร้านอาจเขียน `20K`, `20,000` หรือความจุที่สูงกว่าแทน
+ให้หมวดอยู่ใน `query + target_kind` และตรวจสเปกขั้นต่ำจาก finalist detail โดย Agent
 เมื่อผลว่าง ให้รายงานจำนวนหน้า/สินค้าที่ตรวจและข้อจำกัด ไม่สรุปว่าตลาดไม่มี
 เมื่อ `outcome=unconfirmed` ห้าม replay อัตโนมัติ; แจ้งข้อผิดพลาดและอ่านสถานะก่อนตัดสินใจต่อ
 
@@ -86,7 +96,7 @@ ID ที่รับได้เป็น lowercase hex 16 ตัวเท่�
 งานคัดสินค้าใช้ `rank_affiliate_products` เป็นค่าเริ่มต้น เอเจนต์ต้องแปลงเป้าหมายผู้ใช้เป็นพารามิเตอร์ ไม่ใช่ให้โค้ดเดาเจตนา:
 
 - กำหนด `target_kind`: `product` สำหรับสินค้าหลัก, `accessory` สำหรับเคส/ฟิล์ม/อุปกรณ์เสริม, `any` เมื่อผู้ใช้ยอมรับทั้งคู่; `auto` ใช้เฉพาะเมื่อคำค้นบอกประเภทชัด
-- ใส่แบรนด์ รุ่น ความจุ กำลัง หรือสเปกที่ห้ามผิดเป็น `required_terms`; ใส่คำที่ผู้ใช้ไม่ต้องการเป็น `excluded_terms` เครื่องมือเทียบแบบ whole term/phrase และไม่ผ่อน hard terms เอง
+- ใส่เฉพาะแบรนด์/รหัสรุ่น literal ที่ต้องตรงในชื่อเป็น `required_terms`; ความจุ กำลัง หรือสเปกขั้นต่ำที่เขียนได้หลายรูปแบบให้ตรวจ finalist detail ใส่คำที่ผู้ใช้ไม่ต้องการเป็น `excluded_terms` เครื่องมือเทียบแบบ whole term/phrase และไม่ผ่อน hard terms เอง
 - ตัวกรองความเกี่ยวข้องและ accessory gate ลด false positive ก่อนตรวจค่าคอม แต่ไม่ใช่การยืนยันรุ่นหรือ variant ขั้นสุดท้าย
 
 - `ranking_goal="commission_value"` เน้นบาทต่อออเดอร์

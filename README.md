@@ -12,7 +12,7 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.11.5** - Intent-safe product shortlisting, mandatory Agent finalist review, and one reusable evidence Dashboard for every product-research task. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+**Version 0.11.6** - Exact report/run binding, visible Agent product decisions, and serialized browser reads for concurrent agents. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 Installing for another user or coding agent: read [AGENTS.md](AGENTS.md) and
 [docs/INSTALL_FOR_AGENTS.md](docs/INSTALL_FOR_AGENTS.md). ShopKud is standalone;
@@ -21,8 +21,8 @@ no MCP gateway, Docker daemon, or external database is required.
 Architecture and trust boundaries: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Cheap-model tool-selection evidence: [evals/LUNA_TOOL_SELECTION_2026-10-24.md](evals/LUNA_TOOL_SELECTION_2026-10-24.md).
 
-This is the public **0.11.5** release. The Python package and extension both
-declare **0.11.5**. Synthetic offline tests do not certify the
+This is the public **0.11.6** release. The Python package and extension both
+declare **0.11.6**. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
 ## Current capabilities
@@ -89,18 +89,32 @@ shopkud-mcp set-tool-profile --config /absolute/private/shopkud-state/config.jso
 Restart only ShopKud after changing profiles. The connected MCP client can then
 rediscover the selected catalog.
 
+### What's New in 0.11.6
+
+- One `report_id` now binds the user brief, ranking run, Dashboard result and
+  saved Workspace project even when the brief and Shopee search wording differ.
+- Agent decisions are bound to returned product IDs with cited reasons. A card
+  is shown as recommended only after review; metric leaders remain pending.
+- Same-page product reads and the shared extension channel wait in one bounded,
+  cancellable queue with one timeout budget instead of failing unpredictably.
+- Public product evidence keeps variant labels and truncation explicit; missing
+  seller names remain unknown with a shop link instead of a guessed identity.
+- Regression evidence: 244 Python tests and all 27 extension/browser suites pass.
+- Live Luna and concurrency evidence: [0.11.6 acceptance report](docs/LIVE_ACCEPTANCE_0.11.6_2026-10-25.md).
+
 ### What's New in 0.11.5
 
 Follow-up fixes (source verification): extension entry commands wait for the
 shared telemetry/report channel before dispatch instead of failing immediately
 with `busy`. Waiting can time out or be cancelled without sending a browser
-command. Guide 1.5.2 includes a complete report payload example and field limits.
+command. Guide 1.5.3 includes a complete report payload example and field limits.
 Empty-result copy now states the scanned product/page counts and partial coverage.
-Regression evidence: 237 Python tests and the Dashboard browser suite pass.
+Regression evidence at that release: 237 Python tests and the Dashboard browser
+suite passed.
 The local worker and extension were updated and two independent Luna live runs
 published working/completed Dashboard reports successfully. Product variant and
 seller evidence can still be incomplete; these runs did not establish fully
-verified recommendations. See [live acceptance evidence](docs/LIVE_ACCEPTANCE_2026-10-25.md).
+verified recommendations. See [historical 0.11.5 evidence](docs/LIVE_ACCEPTANCE_2026-10-25.md).
 
 - Every product-research and selection run now writes into the same reusable
   Dashboard template: brief, conclusion, summary, purchase intent, reasoned

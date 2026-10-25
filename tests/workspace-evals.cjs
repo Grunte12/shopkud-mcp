@@ -40,16 +40,17 @@ function completedSnapshot({query, traceId, productId, productName, affiliateUrl
     shop_url: "https://shopee.co.th@evil.example/shop/12345", affiliate_url: "javascript:alert(1)"
   });
   const dashboard = {
-    schema_version: 1, query, channel: "social", freshness: "live", cache_hit: false,
+    schema_version: 1, report_id: traceId, query, channel: "social", freshness: "live", cache_hit: false,
     partial_market_coverage: false, criteria: {ranking_goal: "balanced"},
     winner_product_id: productId, observed_at: new Date(now - 1000).toISOString(),
     scan: {pages_scanned: 1, unique_products: products.length, reached_end: true, outcome: "completed"},
     exclusions: {}, results: products
   };
   const report = {
-    schema_version: 1, report_id: traceId, query, status: "completed", stage: "recommendation",
+    schema_version: 1, report_id: traceId, trace_id: traceId, query, status: "completed", stage: "recommendation",
     headline: `สรุปสำหรับ ${query}`, summary: "หลักฐานงานวิจัยที่บันทึกไว้ในเครื่องนี้",
     confidence: "medium", updated_at_unix_ms: now - 1000,
+    product_decisions: [{product_id: productId, status: "recommended", reason: "ตรงโจทย์และผ่านหลักฐานที่ตรวจ", source_indexes: [0]}],
     citations: [
       {title: "แหล่งข้อมูลที่เปิดได้", url: "https://example.com/research/workspace"},
       {title: "ลิงก์อันตราย", url: "javascript:alert(1)"},

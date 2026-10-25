@@ -48,6 +48,7 @@ def brief_listing(detail, target=None):
                                            and item.get("source") in {"visible_aria_checked", "visible_aria_selection"}]
     compact_variant["available_options"] = []
     groups = variant.get("available_options")
+    compact_variant["options_truncated"] = isinstance(groups, list) and (len(groups) > 4 or any(isinstance(group, dict) and isinstance(group.get("options"), list) and len(group["options"]) > 8 for group in groups))
     for group in (groups if isinstance(groups, list) else [])[:4]:
         if not isinstance(group, dict):
             continue

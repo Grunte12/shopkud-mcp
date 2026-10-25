@@ -20,6 +20,13 @@ class NormalizeModelTests(unittest.TestCase):
 
 
 class ModelMatchTests(unittest.TestCase):
+    def test_brief_reports_truncated_options(self):
+        self.assertFalse(brief_listing({})["variant_info"]["options_truncated"])
+        detail = {"variant_info": {"available_options": [{"label": "size", "options": [str(i) for i in range(12)]}]}}
+        variant = brief_listing(detail)["variant_info"]
+        self.assertTrue(variant["options_truncated"])
+        self.assertEqual(len(variant["available_options"][0]["options"]), 8)
+
     def ev(self, model, role="identity", source="visible_product_spec", snippet="Model code"):
         return {"model": model, "role": role, "source": source, "snippet": snippet}
 

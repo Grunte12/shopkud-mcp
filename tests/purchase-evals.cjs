@@ -100,6 +100,15 @@ async function main() {
     assert.deepEqual(nameOnly.seller_info.name, { display: "Shopee Mall Fixture", source: "visible_seller_panel" });
     results.push("Mall wording in the seller name does not create a Mall badge claim");
 
+    await page.setContent(baseFixture({ seller: `<section class="page-product__shop"><h2 itemprop="name">Example Store</h2>${pair("เข้าร่วมเมื่อ", "รายการสินค้า N/A")}${pair("เวลาในการตอบกลับ", "-")}</section>`, productInfo: `<h1>TV</h1><section><h2>ขนาดจอ</h2><button>50 นิ้ว</button><button>55 นิ้ว</button></section><section><h2>ความจุ</h2><button>256GB</button></section>` }));
+    const expanded = await read();
+    expect(expanded, "seller_info", "name", "Example Store", "visible_seller_panel");
+    assert.equal(expanded.seller_info.shop_age, null);
+    assert.equal(expanded.seller_info.response_time, null);
+    assert.deepEqual(expanded.variant_info.available_options.map(group=>group.options), [["50 นิ้ว", "55 นิ้ว"], ["256GB"]]);
+    assert.deepEqual(expanded.variant_info.selected_options, []);
+    results.push("screen size/capacity options are read without claiming selection; seller placeholders remain unknown");
+
     // Conflicting visible panels fail closed rather than choosing one seller.
     const conflictingSellers = `<section class="page-product__shop" aria-label="ข้อมูลร้านค้า">${pair("ชื่อร้านค้า", "Shop A")}${pair("Followers", "100")}</section>
       <section class="page-product__shop" aria-label="ข้อมูลร้านค้า">${pair("ชื่อร้านค้า", "Shop B")}${pair("Followers", "200")}</section>`;
