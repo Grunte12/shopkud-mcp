@@ -31,6 +31,7 @@ async function run(){
   });
   await page.goto(pathToFileURL(path.join(__dirname,"../extension/sidepanel.html")).href);
   await page.waitForSelector("#now-content:not([hidden])");
+  assert.equal(await page.locator("#now-empty .ready-mascot use").getAttribute("href"),"#shopkud-mascot","idle state uses the recognizable ShopKud mascot instead of an ambiguous placeholder");
   assert.equal(await page.locator("#connection").getAttribute("data-state"),"online");
   assert.equal(await page.locator("#now-query").textContent(),"ทีวี");
   assert.match(await page.locator("#now-stage").textContent(),/ตรวจสินค้ารายตัว/u);
