@@ -1,5 +1,13 @@
 # ShopKud MCP
 
+**AI-powered Shopee Affiliate research and workflow tools for your existing
+signed-in Chrome. Find, compare and prepare products with visible evidence—not
+guesses.**
+
+![ShopKud finds, compares and selects affiliate products](docs/assets/shopkud-social-promo.png)
+
+<p align="center"><sub>Concept visual — product figures are illustrative examples, not live Shopee data.</sub></p>
+
 ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
@@ -12,8 +20,6 @@ no MCP gateway, Docker daemon, or external database is required.
 
 Architecture and trust boundaries: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Cheap-model tool-selection evidence: [evals/LUNA_TOOL_SELECTION_2026-10-24.md](evals/LUNA_TOOL_SELECTION_2026-10-24.md).
-
-![ShopKud local MCP architecture](docs/assets/architecture.png)
 
 This is the public **0.10.6** release. The Python package and extension both
 declare **0.10.6**. Synthetic offline tests do not certify the
