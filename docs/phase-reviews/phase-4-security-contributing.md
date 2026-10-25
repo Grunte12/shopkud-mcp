@@ -50,6 +50,7 @@ response promise or automation the repository does not have.
 | Commit | Purpose |
 |---|---|
 | `92bd8735aa91e86ad534d697e30e732742ea6d47` | Add public security/contribution policies, README links and low-noise Dependabot configuration. |
+| `8be977e42577b80e15185ce4eb7a655a720cfd74` | Clarify that the complete local browser/native suite is supported on macOS and other systems rely on focused checks plus hosted macOS CI. |
 
 The evidence-document commit SHA is intentionally pending; a commit cannot
 truthfully contain its own SHA.
@@ -159,6 +160,10 @@ closure; none are auto-merged by this configuration.
 
 ## Review record
 
+- Independent review of `395189287c9860f93aba228a04b123e9ecb45d9b`
+  failed because the contribution guide did not state the complete suite's
+  macOS boundary. Commit `8be977e42577b80e15185ce4eb7a655a720cfd74`
+  adds that boundary and requires a fresh exact-SHA review.
 - Independent local review: pending for the final evidence-commit SHA.
 - Push authorization: pending for the final evidence-commit SHA.
 - Hosted CI: pending for the pushed final SHA.
