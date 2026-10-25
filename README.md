@@ -12,7 +12,7 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.11.4** - Intent-safe product shortlisting, mandatory Agent finalist review, actionable store evidence and a visual product-research Dashboard. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+**Version 0.11.5** - Intent-safe product shortlisting, mandatory Agent finalist review, and one reusable evidence Dashboard for every product-research task. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 Installing for another user or coding agent: read [AGENTS.md](AGENTS.md) and
 [docs/INSTALL_FOR_AGENTS.md](docs/INSTALL_FOR_AGENTS.md). ShopKud is standalone;
@@ -21,8 +21,8 @@ no MCP gateway, Docker daemon, or external database is required.
 Architecture and trust boundaries: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Cheap-model tool-selection evidence: [evals/LUNA_TOOL_SELECTION_2026-10-24.md](evals/LUNA_TOOL_SELECTION_2026-10-24.md).
 
-This is the public **0.11.4** release. The Python package and extension both
-declare **0.11.4**. Synthetic offline tests do not certify the
+This is the public **0.11.5** release. The Python package and extension both
+declare **0.11.5**. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
 ## Current capabilities
@@ -88,6 +88,16 @@ shopkud-mcp set-tool-profile --config /absolute/private/shopkud-state/config.jso
 
 Restart only ShopKud after changing profiles. The connected MCP client can then
 rediscover the selected catalog.
+
+### What's New in 0.11.5
+
+- Every product-research and selection run now writes into the same reusable
+  Dashboard template: brief, conclusion, summary, purchase intent, reasoned
+  signals, evidence links and remaining uncertainty.
+- Agents update one report from `working` to `completed`; they do not edit the
+  extension or build a product-specific HTML page merely to display results.
+- A completed report is accepted only when it contains at least one reasoned
+  decision signal and one clickable HTTPS citation.
 
 ### What's New in 0.11.4
 

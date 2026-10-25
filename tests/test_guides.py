@@ -63,7 +63,7 @@ class WorkflowGuideTests(unittest.IsolatedAsyncioTestCase):
         result = await self.tool()
         self.assertTrue(result["ok"])
         self.assertEqual(result["workflow_id"], "shopkud-affiliate")
-        self.assertEqual(result["guide_version"], "1.5.0")
+        self.assertEqual(result["guide_version"], "1.5.1")
         self.assertEqual(result["view"], "brief")
         self.assertIn("manifest", result)
         self.assertLess(len(json.dumps(result, ensure_ascii=False)), 5000)

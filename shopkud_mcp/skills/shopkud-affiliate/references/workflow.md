@@ -1,4 +1,4 @@
-# วิธีทำงาน ShopKud Affiliate — 1.5.0
+# วิธีทำงาน ShopKud Affiliate — 1.5.1
 
 ## ขอบเขตของรุ่นนี้
 
@@ -21,11 +21,25 @@ social research หรือแหล่งข้อมูลที่ผู้�
 3. ใช้แหล่งข้อมูลล่าสุดและหลากหลายเท่าที่จำเป็น โดยให้ HTTPS citation ที่ผู้ใช้กดตรวจได้
 4. ประเมิน purchase intent จากพฤติกรรม/คำถามที่มีหลักฐาน ไม่ใช้ยอดวิวเท่ากับความต้องการซื้อ
 5. การบอกว่าร้านยิงแอด บูสต์ หรือทำการตลาดดี ต้องมีหลักฐานภายนอกเฉพาะ ห้ามเดาจากค่าคอม ยอดขาย หรือป้าย Mall
-6. ส่งความคืบหน้าที่มีความหมายผ่าน `present_research_report(status="working",…)` และอัปเดต `report_id` เดิม; เมื่อ `completed` ต้องมี citation อย่างน้อยหนึ่งรายการ
+6. ส่งความคืบหน้าที่มีความหมายผ่าน `present_research_report(status="working",…)` และอัปเดต `report_id` เดิม; เมื่อ `completed` ต้องมี signal พร้อม rationale อย่างน้อยหนึ่งรายการและ citation อย่างน้อยหนึ่งรายการ
 7. แสดงเฉพาะ research summary, score ที่ Agent อธิบายได้, rationale และ citation ไม่เปิดเผย private chain-of-thought
 
 Research report ไม่เปลี่ยนสูตร ranking ของ ShopKud อัตโนมัติ Agent ต้องแปลงข้อสรุปที่เจ้าของ
 ยอมรับเป็น `query`, `ranking_goal` และตัวกรองของ `rank_affiliate_products` อย่างชัดเจน
+
+Dashboard เป็น renderer กลาง ไม่ใช่ frontend ที่ Agent สร้างใหม่ตามโจทย์ ใช้ template เดียวกับ
+สินค้าและหมวดหมู่ทุกชนิด ห้ามแก้ extension, HTML, CSS หรือ JavaScript และห้ามสร้างหน้าเฉพาะงาน
+เพื่อแสดงผล research/selection ให้กรอกข้อมูลลง `present_research_report` ตามสัญญานี้:
+
+- `query`: โจทย์หรือ brief ของผู้ใช้
+- `headline`: ข้อสรุปหนึ่งบรรทัด
+- `summary`: สรุปหลักฐาน สิ่งที่สรุปได้ และสิ่งที่ยังไม่ทราบ
+- `purchase_intent`: เหตุผลที่ผู้ซื้ออาจตัดสินใจซื้อเมื่อเกี่ยวข้อง
+- `signals`: ปัจจัยตัดสินใจพร้อม `rationale`, score ที่อธิบายได้ และ source indexes
+- `citations`: HTTPS sources ที่ผู้ใช้กดตรวจได้
+
+หนึ่งงานใช้ `report_id` เดียวตั้งแต่ `working` จน `completed` อย่าสร้าง report ใหม่แยกทุก stage
+หรือใช้การแก้ codebase เป็นวิธีแสดงผล
 
 ## 1. เริ่มจากเป้าหมายผู้ซื้อ
 

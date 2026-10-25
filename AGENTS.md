@@ -23,9 +23,10 @@ The target topology is one local ShopKud worker per OS user. The worker owns the
   uploading or posting; those belong to a separate product.
 - Read `get_workflow_guide` once per version. The bundled skill/playbook governs
   research strategy; deterministic tools perform Shopee mechanics.
-- Put cited external market judgments into `present_research_report` so the
-  owner can review them in the Dashboard. Never label Agent research as Shopee
-  evidence or expose private chain-of-thought.
+- Every product-research or selection task must put its progress and result into
+  the existing Dashboard through `present_research_report`. Reuse one
+  `report_id`; never edit ShopKud HTML/JS or build a one-off page for a product.
+  Never label Agent research as Shopee evidence or expose private chain-of-thought.
 - Persistent workspace/history is opt-in; SQLite is embedded and requires no separate installation.
 - Verify with read-only tools before enabling link creation or mission actions.
 - A no-result research run is valid. Report exclusions and suggestions; never relax filters silently.

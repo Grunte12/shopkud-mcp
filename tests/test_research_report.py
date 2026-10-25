@@ -42,6 +42,14 @@ class ResearchReportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["error"],"completed_report_requires_citation")
         self.assertEqual(self.broker.calls,[])
 
+    async def test_completed_report_requires_at_least_one_reason_signal(self):
+        source=EvidenceSource(title="หน้าหลักฐาน",url="https://example.com/evidence")
+        result=await self.tool(query="ทีวี",stage="recommendation",headline="สรุปตัวเลือก",
+                               summary="มีแหล่งข้อมูลแต่ยังไม่มีเหตุผลที่ตรวจสอบได้",
+                               confidence="low",citations=[source],signals=[])
+        self.assertEqual(result["error"],"completed_report_requires_signal")
+        self.assertEqual(self.broker.calls,[])
+
     async def test_working_report_can_show_progress_before_sources_are_ready(self):
         result=await self.tool(query="ทีวี",status="working",stage="trend",headline="กำลังอ่านสัญญาณตลาด",
                                summary="ยังไม่สรุปผู้ชนะ",confidence="low",citations=[],report_id="b"*16)
