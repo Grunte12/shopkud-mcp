@@ -70,7 +70,7 @@ async function run(){
   assert.equal(await page.locator("#latency-single").isVisible(),true);
   assert.equal(await page.locator(".latency-viz svg").isVisible(),false);
   assert.equal(await page.locator("body").evaluate(node=>node.scrollWidth<=node.clientWidth),true,"no horizontal overflow at side-panel width");
-  const reviewDir=path.join(__dirname,"../.impeccable/review");fs.mkdirSync(reviewDir,{recursive:true});
+  const reviewDir=path.resolve(process.env.SHOPKUD_TEST_OUTPUT_DIR||path.join(__dirname,"../artifacts/tests"));fs.mkdirSync(reviewDir,{recursive:true});
   await page.locator('[data-view-target="research"]').click();
   await page.screenshot({path:path.join(reviewDir,"research-sidepanel.png"),fullPage:true,animations:"disabled"});
   await page.emulateMedia({colorScheme:"dark"});

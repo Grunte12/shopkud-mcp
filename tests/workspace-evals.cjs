@@ -244,7 +244,7 @@ async function run() {
       {...__chromeStorage.shopkudLinkReceipts[0]}
     ]));
     assert.equal(await countAt(page, "#workspace-link-count"), 2, "confirmed link count refreshes and deduplicates product+URL pairs");
-    const review = path.join(__dirname, "../.impeccable/review");
+    const review = path.resolve(process.env.SHOPKUD_TEST_OUTPUT_DIR || path.join(__dirname, "../artifacts/tests"));
     fs.mkdirSync(review, {recursive: true});
     await page.emulateMedia({colorScheme: "light"});
     await page.screenshot({path: path.join(review, "workspace-light.png"), fullPage: true, animations: "disabled"});

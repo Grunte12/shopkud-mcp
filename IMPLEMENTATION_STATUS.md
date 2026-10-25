@@ -76,27 +76,14 @@ live support.
 Python 3.11+ with the package installed (`pip install -e .`):
 
 ```sh
-python3 -m unittest discover -s tests -p 'test_*.py'
-node tests/test_subid.cjs
-node tests/test_linkcapture.cjs
-node tests/test_selector_health.cjs
-node tests/test_surfaces.cjs
-node tests/background-reconnect.cjs
-node tests/entry-reuse.cjs
-node tests/listing-entry.cjs
-node tests/offer-link-entry.cjs
+npm ci
+npx playwright install chromium
+SHOPKUD_TEST_PYTHON="$PWD/.venv/bin/python" npm test
 ```
 
-DOM suites need Playwright and its Chromium. They use synthetic HTML and abort network requests:
-
-```sh
-node tests/hidden-link-evals.cjs
-node tests/offer-link-evals.cjs
-node tests/detail-evals.cjs
-node tests/listing-evals.cjs
-```
-
-No test calls Shopee or opens an affiliate short link.
+The runner executes the consistency check, Python tests/evals and all 26
+executable JavaScript suites. The remaining `.cjs` file is a shared fixture
+module. No test calls Shopee or opens an affiliate short link.
 
 ## Live UI assumptions the owner must verify
 

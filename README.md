@@ -388,31 +388,18 @@ recovered from Chrome history by this tool.
 ## Offline tests
 
 ```sh
-PYTHONDONTWRITEBYTECODE=1 .venv/bin/python -m unittest discover -s tests -p 'test_*.py'
-.venv/bin/python evals/rank-playbook.py
-node tests/background-reconnect.cjs
-node tests/entry-reuse.cjs
-node tests/listing-entry.cjs
-node tests/offer-link-entry.cjs
-node tests/test_subid.cjs
-node tests/test_create_guard.cjs
-node tests/test_surfaces.cjs
-node tests/test_linkcapture.cjs
-node tests/test_selector_health.cjs
-PYTHONDONTWRITEBYTECODE=1 .venv/bin/python evals/broker-cancellation.py
+npm ci
+npx playwright install chromium
+SHOPKUD_TEST_PYTHON="$PWD/.venv/bin/python" npm test
 ```
 
-DOM parser suites (`tests/detail-evals.cjs`, `tests/listing-evals.cjs`,
-`tests/hidden-link-evals.cjs`, `tests/offer-link-evals.cjs`,
-`tests/pagination-evals.cjs`, `tests/purchase-evals.cjs`,
-`tests/review-evals.cjs`, `tests/review-data-evals.cjs`, `tests/search-evals.cjs`,
-and `tests/selector-health-evals.cjs`)
-require Playwright with its Chromium installed in the development environment.
-They use synthetic HTML and block external requests. The native-messaging
-integration fixtures also require `SHOPKUD_TEST_PYTHON` pointing to a Python
-environment with the package dependencies. Run browser/native tests only with
-temporary profiles, never a personal Chrome profile or account. Some native
-host fixture paths remain platform-dependent; a failed fixture is not a pass.
+`npm test` runs the release-consistency check, Python unit/eval suites and every
+executable `tests/*.cjs` suite. `npm run test:list` prints the exact inventory;
+`detail-fixture.cjs` is a shared fixture module, not a suite. Browser/native
+tests use repository-local Playwright, its Chromium and disposable profiles.
+They use synthetic HTML and block external requests. Set
+`SHOPKUD_TEST_CHROMIUM` only to override Playwright's browser path. A failed
+fixture fails the command; it is never counted as a pass.
 
 All fixture identities, links and credentials must be synthetic. Test outputs,
 screenshots, runtime files and captured evidence are not source assets and must

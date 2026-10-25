@@ -2,7 +2,7 @@
 // Bounded UI evidence only: synthetic plans, no extension/network/personal profile.
 const {chromium}=require("playwright");
 const fs=require("node:fs/promises"),path=require("node:path"),assert=require("node:assert/strict");
-const ROOT=path.resolve(__dirname,".."),OUT=path.resolve(ROOT,"../outputs/shopkud-qa");
+const ROOT=path.resolve(__dirname,".."),OUT=path.resolve(process.env.SHOPKUD_TEST_OUTPUT_DIR||path.join(ROOT,"artifacts/tests"));
 async function run(){
   await fs.mkdir(OUT,{recursive:true});
   const browser=await chromium.launch({headless:true,...(process.env.SHOPEE_TEST_CHROMIUM?{executablePath:process.env.SHOPEE_TEST_CHROMIUM}:{})});
