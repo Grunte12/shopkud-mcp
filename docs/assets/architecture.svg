@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" role="img" aria-labelledby="shopkud-architecture-title shopkud-architecture-desc">
+  <title id="shopkud-architecture-title">ShopKud MCP local architecture</title>
+  <desc id="shopkud-architecture-desc">An MCP agent connects over loopback to one local ShopKud worker, which serializes browser work through a private native messaging channel to a scoped Chrome extension and visible Shopee pages, while streaming sanitized telemetry to the Side Panel.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#65656d"/></marker>
+    <marker id="arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#ed572f"/></marker>
+    <marker id="arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0,8 3,0 6" fill="#0a7aff"/></marker>
+  </defs>
+  <rect width="1280" height="720" fill="#f4f4f6"/>
+  <text x="64" y="64" fill="#ed572f" font-size="12" font-weight="700" letter-spacing="2">SHOPKUD MCP · LOCAL-FIRST</text>
+  <text x="64" y="108" fill="#17171a" font-size="32" font-weight="700" letter-spacing="-1">Agent reasoning. Deterministic browser actions.</text>
+  <text x="64" y="140" fill="#65656d" font-size="16">No cloud backend · no cookie export · one browser lane per user</text>
+
+  <rect x="300" y="184" width="620" height="440" rx="16" fill="rgba(237,87,47,.025)" stroke="rgba(237,87,47,.38)" stroke-width="1.2" stroke-dasharray="6 6"/>
+  <rect x="324" y="176" width="128" height="20" rx="4" fill="#f4f4f6"/>
+  <text x="388" y="190" text-anchor="middle" fill="#c83f1f" font-size="11" font-weight="700" letter-spacing="1.4">USER'S MAC</text>
+
+  <line x1="244" y1="352" x2="356" y2="352" stroke="#0a7aff" stroke-width="2" marker-end="url(#arrow-link)"/>
+  <rect x="264" y="324" width="72" height="18" rx="3" fill="#f4f4f6"/>
+  <text x="300" y="337" text-anchor="middle" fill="#0a7aff" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">HTTP MCP</text>
+
+  <line x1="596" y1="352" x2="692" y2="352" stroke="#ed572f" stroke-width="2" marker-end="url(#arrow-accent)"/>
+  <rect x="608" y="324" width="72" height="18" rx="3" fill="#f4f4f6"/>
+  <text x="644" y="337" text-anchor="middle" fill="#c83f1f" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">NATIVE</text>
+
+  <line x1="900" y1="352" x2="1020" y2="352" stroke="#65656d" stroke-width="2" marker-end="url(#arrow)"/>
+  <rect x="920" y="324" width="80" height="18" rx="3" fill="#f4f4f6"/>
+  <text x="960" y="337" text-anchor="middle" fill="#65656d" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">VISIBLE UI</text>
+
+  <line x1="796" y1="412" x2="796" y2="500" stroke="#65656d" stroke-width="1.6" stroke-dasharray="5 5" marker-end="url(#arrow)"/>
+  <rect x="812" y="448" width="88" height="18" rx="3" fill="#f4f4f6"/>
+  <text x="856" y="461" text-anchor="middle" fill="#65656d" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,monospace">TELEMETRY</text>
+
+  <rect x="64" y="292" width="180" height="120" rx="12" fill="#ffffff" stroke="rgba(23,23,26,.22)" stroke-width="1.2"/>
+  <rect x="80" y="308" width="52" height="20" rx="4" fill="rgba(23,23,26,.05)"/>
+  <text x="106" y="322" text-anchor="middle" fill="#65656d" font-size="10" font-weight="700" letter-spacing="1">CLIENT</text>
+  <text x="154" y="356" text-anchor="middle" fill="#17171a" font-size="18" font-weight="700">MCP Agent</text>
+  <text x="154" y="384" text-anchor="middle" fill="#65656d" font-size="12">intent · constraints · judgment</text>
+
+  <rect x="356" y="284" width="240" height="136" rx="12" fill="#fff7f4" stroke="#ed572f" stroke-width="2"/>
+  <rect x="372" y="300" width="60" height="20" rx="4" fill="#ed572f"/>
+  <text x="402" y="314" text-anchor="middle" fill="#ffffff" font-size="10" font-weight="800" letter-spacing="1">WORKER</text>
+  <text x="476" y="352" text-anchor="middle" fill="#17171a" font-size="20" font-weight="750">ShopKud MCP</text>
+  <text x="476" y="380" text-anchor="middle" fill="#65656d" font-size="12">19 guided tools · one queue</text>
+  <text x="476" y="400" text-anchor="middle" fill="#65656d" font-size="12">bounded cache · optional SQLite</text>
+
+  <rect x="692" y="284" width="208" height="136" rx="12" fill="#ffffff" stroke="rgba(23,23,26,.22)" stroke-width="1.2"/>
+  <rect x="708" y="300" width="76" height="20" rx="4" fill="rgba(23,23,26,.05)"/>
+  <text x="746" y="314" text-anchor="middle" fill="#65656d" font-size="10" font-weight="700" letter-spacing="1">EXTENSION</text>
+  <text x="796" y="352" text-anchor="middle" fill="#17171a" font-size="18" font-weight="700">Scoped Chrome bridge</text>
+  <text x="796" y="380" text-anchor="middle" fill="#65656d" font-size="12">allowlisted pages + actions</text>
+  <text x="796" y="400" text-anchor="middle" fill="#65656d" font-size="12">no cookies or raw HTML out</text>
+
+  <rect x="1020" y="292" width="196" height="120" rx="12" fill="rgba(23,23,26,.035)" stroke="rgba(23,23,26,.22)" stroke-width="1.2"/>
+  <rect x="1036" y="308" width="60" height="20" rx="4" fill="rgba(23,23,26,.05)"/>
+  <text x="1066" y="322" text-anchor="middle" fill="#65656d" font-size="10" font-weight="700" letter-spacing="1">SITE</text>
+  <text x="1118" y="356" text-anchor="middle" fill="#17171a" font-size="18" font-weight="700">Shopee Affiliate</text>
+  <text x="1118" y="384" text-anchor="middle" fill="#65656d" font-size="12">existing signed-in profile</text>
+
+  <rect x="692" y="500" width="208" height="96" rx="12" fill="#17171a" stroke="#17171a" stroke-width="1.2"/>
+  <rect x="708" y="516" width="56" height="20" rx="4" fill="#ed572f"/>
+  <text x="736" y="530" text-anchor="middle" fill="#ffffff" font-size="10" font-weight="800" letter-spacing="1">LIVE</text>
+  <text x="796" y="556" text-anchor="middle" fill="#ffffff" font-size="17" font-weight="700">Side Panel</text>
+  <text x="796" y="580" text-anchor="middle" fill="#aaaab3" font-size="12">trace · metrics · safe results</text>
+
+  <line x1="64" y1="656" x2="1216" y2="656" stroke="rgba(23,23,26,.12)"/>
+  <circle cx="80" cy="684" r="6" fill="#ed572f"/><text x="96" y="688" fill="#65656d" font-size="11">deterministic control plane</text>
+  <circle cx="328" cy="684" r="6" fill="#0a7aff"/><text x="344" y="688" fill="#65656d" font-size="11">loopback-only MCP</text>
+  <circle cx="548" cy="684" r="6" fill="#17171a"/><text x="564" y="688" fill="#65656d" font-size="11">session-only observability</text>
+</svg>

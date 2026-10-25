@@ -99,7 +99,8 @@ class WorkflowGuideTests(unittest.IsolatedAsyncioTestCase):
             ]}
         tool.fn = fixture
         try:
-            await self.mcp._tool_manager.call_tool("get_product_media", {"workspace_id": "a" * 32, "item_id": "1"})
+            await self.mcp._tool_manager.call_tool("get_product_media", {"workspace_id": "a" * 32, "item_id": "1"},
+                                                   convert_result=True)
         finally:
             tool.fn = original
         event = [args[2] for args, _kwargs in self.broker.calls if args[1] == "developer_event"][-1]

@@ -49,3 +49,28 @@ Do not send SubID values if they contain an order id, email, phone, or buyer nam
 ## 5. How the result will be used
 
 Matched pattern ids update the evidence notes in `SELECTOR_EVIDENCE.md`. A miss stays unverified until a later fixture is added. The diagnostic output is not stored as a campaign row.
+
+## Maintainer acceptance — 2026-10-25
+
+This release candidate was exercised against the owner's current signed-in
+Chrome profile without creating a link or changing Shopee state.
+
+- Python: 224/224 tests passed.
+- Repeated-search browser contract: 11/11 tests passed, including a second
+  identical live query after the page already showed that query.
+- Extension/DOM suites passed for search, detail, listing, pagination, reviews,
+  offer links, selector health, telemetry and the Side Panel.
+- The built `shopkud_mcp-0.10.6` wheel contains the worker, bundled workflow,
+  skill and complete unpacked Chrome extension. A clean Python 3.12 virtual
+  environment installed the wheel with declared dependencies and opened the
+  `shopkud-mcp` CLI successfully.
+- Live `rank_affiliate_products` returned product `26570814201` from a fresh
+  Shopee read in 4.47 seconds with trace `37586e340919daee`.
+- The real Side Panel displayed the Agent request, each deterministic code
+  stage, latency/effectiveness metrics, and the bounded winner summary returned
+  to the Agent: product name, channel, price, commission rate and estimated
+  commission per order.
+
+This proves the supported macOS/Chrome path on the maintainer machine. It does
+not claim that future Shopee markup changes, every account configuration, or
+unvalidated Windows/Linux installations will work without adaptation.

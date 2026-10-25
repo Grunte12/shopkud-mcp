@@ -351,6 +351,15 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
 
     def developer_result(result) -> tuple[dict, list[str]]:
         """Return a small, non-sensitive preview of exactly what the tool returned."""
+        if isinstance(result, list) and len(result) == 1:
+            text_result = getattr(result[0], "text", None)
+            if isinstance(text_result, str):
+                try:
+                    decoded = json.loads(text_result)
+                except (TypeError, ValueError):
+                    decoded = None
+                if isinstance(decoded, dict):
+                    result = decoded
         if not isinstance(result, dict):
             return {"result_type": type(result).__name__}, []
         summary = {}
@@ -379,6 +388,11 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 break
         if names:
             summary["items"] = names
+        winner = result.get("winner")
+        if isinstance(winner, dict):
+            summary["winner"] = {key: winner[key] for key in (
+                "product_id", "name", "channel", "price_min_thb", "commission_pct",
+                "commission_thb_per_order") if type(winner.get(key)) in (str, int, float)}
         media = []
         def collect(value, key=""):
             if len(media) >= 4:

@@ -15,7 +15,7 @@ async function run(){
       {trace_id:"c".repeat(16),swarm_id:"b".repeat(16),invocation_number:2,query:"ทีวี",stage:"detail_check",status:"running",updated_at_unix_ms:now,elapsed_ms:340,candidate_index:2,candidate_count:5,product_name:"Smart TV",browser_operations:{scan:1}},
     ],developer_logs:[
       {event_id:"1".repeat(16),trace_id:"a".repeat(16),actor:"agent",source:"mcp.client",operation:"rank_affiliate_products",phase:"started",status:"ok",message:"Agent called an MCP tool",detail:'{"query":"ทีวี","freshness":"live"}',progress_pct:0,occurred_at_unix_ms:now-500,elapsed_ms:0},
-      {event_id:"2".repeat(16),trace_id:"a".repeat(16),actor:"code",source:"extension/detail.js",operation:"detail",phase:"completed",status:"ok",message:"Returned result to Agent",detail:'{"ok":true,"image_count":1}',media:["https://down-th.img.susercontent.com/file/result.jpg"],progress_pct:100,occurred_at_unix_ms:now,elapsed_ms:340},
+      {event_id:"2".repeat(16),trace_id:"a".repeat(16),actor:"code",source:"shopkud_mcp.server",operation:"rank_affiliate_products",phase:"completed",status:"ok",message:"Returned result to Agent",detail:'{"ok":true,"results_count":16,"winner":{"product_id":"26570814201","name":"Philips NA331 Air Fryer","commission_pct":6.5,"commission_thb_per_order":236.02}}',media:["https://down-th.img.susercontent.com/file/result.jpg"],progress_pct:100,occurred_at_unix_ms:now,elapsed_ms:340},
     ]};
     globalThis.chrome={runtime:{getManifest:()=>({version:"0.10.6"}),onMessage:{addListener(fn){listeners.push(fn);}},async sendMessage(message){if(message.type==="shopkud-live-clear"){snapshot.runs=snapshot.runs.filter(run=>run.status==="running");}if(message.type==="shopkud-live-clear-logs")snapshot.developer_logs=[];return snapshot;}}};
   });
@@ -35,7 +35,7 @@ async function run(){
   assert.equal(await page.locator(".run-item").count(),2);
   assert.equal(await page.locator(".console-line").count(),2);
   assert.match(await page.locator(".console-line").first().textContent(),/AGENT.*rank_affiliate_products.*ทีวี/u);
-  assert.match(await page.locator(".console-line").nth(1).textContent(),/CODE.*100%.*detail.*Returned result to Agent.*image_count.*extension\/detail\.js/u);
+  assert.match(await page.locator(".console-line").nth(1).textContent(),/CODE.*100%.*rank_affiliate_products.*Returned result to Agent.*Philips NA331 Air Fryer.*commission_pct.*6\.5.*shopkud_mcp\.server/u);
   assert.equal(await page.locator(".console-line").nth(1).locator(".console-media img").count(),1);
   assert.equal(await page.locator("#developer-log-count").textContent(),"2 lines");
   assert.equal(await page.locator("#follow-logs").getAttribute("aria-pressed"),"true");

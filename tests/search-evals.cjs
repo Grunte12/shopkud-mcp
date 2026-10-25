@@ -198,6 +198,30 @@ async function main() {
     results.push("unchanged results stay unconfirmed; exactly one Enter, no scan retry");
 
     await reset(page);
+    const repeated = await page.evaluate(async query => {
+      const input=document.querySelector("input"),rows=document.querySelector("#rows");
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,query);
+      const submitted=[];
+      input.addEventListener("keydown",e=>{
+        if(e.key!=="Enter")return;
+        submitted.push(input.value);
+        setTimeout(()=>{rows.innerHTML=input.value
+          ?'<div class="product-row" data-id="result">ผลเดิมที่ค้นใหม่</div>'
+          :'<div class="product-row" data-id="reset">รายการทั้งหมด</div>';},50);
+      });
+      let scans=0;
+      const result=await ShopKudSearch.run({args:{query,start_page:1,max_pages:1,max_products:5},
+        records:()=>[...rows.querySelectorAll(".product-row")].map(r=>({product_id:r.dataset.id,name:r.textContent})),
+        selectionStates:()=>[],active:()=>true,cancelled:()=>false,
+        scan:async()=>{scans++;return {ok:true,products:[]};}});
+      return {result,submitted,scans};
+    },QUERY);
+    assert.equal(repeated.result.ok,true);
+    assert.deepEqual(repeated.submitted,["",QUERY]);
+    assert.equal(repeated.scans,1);
+    results.push("repeated live query resets visible results before searching again");
+
+    await reset(page);
     const stopped = await page.evaluate(async query => {
       window.cancelSearch = false;
       const p = ShopKudSearch.run({ args: { query, start_page: 1, max_pages: 1, max_products: 1 },

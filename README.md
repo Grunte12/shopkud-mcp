@@ -13,6 +13,8 @@ no MCP gateway, Docker daemon, or external database is required.
 Architecture and trust boundaries: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Cheap-model tool-selection evidence: [evals/LUNA_TOOL_SELECTION_2026-10-24.md](evals/LUNA_TOOL_SELECTION_2026-10-24.md).
 
+![ShopKud local MCP architecture](docs/assets/architecture.png)
+
 This is the public **0.10.6** release. The Python package and extension both
 declare **0.10.6**. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
@@ -34,7 +36,8 @@ current Shopee UI, all product variants, or every account configuration.
 - ✅ Live Chrome Side Panel for per-invocation stages, queue/cache state, latency,
   success/effectiveness, browser operations and bounded response-token estimates
 - ✅ Developer Working Log streams Agent tool calls and code execution line by
-  line with redacted arguments, source/function, operation, progress and result
+  line with redacted arguments, source/function, operation, progress and the
+  bounded result summary returned to the Agent
 - ✅ Product-detail observations, including displayed channel-specific commissions
 - ✅ Optional public-product evidence and model matching
 - ✅ Agent-authored selection previews and once-only, snapshot-checked selection

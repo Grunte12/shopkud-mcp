@@ -1,5 +1,7 @@
 # ShopKud MCP architecture
 
+![ShopKud local MCP architecture](assets/architecture.png)
+
 ShopKud is a standalone local MCP server for Shopee Affiliate Thailand. It
 connects an MCP-capable agent to the user's existing signed-in Chrome profile
 without exporting cookies, session tokens, or page HTML to another service.
@@ -154,7 +156,9 @@ observe the calling model's private input, reasoning, or output token usage.
 The developer Working Log is a separate session-only stream. It shows Agent
 tool calls, allowlisted/redacted argument summaries, Python/extension source
 locations, function or browser-operation names, progress and completion/failure
-events as they happen. It deliberately cannot display a model's hidden chain of
+events as they happen. Completed tool calls include a bounded summary of the
+exact result returned to the Agent, including a ranked winner when present. It
+deliberately cannot display a model's hidden chain of
 thought or arbitrary shell work performed outside ShopKud; those facts never
 enter the MCP server. The extension keeps at most 500 sanitized log lines in
 Chrome session storage and offers explicit follow/pause and clear controls.

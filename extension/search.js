@@ -31,19 +31,38 @@
       const states=selectionStates();
       if(states.some(x=>x===true))return fail("navigation_blocked_by_selections");
       if(states.some(x=>x!==false))return fail("selection_state_unknown");
-      const before=signature();
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,query);
-      changed=true;
-      input.dispatchEvent(new Event("input",{bubbles:true}));
-      input.dispatchEvent(new Event("change",{bubbles:true}));
       const searchRoot=input.closest(".ant-input-search,.ant-input-group-wrapper");
       const submitButtons=searchRoot?[...searchRoot.querySelectorAll("button.ant-input-search-button")].filter(visible):[];
       const groupAddons=searchRoot?[...searchRoot.querySelectorAll(".ant-input-group-addon")].filter(visible):[];
       const submitControls=[...submitButtons,...groupAddons];
       if(submitControls.length>1)return fail("search_controls_ambiguous");
       const searchSource=submitButtons.length?"native_affiliate_search_button":groupAddons.length?"native_affiliate_search_addon":"native_affiliate_input_enter";
-      if(submitControls.length)(submitControls[0].firstElementChild || submitControls[0]).click();
-      else for(const type of ["keydown","keyup"])input.dispatchEvent(new KeyboardEvent(type,{key:"Enter",code:"Enter",keyCode:13,which:13,bubbles:true}));
+      const setValue=value=>{
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,value);
+        changed=true;
+        input.dispatchEvent(new Event("input",{bubbles:true}));
+        input.dispatchEvent(new Event("change",{bubbles:true}));
+      };
+      const submit=()=>{
+        if(submitControls.length)(submitControls[0].firstElementChild || submitControls[0]).click();
+        else for(const type of ["keydown","keyup"])input.dispatchEvent(new KeyboardEvent(type,{key:"Enter",code:"Enter",keyCode:13,which:13,bubbles:true}));
+      };
+      let before=signature();
+      // Repeating the current query can render the same rows. Reset the page first
+      // so a fresh live search still has an observable result transition.
+      if(input.value.trim()===query && records().length){
+        setValue("");submit();
+        const resetDeadline=performance.now()+15000;
+        let resetConfirmed=false;
+        while(performance.now()<resetDeadline){
+          const stop=stopped();if(stop)return fail(stop,"unconfirmed");
+          const reset=signature();
+          if(reset!==before){before=reset;resetConfirmed=true;break;}
+          await new Promise(resolve=>setTimeout(resolve,100));
+        }
+        if(input.value!=="" || !resetConfirmed)return fail("search_reset_unconfirmed","unconfirmed");
+      }
+      setValue(query);submit();
       const resultDeadline=performance.now()+15000;
       let stable=0,last=null;
       while(performance.now()<resultDeadline) {
