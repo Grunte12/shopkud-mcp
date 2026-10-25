@@ -1,18 +1,37 @@
 # ShopKud P0 / P1 / P2 checklist
 
-Version 0.11.8. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
+Version 0.11.8. Extension-only: no Affiliate Open API, no link redirects,
+aggregate conversion data only.
+
+Supported public MVP target: macOS + Google Chrome + Python 3.11+ and an MCP
+client supporting Streamable HTTP with private headers. Linux and Windows
+native-host registration, Chrome Web Store delivery and a fresh-machine Chrome
+install have not been validated.
 
 The standalone runtime, cache/freshness behavior, trust boundaries, and
 agent-installed macOS topology are documented in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-Release verification: 244 Python tests plus 27 directly executed
-Node/DOM/Playwright suites pass. They cover the Dashboard, Side Panel,
-tab lifecycle and the existing synthetic Shopee readers/actions. Native
-Messaging/live-account acceptance remains operator-specific. Live Shopee markup
-is still operator-verified where marked `flagged` below.
+Historical verification at commit `238160e`: 244 Python tests, 27 directly
+executed Node/DOM/Playwright suites and the 44-stage MCP/extension synthetic
+fixture passed. They cover the Dashboard, Side Panel, tab lifecycle and the
+existing synthetic Shopee readers/actions. These results must be rerun for the
+release candidate; they are not a current CI result. Native Messaging and the
+bounded live-account observations remain operator-specific.
 
-Status words: **done** means the behavior exists in code, **tested** means an offline fixture covers it, **flagged** means a live Shopee page or an owner choice still has to confirm an assumption.
+## Evidence classification
+
+| Class | Meaning in this repository |
+|---|---|
+| Verified local fixture | Repeatable synthetic test or package check; not a live Shopee claim. |
+| Observed live | Read-only behavior seen on the owner's logged-in macOS/Chrome runtime; layout/account-specific. |
+| Not validated | Implemented or inferred path without enough live evidence for a public support claim. |
+| Deferred | Deliberately outside the ShopKud v1 product-selection release. |
+
+Status words: **done** means the behavior exists in code, **tested** means a
+verified local fixture covers it, and **flagged** means the live path is not
+validated or still requires an owner choice. `flagged` must not be presented as
+live support.
 
 ## P0
 

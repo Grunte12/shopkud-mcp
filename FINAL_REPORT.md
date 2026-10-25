@@ -1,10 +1,28 @@
-# ShopKud P0–P2 report
+# ShopKud P0–P2 implementation report
 
-Version 0.11.8. Public branch `main`.
+Version 0.11.8. Public branch `main`. This is an implementation and historical
+verification report, not a published GitHub Release or a fresh-machine
+installation certificate.
 
 The service stays extension-only. It does not sign Affiliate Open API requests, follow `s.shopee.co.th` redirects, or store buyer or order identifiers. Remote MCP remains loopback plus a bearer token.
 
-The requirement-by-requirement checklist, test commands, and live-UI assumptions are in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md). Every P0, P1, and P2 row there is implemented and covered by an offline test. Rows that still depend on the live Shopee UI are marked flagged.
+The requirement-by-requirement checklist, test commands, evidence classes and
+live-UI assumptions are in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+Every P0, P1 and P2 row is implemented and covered by a local fixture. Rows that
+still depend on live Shopee UI are marked `flagged` and are not validated public
+support claims.
+
+## Release position
+
+- Verified local fixture: the recorded test/package checks below at their named
+  revision.
+- Observed live: bounded read-only discovery/detail/history behavior on the
+  owner's macOS + Chrome runtime; see
+  [`docs/LIVE_ACCEPTANCE_0.11.8_2026-10-26.md`](docs/LIVE_ACCEPTANCE_0.11.8_2026-10-26.md).
+- Not validated: seller authenticity, exact SKU/variant certainty, exhaustive
+  live no-match behavior, `listing_unconfirmed` recovery, fresh-machine Chrome
+  setup and true overlapping browser-lane contention.
+- Deferred: media generation, upload and posting. They are not ShopKud v1.
 
 ## What changed after the P0 foundation
 
@@ -19,9 +37,11 @@ The requirement-by-requirement checklist, test commands, and live-UI assumptions
 
 ## Tests
 
-`python3 -m unittest discover -s tests -p 'test_*.py'` — 244 tests, passing.
+`python3 -m unittest discover -s tests -p 'test_*.py'` — 244 tests passed in the
+recorded verification run. Release-candidate CI must rerun them.
 
-This release also passed 27 directly executed Node/DOM/Playwright suites,
+The recorded verification run also passed 27 directly executed
+Node/DOM/Playwright suites,
 including the new Dashboard interaction/safety matrix and tab-lifecycle tests.
 
 Product discovery now has two explicit decision layers. Deterministic code

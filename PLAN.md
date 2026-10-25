@@ -1,7 +1,24 @@
 # ShopKud: close the product-selection E2E gaps
 
-Date: 2026-10-26. Status: 0.11.8 reliability repair and concurrent live swarm
-acceptance passed. Runtime and source are both on 0.11.8; release packaging is complete.
+Date: 2026-10-26. Status: implementation work is complete for 0.11.8; public
+release preparation is in progress. Source and the observed owner runtime were
+both 0.11.8 when the acceptance snapshot below was recorded. Packaging was
+verified in a clean virtual environment, not on a fresh macOS user account.
+
+## Current release scope
+
+- Supported launch audience: macOS, Google Chrome, Python 3.11+, and an MCP
+  client that supports Streamable HTTP with private request headers.
+- Verified local fixtures: 244 Python tests, 27 JavaScript/browser suites and a
+  44-stage MCP-to-extension synthetic fixture passed at commit `238160e`.
+- Observed live: extension 0.11.8 and guide 1.5.6 connected on the owner's
+  logged-in Chrome profile; bounded Affiliate discovery/detail/history paths
+  were exercised read-only.
+- Not validated: a fresh-machine Chrome install, Linux/Windows native-host
+  setup, every Shopee layout, seller authenticity, exact-SKU certainty, paid
+  commission outcomes and true overlapping browser-lane contention.
+- Deferred: media generation, uploading, posting and cross-platform workflows;
+  those belong to the separate Affiliate Kit.
 
 ## Implementation result
 
@@ -29,8 +46,8 @@ acceptance passed. Runtime and source are both on 0.11.8; release packaging is c
 One reliable loop: brief → research/search → inspect product/store/variant →
 Agent judgment → one coherent Dashboard report → saved project and links.
 Keep the current local worker, extension and 19-tool interface. No new backend,
-database service, media generation or publishing features. Preserve existing
-uncommitted reader fixes; they are not a completed release.
+database service, media generation or publishing features. The implementation
+is committed; the current task is release hardening, CI and public documentation.
 
 ## Evidence collected
 
@@ -60,7 +77,12 @@ uncommitted reader fixes; they are not a completed release.
   waits 0.03/0.02 ms do **not** establish contention. See
   [live follow-up](docs/SELLER_VARIANT_LIVE_FOLLOWUP.md).
 
-## Findings and fix order
+## Historical findings and implemented fix order
+
+The five sections below record the issues that led to 0.11.8. They are retained
+as implementation history, not as the current release backlog. Current limits
+and release work are tracked above and in
+[`docs/PUBLIC_RELEASE_IMPLEMENTATION_PLAN.md`](docs/PUBLIC_RELEASE_IMPLEMENTATION_PLAN.md).
 
 ### 1. P0 — bind the whole workflow by identity, not wording
 
