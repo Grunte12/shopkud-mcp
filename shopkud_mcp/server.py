@@ -538,7 +538,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         confidence: Literal["low","medium","high"] = "medium",
         report_id: Annotated[str | None,Field(pattern=r"^[0-9a-f]{16}$")] = None,
     ) -> dict:
-        """ส่งงาน research/selection เข้า Dashboard กลาง ใช้ report_id เดิมจาก working ถึง completed ห้ามสร้าง UI เฉพาะงาน; completed ต้องมี signal พร้อมเหตุผลและ HTTPS citation."""
+        """Publish into the fixed Dashboard, never build task UI. query<=120 chars. Omit report_id initially; reuse returned ID. citations=[{title,url(HTTPS)}]. signals=[{kind,label,value,rationale,source_indexes:[0]}]; kind: trend|purchase_intent|competition|trust|marketing_support|price. Optional score: integer 0..100. completed needs a signal and citation; working allows empty lists. Full limits/example: get_workflow_guide(full)."""
         if status=="completed" and not citations:
             return {"ok":False,"error":"completed_report_requires_citation","retry_automatically":False}
         if status=="completed" and not signals:

@@ -487,8 +487,8 @@
     const winner = products.find(product => product.product_id === dashboard?.winner_product_id);
     $("#winner").hidden = !winner;
     $("#product-empty").hidden = Boolean(winner);
-    $("#product-empty-title").textContent = dashboard ? "ยังไม่มีตัวเลือกที่แนะนำ" : "พร้อมค้นตัวเลือกให้คุณ";
-    $("#product-empty-copy").textContent = dashboard ? "ผลล่าสุดยังไม่ได้ระบุผู้ชนะ ตรวจขอบเขตและเงื่อนไขด้านล่าง แล้วให้ Agent วิจัยต่อโดยไม่ผ่อนเกณฑ์เอง" : "บอก Agent ว่าต้องการสินค้าแบบไหน งบเท่าไร และเน้นค่าคอมหรือยอดขาย ผลที่ตรวจแล้วจะมาอยู่ตรงนี้";
+    $("#product-empty-title").textContent = dashboard ? "ยังไม่พบสินค้าที่ผ่านเกณฑ์ในรอบนี้" : "พร้อมค้นตัวเลือกให้คุณ";
+    $("#product-empty-copy").textContent = dashboard ? `ตรวจ ${count(dashboard.scan?.unique_products)} สินค้า จาก ${count(dashboard.scan?.pages_scanned)} หน้า · ${dashboard.partial_market_coverage ? "ค้นเพียงบางส่วน ไม่ได้แปลว่าทั้งตลาดไม่มีสินค้า" : "ครบเฉพาะขอบเขตที่ขอ ไม่ใช่ทั้งตลาด"} ให้ Agent ตรวจเงื่อนไขและหลักฐานก่อนค้นต่อ` : "บอก Agent ว่าต้องการสินค้าแบบไหน งบเท่าไร และเน้นค่าคอมหรือยอดขาย ผลที่ตรวจแล้วจะมาอยู่ตรงนี้";
     if(!winner) return;
     setImage($("#winner-image"),$("#winner-fallback"),winner.image_url,winner.name);
     trust($("#winner-trust"),winner);

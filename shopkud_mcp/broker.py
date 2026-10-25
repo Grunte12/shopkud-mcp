@@ -280,6 +280,16 @@ class Broker:
         peer = next(iter(candidates), None)
         if peer is None:
             raise BrokerError("disconnected" if extension_target else "unknown_page")
+        # Entry commands share the extension target with telemetry. Wait before
+        # dispatch, never replay a command whose outcome is unknown.
+        if operation == "open_offer":
+            deadline = asyncio.get_running_loop().time() + float(timeout)
+            while page_id in self._busy_pages:
+                if asyncio.get_running_loop().time() >= deadline:
+                    raise BrokerError("busy")
+                await asyncio.sleep(0.01)
+            if peer.closed:
+                raise BrokerError("disconnected")
         if page_id in self._busy_pages:
             raise BrokerError("busy")
 

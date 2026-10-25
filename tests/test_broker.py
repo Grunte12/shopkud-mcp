@@ -299,9 +299,9 @@ class BrokerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(command["operation"], "open_offer")
         self.assertEqual(command["arguments"], {"offer_url": PRODUCT_PAGE_URL + "/123"})
 
-        with self.assertRaises(BrokerError) as caught:
-            await self.broker.call("extension", "open_offer", {"offer_url": PRODUCT_PAGE_URL + "/123"})
-        self.assertEqual(caught.exception.code, "busy")
+        queued = asyncio.create_task(self.broker.call("extension", "open_offer", {"offer_url": PRODUCT_PAGE_URL + "/456"}, timeout=2))
+        await asyncio.sleep(0.03)
+        self.assertFalse(queued.done())
         with self.assertRaises(BrokerError) as caught:
             await self.broker.call("extension", "snapshot", {})
         self.assertEqual(caught.exception.code, "invalid_request")
@@ -310,12 +310,33 @@ class BrokerTests(unittest.IsolatedAsyncioTestCase):
         await peer.send({"type": "result", "id": command["id"], "result": result})
         self.assertEqual(await opening, result)
 
+        next_command = await peer.recv()
+        self.assertEqual(next_command["arguments"]["offer_url"], PRODUCT_PAGE_URL + "/456")
+        await peer.send({"type": "result", "id": next_command["id"], "result": result})
+        self.assertEqual(await queued, result)
+
     async def test_open_offer_fails_closed_when_multiple_extension_peers_are_connected(self) -> None:
         await self.connect()
         await self.connect()
         with self.assertRaises(BrokerError) as caught:
             await self.broker.call("extension", "open_offer", {"offer_url": PRODUCT_PAGE_URL + "/123"})
         self.assertEqual(caught.exception.code, "ambiguous_extension")
+
+    async def test_entry_wait_timeout_and_cancel_never_dispatch(self) -> None:
+        peer = await self.connect()
+        active = asyncio.create_task(self.broker.call("extension", "research_report", {}, timeout=2))
+        command = await peer.recv()
+        with self.assertRaises(BrokerError) as caught:
+            await self.broker.call("extension", "open_offer", {}, timeout=0.02)
+        self.assertEqual(caught.exception.code, "busy")
+        queued = asyncio.create_task(self.broker.call("extension", "open_offer", {}, timeout=2))
+        await asyncio.sleep(0.02)
+        queued.cancel()
+        with self.assertRaises(asyncio.CancelledError):
+            await queued
+        self.assertEqual(len(next(iter(self.broker._peers)).pending), 1)
+        await peer.send({"type":"result", "id":command["id"], "result":{"ok":True}})
+        self.assertEqual(await active, {"ok":True})
 
     async def test_playbook_event_uses_extension_target_and_is_allowlisted(self) -> None:
         peer = await self.connect()

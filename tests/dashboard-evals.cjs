@@ -227,6 +227,14 @@ async function run() {
     assert.equal(await page.locator("#log-list .log-line").count(),0);
     await page.emulateMedia({reducedMotion:"reduce"});
     assert.equal(await page.locator("#tab-live").evaluate(node=>getComputedStyle(node).transitionDuration),"0s");
+    const empty=fixture();
+    empty.runs[0].dashboard.results=[];
+    empty.runs[0].dashboard.winner_product_id=null;
+    empty.runs[0].dashboard.partial_market_coverage=true;
+    await page.evaluate(value=>__pushSnapshot(value),empty);
+    await page.locator("#tab-research").click();
+    assert.match(await page.locator("#product-empty-copy").textContent(),/ไม่ได้แปลว่าทั้งตลาดไม่มีสินค้า/u);
+    assert.match(await page.locator("#product-empty-copy").textContent(),/42.*3/u);
     await page.evaluate(()=>__pushSnapshot({ok:true,connected:false,runs:[],research_reports:[],developer_logs:[]}));
     await page.locator("#tab-research").click();
     assert.equal(await page.locator("#product-empty").isVisible(),true);

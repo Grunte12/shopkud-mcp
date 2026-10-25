@@ -91,6 +91,17 @@ rediscover the selected catalog.
 
 ### What's New in 0.11.5
 
+Follow-up fixes (source verification): extension entry commands wait for the
+shared telemetry/report channel before dispatch instead of failing immediately
+with `busy`. Waiting can time out or be cancelled without sending a browser
+command. Guide 1.5.2 includes a complete report payload example and field limits.
+Empty-result copy now states the scanned product/page counts and partial coverage.
+Regression evidence: 237 Python tests and the Dashboard browser suite pass.
+The local worker and extension were updated and two independent Luna live runs
+published working/completed Dashboard reports successfully. Product variant and
+seller evidence can still be incomplete; these runs did not establish fully
+verified recommendations. See [live acceptance evidence](docs/LIVE_ACCEPTANCE_2026-10-25.md).
+
 - Every product-research and selection run now writes into the same reusable
   Dashboard template: brief, conclusion, summary, purchase intent, reasoned
   signals, evidence links and remaining uncertainty.

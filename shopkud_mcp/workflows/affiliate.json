@@ -1,6 +1,6 @@
 {
   "id": "shopkud-affiliate",
-  "version": "1.5.1",
+  "version": "1.5.2",
   "skill": "skills/shopkud-affiliate/SKILL.md",
   "guide": "skills/shopkud-affiliate/references/workflow.md",
   "purpose": "ตรวจรุ่นและร้าน เทียบค่าคอมตามช่องทาง เตรียมภาพอ้างอิง และเก็บลิงก์ทางการครั้งเดียวเมื่อได้รับคำสั่ง",
