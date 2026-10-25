@@ -51,12 +51,25 @@ def main() -> None:
     wheel_extension_files = set(pyproject["tool"]["setuptools"]["data-files"]["share/shopkud-mcp/extension"])
     assert extension_files == wheel_extension_files, "wheel extension file list differs from extension directory"
 
+    executable_python = [
+        path
+        for scope in (ROOT / "tests", ROOT / "evals")
+        for path in scope.rglob("*.py")
+    ]
+    hardcoded_macos_tmp = [
+        str(path.relative_to(ROOT))
+        for path in executable_python
+        if "/private/tmp" in path.read_text(encoding="utf-8")
+    ]
+    assert not hardcoded_macos_tmp, f"portable tests must use tempfile, found: {hardcoded_macos_tmp}"
+
     print(json.dumps({
         "ok": True,
         "package_extension_version": package_version,
         "guide_version": workflow["version"],
         "guided_tools": len(guided_tools),
         "bundled_extension_files": len(extension_files),
+        "portable_python_files": len(executable_python),
     }, sort_keys=True))
 
 

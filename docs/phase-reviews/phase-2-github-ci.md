@@ -1,7 +1,7 @@
 # Phase 2 review — GitHub CI
 
 Date: 2026-10-26
-State: locally verified; hosted CI pending
+State: CI portability repair locally verified; hosted rerun pending
 Base branch: `main`
 Phase branch: `phase/2-github-ci`
 Base SHA: `c691ffd8de0602d9b61993531526a141bf4a8560`
@@ -49,11 +49,24 @@ browser profile, Shopee account, bearer token or personal machine.
 | Commit | Purpose |
 |---|---|
 | `ae3bb608fad37a891dcbef392b5ca580587aa6f3` | Add least-privilege GitHub CI and document its synthetic scope. |
+| `0e50a945f25677641aed15fdcf07bf7f8660e101` | Add the initial Phase 2 evidence document; later superseded by the portability repair. |
+
+The repair commit SHA is pending orchestrator review and commit.
+
+The first pushed candidate, `0e50a945f25677641aed15fdcf07bf7f8660e101`,
+is superseded. Its hosted run exposed the portable-temp defect described below;
+it must not be used as the merge candidate.
 
 ## Changed paths
 
 - `.github/workflows/ci.yml` — three-job hosted workflow.
 - `README.md` — concise CI coverage and no-live-account statement.
+- `tests/*.py`, `evals/rank-playbook.py` — use the standard-library temporary
+  directory instead of a macOS-only path.
+- `scripts/check-release-consistency.py` — reject macOS-only `/private/tmp`
+  paths anywhere in executable Python tests/evals.
+- `docs/phase-reviews/phase-2-github-ci.md` — retain the failed hosted-run and
+  repair evidence.
 
 ## Workflow contract
 
@@ -130,9 +143,18 @@ known vulnerabilities. A future applicable finding will fail the job.
 | Initial `pip-audit==2.10.1 --strict` of the temporary wheel environment | Failed on old venv packaging tools; finding retained and remediated as described above. |
 | Repeated strict Python audit after pinned packaging-tool upgrade | Passed; no known vulnerabilities reported. |
 | `git diff --check` | Passed. |
+| [Hosted run 40236078734](https://github.com/Grunte12/shopkud-mcp/actions/runs/40236078734) on superseded SHA `0e50a94` | Failed only the Python 3.11/3.13 jobs with 77 errors because executable tests/evals hardcoded macOS-only `/private/tmp`; browser/native and package/audit jobs passed. |
+| Portable-temp focused check on Python 3.12.10 | Passed release consistency plus 130 affected tests; 22 executable Python files scanned. |
+| Initial sandbox-restricted full-suite attempt | Could not create Unix sockets in the macOS system temp directory; this was a local sandbox permission failure, not a test assertion. The permitted reruns below passed. |
+| Full Python verification on Python 3.12.10 | Passed 244 unit tests, rank-playbook eval and broker-cancellation eval. |
+| Full Python verification on Python 3.11.16 | Passed 244 unit tests, rank-playbook eval and broker-cancellation eval. |
+| Python 3.13 local verification | Not available on this Mac; remains covered by the hosted matrix rerun. |
 
-The complete product fixture suite was already green on the Phase 1 base and no
-product/test source changed here. It will be rerun by the new macOS CI job.
+The initial hosted run proved the browser/native and package/audit paths, then
+found that Python fixtures assumed a macOS-only temporary directory. The repair
+uses `tempfile` exclusively, preserves the existing private-directory and
+cleanup semantics, and adds a release-consistency guard against recurrence. A
+fresh hosted rerun remains required because Python 3.13 is not installed locally.
 
 ## CI/CD impact
 
@@ -156,8 +178,8 @@ the first stable hosted run, which keeps rollback possible without lockout.
 
 ## Known risks and non-coverage
 
-- No hosted GitHub run exists for this candidate yet. Runner images, exact
-  check-name rendering and macOS browser provisioning remain pending evidence.
+- The first hosted run failed on a now-repaired portable-temp assumption. The
+  repaired candidate still needs a hosted rerun before merge.
 - `ubuntu-latest` is intentionally floating; the Actions are immutable, but the
   hosted operating-system image can change. Test failures must be investigated,
   not suppressed.
@@ -174,7 +196,8 @@ the first stable hosted run, which keeps rollback possible without lockout.
 
 - Independent local review: pending for the final evidence-commit SHA.
 - Push authorization: pending for the final evidence-commit SHA.
-- Hosted CI: pending branch push; no run/check URL yet.
+- Hosted CI: [run 40236078734](https://github.com/Grunte12/shopkud-mcp/actions/runs/40236078734)
+  failed on superseded SHA `0e50a94`; repaired-candidate rerun pending.
 - GPT Bridge review: pending after the approved SHA is pushed.
 - Pull request / immutable review URL: pending.
 
@@ -192,6 +215,7 @@ the first stable hosted run, which keeps rollback possible without lockout.
 - [x] Evidence document committed.
 - [ ] Exact final SHA independently reviewed and authorized for push.
 - [ ] Approved SHA pushed and remote SHA confirmed.
-- [ ] Hosted GitHub Actions run green; exact check names recorded.
+- [ ] Repaired candidate pushed and hosted GitHub Actions rerun green; exact
+  check names recorded.
 - [ ] GPT Bridge review reconciled for the pushed SHA.
 - [ ] Phase merged into `main`.

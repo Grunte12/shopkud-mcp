@@ -15,7 +15,7 @@ from shopkud_mcp.server import GUIDED_TOOLS, read_config, BearerAuth, create_ser
 
 class ConfigTests(unittest.TestCase):
     def setUp(self):
-        self.root=Path(tempfile.mkdtemp(prefix="shopkud-config-",dir="/private/tmp")).resolve()
+        self.root=Path(tempfile.mkdtemp(prefix="shopkud-config-")).resolve()
         self.path=self.root/"config.json"
         self.config={"token":"a"*64,"port":8176,"socket_path":str(self.root/"native.sock"),"allowed_origins":["chrome-extension://"+"a"*32+"/"]}
         self.write()
@@ -35,7 +35,7 @@ class ConfigTests(unittest.TestCase):
         link.unlink();os.link(self.path,link)
         with self.assertRaises(ValueError):read_config(self.path)
     def test_outside_socket_rejected(self):
-        self.config["socket_path"]="/private/tmp/elsewhere.sock";self.write()
+        self.config["socket_path"]=str(Path(tempfile.gettempdir())/"shopkud-elsewhere.sock");self.write()
         with self.assertRaises(ValueError):read_config(self.path)
     def test_wildcard_origin_rejected(self):
         self.config["allowed_origins"]=["chrome-extension://*/"];self.write()
@@ -91,7 +91,7 @@ class RecordingBroker:
 class PaginationToolsTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.broker=RecordingBroker()
-        self.config={"token":"a"*64,"socket_path":"/private/tmp/native.sock",
+        self.config={"token":"a"*64,"socket_path":str(Path(tempfile.gettempdir())/"shopkud-server-native.sock"),
                      "allowed_origins":["chrome-extension://"+"a"*32+"/"]}
         _,self.mcp,_=create_service(self.config,self.broker)
         self.tools=self.mcp._tool_manager._tools
