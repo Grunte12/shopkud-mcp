@@ -10,7 +10,7 @@ const {spawn}=require("node:child_process");
 const net=require("node:net");
 const detailFixture=require("./detail-fixture.cjs");
 const ROOT=path.resolve(__dirname,"..");
-const OUT=path.resolve(ROOT,"../outputs/shopkud-qa");
+const OUT=path.resolve(process.env.SHOPKUD_TEST_OUTPUT_DIR||path.join(ROOT,"artifacts/tests"));
 const PAGE="https://affiliate.shopee.co.th/offer/product_offer";
 const PYTHON=process.env.SHOPKUD_TEST_PYTHON;
 if(!PYTHON)throw new Error("Set SHOPKUD_TEST_PYTHON to Python with MCP SDK1.30/uvicorn installed");

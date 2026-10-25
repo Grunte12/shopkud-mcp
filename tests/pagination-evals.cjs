@@ -5,7 +5,7 @@ const {chromium}=require("playwright");
 const assert=require("node:assert/strict");
 const fs=require("node:fs/promises");
 const path=require("node:path");
-const OUT=path.resolve(__dirname,"../../outputs/shopkud-qa/pagination-evals.json");
+const OUT=path.join(path.resolve(process.env.SHOPKUD_TEST_OUTPUT_DIR||path.join(__dirname,"../artifacts/tests")),"pagination-evals.json");
 const cases=[];
 async function fixture(page,options={}) {
   await page.setContent('<main><input id="filter"><div class="PaginationNoTotal__wrap"></div></main>');

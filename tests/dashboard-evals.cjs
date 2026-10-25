@@ -105,7 +105,7 @@ async function run() {
     assert.equal(await commissionCard.locator('[data-channel="shopee_video"] .commission-channel-estimate').textContent(),"ประมาณ ไม่ทราบ/ออเดอร์");
     assert.equal(await commissionCard.locator('[data-channel="shopee_video"] .commission-channel-components').textContent(),"ค่าคอมเพิ่ม ไม่ทราบ + Shopee ไม่ทราบ","missing values stay unknown instead of becoming zero");
     assert.equal(await commissionDetails.evaluate(node=>node.scrollWidth<=node.clientWidth),true,"expanded channel details fit inside the card");
-    const commissionReview=path.join(__dirname,"../.impeccable/review");fs.mkdirSync(commissionReview,{recursive:true});
+    const commissionReview=path.resolve(process.env.SHOPKUD_TEST_OUTPUT_DIR||path.join(__dirname,"../artifacts/tests"));fs.mkdirSync(commissionReview,{recursive:true});
     await commissionCard.screenshot({path:path.join(commissionReview,"commission-card-expanded.png"),animations:"disabled"});
     await page.keyboard.press("Enter");
     assert.equal(await commissionDetails.evaluate(node=>node.open),false);
@@ -179,7 +179,7 @@ async function run() {
       const image=picture.querySelector("img"),frame=picture.getBoundingClientRect(),bounds=image.getBoundingClientRect();
       return bounds.height<=frame.height && bounds.width<=frame.width;
     })),true,"comparison images fit within their picture frame without intrinsic-grid cropping");
-    const review=path.join(__dirname,"../.impeccable/review");fs.mkdirSync(review,{recursive:true});
+    const review=path.resolve(process.env.SHOPKUD_TEST_OUTPUT_DIR||path.join(__dirname,"../artifacts/tests"));fs.mkdirSync(review,{recursive:true});
     await page.emulateMedia({colorScheme:"light"});
     await page.screenshot({path:path.join(review,"dashboard-light.png"),fullPage:true,animations:"disabled"});
     await page.emulateMedia({colorScheme:"dark"});
