@@ -1,13 +1,15 @@
 # Install ShopKud MCP — instructions for an AI coding agent
 
-This document is written for the user's coding agent. The human should only need to approve the Chrome extension and log in to Shopee when required.
+This document is written for the user's coding agent. The owner must approve the
+Chrome extension, optional host permissions and Shopee login/challenge steps.
+Do not automate those decisions.
 
 ## Handoff prompt for the owner
 
 The owner can send only the repository URL plus this instruction to any coding
 agent:
 
-> Install ShopKud MCP from this repository. Read its root AGENTS.md first,
+> Install ShopKud MCP from https://github.com/Grunte12/shopkud-mcp. Read its root AGENTS.md first,
 > follow docs/INSTALL_FOR_AGENTS.md exactly, preserve existing configuration,
 > and stop only for the Chrome approval/login steps that require me. Prove the
 > direct 19-tool guided MCP connection with a read-only check. Do not add a
@@ -134,6 +136,145 @@ Only when the owner explicitly wants saved briefs, aggregate reports, history, o
 ```
 
 Restart only the ShopKud service afterward. This creates a private `workspace.sqlite3` file. SQLite remains embedded; there is no database daemon.
+
+## Storage and data boundaries
+
+ShopKud has four different storage lifetimes. Do not describe them as one
+database:
+
+| Storage | Default | What it contains | What removes it |
+|---|---|---|---|
+| Chrome Personal Workspace | On | Up to 20 completed research projects, 50 explicitly saved products and confirmed link/SubID cards for this extension/profile | Removing the extension or clearing its site/extension data can erase it |
+| Worker memory | On while running | Bounded research cache and current trace state | Restarting the worker |
+| Private config | On after setup | Bearer token, extension origin, port and native socket path | Explicit deletion of the configured state directory |
+| Embedded SQLite workspace | Off until `enable-workspace` | Saved briefs, offer/link history, aggregate CSV analysis and local mission records | Explicit deletion of the configured state directory |
+
+The Chrome workspace and SQLite workspace are not automatic backups of one
+another. No verified export/restore path exists for Chrome-stored projects, so
+warn the owner before removing the extension.
+
+Analytics are never downloaded automatically. `import_report_csv` accepts only
+an aggregate CSV supplied and authorized by the owner, after personal/order data
+has been removed. Preview first; commit only with the matching digest and owner
+confirmation. Unmapped attribution remains unmapped.
+
+Mission tools are also local records. `list_missions` reads missions already
+stored in the SQLite workspace. `enroll_mission(dry_run=true)` previews a local
+record; `dry_run=false` records that the owner already enrolled on Shopee. It
+does not click an enrollment button, discover all current missions or prove
+Shopee progress.
+
+## Safe update
+
+Update only while the ShopKud browser lane is idle. Keep the canonical checkout
+path and `.venv` path so the existing launchd plist stays valid.
+
+1. Inspect before changing anything:
+
+   ```sh
+   git status --short
+   git remote get-url origin
+   git fetch --tags origin
+   git tag --list 'v*' --sort=-version:refname
+   ```
+
+   The remote must be `https://github.com/Grunte12/shopkud-mcp.git`. If the
+   worktree has local edits, stop and ask the owner; do not stash, reset or
+   overwrite them.
+
+2. Check out the existing release tag selected by the owner, then refresh the
+   same environment. Replace `SELECTED_RELEASE_TAG` only with a tag shown by the
+   previous command.
+
+   ```sh
+   git switch --detach SELECTED_RELEASE_TAG
+   .venv/bin/python -m pip install -e .
+   ```
+
+   Do not rerun `setup`: the config, bearer token, extension ID and SQLite file
+   are outside the checkout and must remain unchanged.
+
+3. Ask the owner to reload the unpacked extension from `chrome://extensions`.
+   A reload does not grant optional permissions; the owner must approve those.
+
+4. Restart only the exact per-user worker:
+
+   ```sh
+   PLIST="$HOME/Library/LaunchAgents/org.shopkud.mcp.plist"
+   launchctl bootout "gui/$(id -u)" "$PLIST"
+   launchctl bootstrap "gui/$(id -u)" "$PLIST"
+   ```
+
+5. Reconnect only the ShopKud MCP client and verify:
+
+   ```sh
+   .venv/bin/python -c 'from importlib.metadata import version; print(version("shopkud-mcp"))'
+   launchctl print "gui/$(id -u)/org.shopkud.mcp"
+   ```
+
+   Confirm Chrome reports the same extension version, the guided catalog has 19
+   tools, and one read-only `list_pages`/`selector_health` check succeeds. If
+   `bootout` says the service was not loaded, do not loop; inspect the exact
+   label/plist and bootstrap it once.
+
+## Uninstall while retaining data
+
+Uninstall is intentionally explicit; there is no uninstall command.
+
+1. Remove only the `shopkud` entry from each MCP client and reconnect that
+   client.
+2. Resolve and show the owner these exact paths before removal:
+
+   ```sh
+   PLIST="$HOME/Library/LaunchAgents/org.shopkud.mcp.plist"
+   MANIFEST="$HOME/Library/Application Support/Google/Chrome/NativeMessagingHosts/org.shopkud.mcp.json"
+   STATE_DIR="$HOME/Library/Application Support/ShopKud MCP"
+   ```
+
+3. Stop the exact service, then remove only the plist and Native Messaging
+   manifest after owner confirmation:
+
+   ```sh
+   launchctl bootout "gui/$(id -u)" "$PLIST"
+   rm -- "$PLIST" "$MANIFEST"
+   ```
+
+4. In Chrome, ask the owner to remove the unpacked ShopKud extension. Warn first:
+   removal can erase Chrome-stored Personal Workspace projects and saved cards.
+5. The checkout, `.venv` and `STATE_DIR` remain inert. The retained state
+   directory keeps the private config/token and optional SQLite history; do not
+   publish, inspect in chat or reuse them for another owner. If the owner also
+   wants the code removed, inspect `git status --short` first and move only the
+   exact checkout to Trash as a separate confirmation; never include
+   `STATE_DIR` in that action.
+
+Deleting saved data is a separate destructive choice. Only after explicit owner
+approval, resolve `STATE_DIR`, verify it is the exact ShopKud directory above
+and is neither the home directory nor a symlink, then move that one directory to
+the macOS Trash. Do not combine data deletion with ordinary uninstall.
+
+## Troubleshooting
+
+| Symptom | Cause and next fix |
+|---|---|
+| `python3` is older than 3.11 or missing | Install a current Python with the owner's approved package manager; recreate `.venv` and rerun package installation. |
+| Port 8176 is already used | Inspect with `lsof -nP -iTCP:8176 -sTCP:LISTEN`. Never kill an unknown process. For a new install, choose an owner-approved free port with `setup --port`; do not overwrite an existing config. |
+| `existing_setup_mismatch` or extension does not connect | Confirm the extension ID in the intended Chrome profile. Do not edit the private token or manifest by hand; use the explicit uninstall/reinstall path if the owner intentionally changed profiles. |
+| Config/native target is refused as unsafe | Inspect ownership, symlinks, hardlinks and private permissions. Do not weaken the checks or use a world-readable state directory. |
+| Shopee login, CAPTCHA or challenge | Stop and ask the owner to complete it in Chrome. Do not retry or bypass it. |
+| `workspace_disabled` | Ask whether persistence is wanted. Run `enable-workspace` only with approval, then restart only ShopKud. |
+| Package and extension versions differ | Reload the unpacked extension, restart the idle worker, reconnect the MCP client and compare versions again. |
+| A read returns unknown, partial or `listing_unconfirmed` | Keep the uncertainty visible. Run `selector_health`, inspect the cited page and do not convert unknown fields to zero or retry a write. |
+| Analytics are empty | Ask the owner for a sanitized aggregate CSV. ShopKud does not fetch live account analytics automatically. |
+| Mission list is empty | Mission tools read local records only. The owner must first enroll on Shopee and authorize recording that fact locally. |
+
+## Completion evidence
+
+Return a short report without secrets: repository revision, package/extension
+versions, worker status, endpoint host/port without the token, tool count,
+read-only smoke result, whether SQLite was enabled, and every owner-only or
+unvalidated step. Never claim a fresh-machine or live-layout pass that was not
+actually performed.
 
 ## Runtime model
 
