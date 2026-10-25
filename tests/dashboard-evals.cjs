@@ -76,6 +76,21 @@ async function run() {
     assert.match(await page.locator("#report-confidence").textContent(),/Agent.*ปานกลาง/u);
     assert.equal(await page.locator('[data-stage="detail"]').getAttribute("data-state"),"active");
     assert.match(await page.locator("#unknowns").textContent(),/ชื่อร้าน/u);
+    assert.equal(await page.locator(".workspace-label").textContent(),"พื้นที่ทำงานคัดสินค้า Affiliate");
+    const crossCategory=structuredClone(snapshot);
+    const alternate=crossCategory.runs[0].dashboard;
+    alternate.query="สมาร์ตโฟนถ่ายวิดีโอ งบไม่เกิน 15,000";
+    alternate.winner_product_id="20001";
+    alternate.results=[{...alternate.results[0],product_id:"20001",name:"สมาร์ตโฟนกล้องกันสั่น · 5G",shop_name:"Mobile Official Store",price_min_thb:14990,price_max_thb:14990,commission_thb_per_order:749.5,offer_url:"https://affiliate.shopee.co.th/offer/product_offer/20001",image_url:"https://down-th.img.susercontent.com/file/fixture-20001"}];
+    crossCategory.runs[0].query=alternate.query;
+    crossCategory.research_reports[0].query=alternate.query;
+    crossCategory.research_reports[0].headline="กล้องและแบตคือจุดตัดสินใจหลัก";
+    await page.evaluate(value=>__pushSnapshot(value),crossCategory);
+    assert.equal(await page.locator("#query-heading").textContent(),alternate.query,"one static shell renders a different product category");
+    assert.equal(await page.locator("#winner-name").textContent(),alternate.results[0].name);
+    assert.equal(await page.locator("#comparison-grid .product-card").count(),1);
+    await page.evaluate(value=>__pushSnapshot(value),snapshot);
+    assert.equal(await page.locator("#query-heading").textContent(),snapshot.runs[0].dashboard.query,"the same shell returns to the original category");
     await page.locator("#more-signals summary").click();
     assert.equal(await page.locator("#additional-signals .signal-score").count(),0,"unknown scores have no invented chart");
     await page.locator("#more-signals summary").click();
@@ -173,7 +188,7 @@ async function run() {
     assert.equal(await page.locator("#product-empty").isVisible(),true);
     assert.equal(await page.locator("#connection").getAttribute("data-connected"),"false");
     assert.deepEqual(errors,[],"no runtime errors");
-    console.log(JSON.stringify({ok:true,checks:["research + cited signals","safe links and untrusted text","real and unknown product fields","comparison sorting","shared Saved + storage failure","tracker success/fallback","Agent Live + clearing","keyboard tabs + reduced motion","no overflow at 1024/1280/1440 light/dark","empty and disconnected states","no runtime errors"],screenshots:["dashboard-light.png","dashboard-dark.png"]}));
+    console.log(JSON.stringify({ok:true,checks:["generic shell + cross-category rerender","research + cited signals","safe links and untrusted text","real and unknown product fields","comparison sorting","shared Saved + storage failure","tracker success/fallback","Agent Live + clearing","keyboard tabs + reduced motion","no overflow at 1024/1280/1440 light/dark","empty and disconnected states","no runtime errors"],screenshots:["dashboard-light.png","dashboard-dark.png"]}));
   } finally {await browser.close();}
 }
 run().catch(error=>{console.error(error);process.exitCode=1;});
