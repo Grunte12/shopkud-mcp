@@ -401,6 +401,11 @@ They use synthetic HTML and block external requests. Set
 `SHOPKUD_TEST_CHROMIUM` only to override Playwright's browser path. A failed
 fixture fails the command; it is never counted as a pass.
 
+GitHub CI runs Python 3.11 and 3.13 checks, the same complete fixture command on
+a hosted macOS runner, clean wheel installation and explicit Python/npm
+dependency audits. It uses synthetic pages only; CI never receives a Shopee
+login, browser profile or ShopKud bearer token.
+
 All fixture identities, links and credentials must be synthetic. Test outputs,
 screenshots, runtime files and captured evidence are not source assets and must
 remain outside commits. Do not visit fixture tracking links.

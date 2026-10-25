@@ -88,7 +88,7 @@ class Campaign:
 
 class ProductDetailToolTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.root = Path(tempfile.mkdtemp(prefix="shopkud-detail-tools-", dir="/private/tmp")).resolve()
+        self.root = Path(tempfile.mkdtemp(prefix="shopkud-detail-tools-")).resolve()
         os.chmod(self.root, 0o700)
         self.config = {"token": "a" * 64, "socket_path": str(self.root / "native.sock"),
                        "port": 8176, "allowed_origins": ["chrome-extension://" + "a" * 32 + "/"],

@@ -42,7 +42,7 @@ class Campaign:
 
 class WorkflowGuideTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.temp_root = Path(tempfile.mkdtemp(prefix="shopkud-guide-test-", dir="/private/tmp")).resolve()
+        self.temp_root = Path(tempfile.mkdtemp(prefix="shopkud-guide-test-")).resolve()
         os.chmod(self.temp_root, 0o700)
         config = {
             "token": "a" * 64,

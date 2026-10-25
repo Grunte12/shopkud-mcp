@@ -64,7 +64,7 @@ class Campaign:
 
 class ListingToolTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.root = Path(tempfile.mkdtemp(prefix="shopkud-listing-tools-", dir="/private/tmp")).resolve()
+        self.root = Path(tempfile.mkdtemp(prefix="shopkud-listing-tools-")).resolve()
         os.chmod(self.root, 0o700)
         self.config = {
             "token": "a" * 64,

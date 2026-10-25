@@ -1,5 +1,7 @@
 import asyncio
 import copy
+from pathlib import Path
+import tempfile
 import unittest
 import time
 
@@ -89,7 +91,7 @@ class PlaybookBroker:
 class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.broker = PlaybookBroker()
-        config = {"token": "a" * 64, "socket_path": "/private/tmp/native.sock",
+        config = {"token": "a" * 64, "socket_path": str(Path(tempfile.gettempdir()) / "shopkud-rank-native.sock"),
                   "allowed_origins": ["chrome-extension://" + "a" * 32 + "/"]}
         _, mcp, _ = create_service(config, self.broker)
         self.tool = mcp._tool_manager._tools["rank_affiliate_products"].fn
@@ -375,7 +377,7 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["criteria"]["min_sold"], 500)
 
     async def test_stateless_service_wrappers_share_one_process_lane(self):
-        config = {"token": "a" * 64, "socket_path": "/private/tmp/native.sock",
+        config = {"token": "a" * 64, "socket_path": str(Path(tempfile.gettempdir()) / "shopkud-rank-native.sock"),
                   "allowed_origins": ["chrome-extension://" + "a" * 32 + "/"]}
         _, second_mcp, _ = create_service(config, self.broker)
         second_tool = second_mcp._tool_manager._tools["rank_affiliate_products"].fn

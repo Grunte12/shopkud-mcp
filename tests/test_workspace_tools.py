@@ -40,7 +40,7 @@ class Campaign:
 
 class WorkspaceToolsTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
-        self.root=Path(tempfile.mkdtemp(prefix="shopkud-tools-",dir="/private/tmp")).resolve()
+        self.root=Path(tempfile.mkdtemp(prefix="shopkud-tools-")).resolve()
         self.config={"token":"a"*64,"socket_path":str(self.root/"native.sock"),"port":8176,"allowed_origins":["chrome-extension://"+"a"*32+"/"]}
         self.broker=Broker();self.workspace=Workspace();self.campaign=Campaign()
         _,self.mcp,_=create_service(self.config,self.broker,self.workspace,self.campaign)
@@ -103,7 +103,7 @@ class WorkspaceToolsTests(unittest.IsolatedAsyncioTestCase):
         target=intake/"report.csv";target.write_text("sub,amount\na,1",encoding="utf-8");target.chmod(0o600)
         result=await self.tool("import_report_csv")(WS,None,{},"shopee","2026-10-01","2026-10-07",csv_file="report.csv")
         self.assertTrue(result["ok"]);self.assertEqual(self.campaign.calls[0][1][1],"sub,amount\na,1")
-        for filename in ["../config.json","/private/tmp/report.csv","missing.csv"]:
+        for filename in ["../config.json",str(Path(tempfile.gettempdir())/"report.csv"),"missing.csv"]:
             self.assertFalse((await self.tool("import_report_csv")(WS,None,{},"shopee","2026-10-01","2026-10-07",csv_file=filename))["ok"])
         target.chmod(0o644);self.assertFalse((await self.tool("import_report_csv")(WS,None,{},"shopee","2026-10-01","2026-10-07",csv_file="report.csv"))["ok"])
 

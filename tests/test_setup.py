@@ -13,7 +13,7 @@ from shopkud_mcp.server import read_config
 
 class SetupTests(unittest.TestCase):
     def setUp(self):
-        self.root=Path(tempfile.mkdtemp(prefix="shopkud-setup-",dir="/private/tmp")).resolve()
+        self.root=Path(tempfile.mkdtemp(prefix="shopkud-setup-")).resolve()
         self.state=self.root/"private"
         self.manifests=self.root/"manifests"
         self.extension="b"*32

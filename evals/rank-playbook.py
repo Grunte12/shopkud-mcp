@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 import statistics
 import sys
+import tempfile
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -14,7 +15,7 @@ from tests.test_rank_playbook import PlaybookBroker
 
 async def main():
     broker = PlaybookBroker()
-    config = {"token": "a" * 64, "socket_path": "/private/tmp/native.sock",
+    config = {"token": "a" * 64, "socket_path": str(Path(tempfile.gettempdir()) / "shopkud-eval-native.sock"),
               "allowed_origins": ["chrome-extension://" + "a" * 32 + "/"]}
     _, mcp, _ = create_service(config, broker)
     tool = mcp._tool_manager._tools["rank_affiliate_products"].fn

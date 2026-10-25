@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+import tempfile
 
 from shopkud_mcp.server import EvidenceSource, ProductDecision, ResearchSignal, create_service
 
@@ -16,7 +18,7 @@ class ReportBroker:
 class ResearchReportTests(unittest.IsolatedAsyncioTestCase):
     def setUp(self):
         self.broker=ReportBroker()
-        config={"token":"a"*64,"socket_path":"/private/tmp/native.sock",
+        config={"token":"a"*64,"socket_path":str(Path(tempfile.gettempdir())/"shopkud-report-native.sock"),
                 "allowed_origins":["chrome-extension://"+"a"*32+"/"],"tool_profile":"guided"}
         _,mcp,_=create_service(config,self.broker)
         self.tool=mcp._tool_manager._tools["present_research_report"].fn
