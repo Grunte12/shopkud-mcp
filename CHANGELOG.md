@@ -23,7 +23,8 @@ Historical release notes moved from the README so installation and current use s
   cancellable queue with one timeout budget instead of failing unpredictably.
 - Public product evidence keeps variant labels and truncation explicit; missing
   seller names remain unknown with a shop link instead of a guessed identity.
-- Regression evidence: 244 Python tests and all 27 extension/browser suites pass.
+- Historical regression evidence reported 244 Python tests and 27 `.cjs` files;
+  the audited inventory is 26 executable suites plus one shared fixture helper.
 - Live Luna and concurrency evidence: [0.11.6 acceptance report](docs/LIVE_ACCEPTANCE_0.11.6_2026-10-25.md).
 
 ### What's New in 0.11.5
