@@ -65,6 +65,8 @@ Evidence and reference:
 - [Implementation status](IMPLEMENTATION_STATUS.md)
 - [0.11.8 live acceptance](docs/LIVE_ACCEPTANCE_0.11.8_2026-10-26.md)
 - [Architecture and trust boundaries](docs/ARCHITECTURE.md)
+- [Security policy](SECURITY.md)
+- [Contributing](CONTRIBUTING.md)
 - [Cheap-model tool-selection evidence](evals/LUNA_TOOL_SELECTION_2026-10-24.md)
 - [Launch and demo brief](docs/LAUNCH_DEMO_BRIEF.md)
 
