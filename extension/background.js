@@ -23,6 +23,8 @@ let developerLogs = [];
 const developerLogLimit = 500;
 const researchReports = new Map();
 const researchReportLimit = 20;
+const linkReceiptKey = "shopkudLinkReceipts";
+const linkReceiptLimit = 100;
 let dashboardTabId = null;
 const telemetryStages = new Set(["queued","lane_started","cache_hit","scan_started","scan_completed","candidates_loaded","detail_checks_started","detail_check","ranking","completed","failed"]);
 let telemetryHydrated = false;
@@ -83,7 +85,7 @@ function sanitizeDashboard(value) {
       if(!finite(raw[key]) || raw[key]<0)continue;
       numeric[key]=raw[key];
     }
-    rows.push({product_id:raw.product_id,name:raw.name,offer_url,image_url:safeImage(raw.image_url),mall:raw.mall===true,
+    rows.push({product_id:raw.product_id,name:raw.name,shop_name:typeof raw.shop_name==="string"&&raw.shop_name.trim()?raw.shop_name.trim().slice(0,240):null,offer_url,image_url:safeImage(raw.image_url),mall:raw.mall===true,
       channel:["social","shopee_live","shopee_video"].includes(raw.channel)?raw.channel:value.channel,
       offer_end_date:typeof raw.offer_end_date==="string"?raw.offer_end_date.slice(0,64):null,
       observed_at:typeof raw.observed_at==="string"?raw.observed_at.slice(0,64):null,
@@ -150,6 +152,34 @@ function sanitizeDeveloperEvent(value) {
   return {schema_version:1,event_id:value.event_id,trace_id:value.trace_id,actor:value.actor,source,operation,
     phase:value.phase,status:value.status,message,detail,progress_pct:value.progress_pct,
     occurred_at_unix_ms:value.occurred_at_unix_ms,elapsed_ms:value.elapsed_ms,media};
+}
+function safeAffiliateUrl(value) {
+  try {
+    const url=new URL(value);
+    return url.origin==="https://s.shopee.co.th" && !url.username && !url.password && !url.port && !url.search && !url.hash && /^\/[A-Za-z0-9]+$/u.test(url.pathname) ? url.href : null;
+  } catch {return null;}
+}
+function confirmedLinkReceipts(operation,args,result) {
+  const rows=operation==="batch_create_links" ? (Array.isArray(result?.results)?result.results:[]) : operation==="create_link_with_subids" ? [result] : [];
+  return rows.flatMap((row,index)=>{
+    const product=typeof row?.product_id==="string"?row.product_id:typeof args?.product_id==="string"?args.product_id:typeof args?.items?.[index]?.product_id==="string"?args.items[index].product_id:null;
+    const affiliate_url=safeAffiliateUrl(row?.affiliate_url);
+    if(row?.ok!==true || row?.status!=="confirmed" || !productId(product) || !affiliate_url)return [];
+    const requested=Array.isArray(args?.sub_ids)?args.sub_ids:Array.isArray(args?.items?.[index]?.sub_ids)?args.items[index].sub_ids:[];
+    const used=row.sub_ids_used && typeof row.sub_ids_used==="object"?Object.values(row.sub_ids_used):requested;
+    const sub_ids=used.filter(value=>typeof value==="string" && value.length>0 && value.length<=120).slice(0,5);
+    return [{product_id:product,affiliate_url,sub_ids,status:"confirmed",created_at:typeof row?.link_receipt?.created_at==="string"?row.link_receipt.created_at:new Date().toISOString()}];
+  });
+}
+async function rememberConfirmedLinks(operation,args,result) {
+  const receipts=confirmedLinkReceipts(operation,args,result);
+  if(!receipts.length || !chrome.storage?.local?.get || !chrome.storage?.local?.set)return;
+  try {
+    const saved=await chrome.storage.local.get(linkReceiptKey);
+    const prior=Array.isArray(saved?.[linkReceiptKey])?saved[linkReceiptKey]:[];
+    const next=[...receipts,...prior].filter((item,index,all)=>item && index===all.findIndex(candidate=>candidate?.product_id===item.product_id && candidate?.affiliate_url===item.affiliate_url)).slice(0,linkReceiptLimit);
+    await chrome.storage.local.set({[linkReceiptKey]:next});
+  } catch {}
 }
 async function hydrateTelemetry() {
   if(telemetryHydrated)return;
@@ -586,6 +616,7 @@ function connect(automatic=false) {
           pages.delete(page.page_id);roster();
           channel.postMessage({type:"result",id:message.id,result:{ok:false,error:"page_context_unavailable",outcome:"unconfirmed"}});
         } else {
+          void rememberConfirmedLinks(message.operation,message.arguments,result);
           channel.postMessage({type:"result",id:message.id,result:result || {ok:false,error:"invalid_page_result",outcome:"unconfirmed"}});
           if(message.operation==="detail" && result?.ok===true)setTimeout(()=>closeOwnedTabIfIdle(page.tab),800);
         }

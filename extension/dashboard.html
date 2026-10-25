@@ -34,7 +34,7 @@
     <a class="brand" href="dashboard.html" aria-label="ShopKud หน้าคัดสินค้า"><svg class="brand-mascot" aria-hidden="true"><use href="#mascot"/></svg><span><strong><span>Shop</span>Kud</strong><small>คัดอย่างมีหลักฐาน</small></span></a>
     <nav class="main-nav" role="tablist" aria-label="พื้นที่ทำงาน">
       <button id="tab-research" role="tab" aria-selected="true" aria-controls="view-research" data-view="research"><svg class="icon" aria-hidden="true"><use href="#search"/></svg>คัดสินค้า</button>
-      <button id="tab-saved" role="tab" aria-selected="false" aria-controls="view-saved" tabindex="-1" data-view="saved"><svg class="icon" aria-hidden="true"><use href="#bookmark"/></svg>บันทึก<span id="saved-count" class="count">0</span></button>
+      <button id="tab-saved" role="tab" aria-selected="false" aria-controls="view-saved" tabindex="-1" data-view="saved"><svg class="icon" aria-hidden="true"><use href="#panel"/></svg>Workspace<span id="saved-count" class="count">0</span></button>
       <button id="tab-live" role="tab" aria-selected="false" aria-controls="view-live" tabindex="-1" data-view="live"><svg class="icon" aria-hidden="true"><use href="#pulse"/></svg>Agent Live<span id="active-dot" class="status-dot" hidden></span></button>
     </nav>
     <div class="toolbar-actions"><span id="connection" class="connection" role="status"><i></i><span>กำลังเชื่อมต่อ</span></span><button id="open-tracker" class="button quiet"><svg class="icon" aria-hidden="true"><use href="#panel"/></svg>เปิดตัวติดตาม</button></div>
@@ -99,9 +99,39 @@
     </section>
 
     <section id="view-saved" class="view" role="tabpanel" aria-labelledby="tab-saved" hidden>
-      <div class="page-heading"><div><h1>สินค้าที่เก็บไว้</h1><p>เก็บใน Chrome เครื่องนี้เท่านั้น · ใช้รายการเดียวกับตัวติดตามด้านข้าง</p></div></div>
-      <p id="saved-empty" class="empty-state panel">ยังไม่มีสินค้าที่บันทึก กด “เก็บไว้” จากหน้าคัดสินค้าเพื่อกลับมาเปรียบเทียบภายหลัง</p>
-      <div id="saved-grid" class="saved-grid"></div>
+      <div class="page-heading"><div><span class="workspace-label">SHOPKUD PRODUCT WORKSPACE</span><h1>Workspace</h1><p>รวมประวัติการคัดสินค้า สินค้าที่บันทึก และลิงก์ Affiliate ที่พร้อมใช้</p></div></div>
+      <dl class="workspace-summary" aria-label="สรุป Workspace">
+        <div class="workspace-stat panel"><dt>โครงการค้นคว้า<small>ประวัติการคัดสินค้า</small></dt><dd id="workspace-project-count">0</dd></div>
+        <div class="workspace-stat panel"><dt>สินค้าที่บันทึก<small>เก็บไว้ตรวจสอบอีกครั้ง</small></dt><dd id="workspace-product-count">0</dd></div>
+        <div class="workspace-stat panel"><dt>ลิงก์ Affiliate พร้อมใช้<small>เปิดตรวจได้บน Shopee Affiliate</small></dt><dd id="workspace-link-count">0</dd></div>
+      </dl>
+
+      <div class="workspace-project-layout">
+        <section class="workspace-history-panel panel" aria-labelledby="workspace-history-heading">
+          <div class="panel-heading"><div><h2 id="workspace-history-heading">ประวัติการคัด</h2><p class="subtle">เลือกโครงการเพื่อกลับไปดูผลตรวจ</p></div><span class="workspace-section-tag">ล่าสุด</span></div>
+          <p id="workspace-history-empty" class="workspace-empty-note" role="status">เมื่อ Agent คัดสินค้าแล้ว ประวัติการค้นหาและโครงการจะปรากฏที่นี่</p>
+          <div id="workspace-history-list" class="workspace-history-list" role="group" aria-label="โครงการค้นคว้า"></div>
+        </section>
+
+        <section class="workspace-project-panel panel" aria-labelledby="workspace-project-heading">
+          <div class="workspace-project-heading">
+            <div><span class="workspace-section-tag">โครงการที่เลือก</span><h2 id="workspace-project-heading">สินค้าในโครงการ</h2><p>ผลตรวจ ราคา ค่าคอม และลิงก์ Affiliate จากโครงการที่เลือก</p></div>
+          </div>
+          <p id="workspace-product-empty" class="workspace-product-empty" role="status">สินค้าในโครงการที่เลือกจะแสดงที่นี่ พร้อมข้อมูลราคา ค่าคอม และสถานะลิงก์</p>
+          <div id="workspace-product-grid" class="workspace-product-grid" role="region" aria-label="สินค้าในโครงการที่เลือก"></div>
+          <section class="workspace-report" aria-labelledby="workspace-report-heading">
+            <h3 id="workspace-report-heading">สรุปและแหล่งข้อมูลจาก Agent</h3>
+            <p id="workspace-report-summary" class="workspace-report-summary" hidden></p>
+            <div id="workspace-report-citations" class="citation-list workspace-report-citations" aria-label="แหล่งข้อมูลของ Agent" hidden></div>
+          </section>
+        </section>
+      </div>
+
+      <section class="workspace-saved-section" aria-labelledby="saved-heading">
+        <div class="section-heading"><div><h2 id="saved-heading">สินค้าที่เก็บไว้</h2><p>เก็บใน Chrome เครื่องนี้เท่านั้น · ใช้รายการเดียวกับตัวติดตามด้านข้าง</p></div></div>
+        <p id="saved-empty" class="empty-state panel">ยังไม่มีสินค้าที่บันทึก กด “เก็บไว้” จากหน้าคัดสินค้าเพื่อกลับมาเปรียบเทียบภายหลัง</p>
+        <div id="saved-grid" class="saved-grid"></div>
+      </section>
     </section>
 
     <section id="view-live" class="view" role="tabpanel" aria-labelledby="tab-live" hidden>

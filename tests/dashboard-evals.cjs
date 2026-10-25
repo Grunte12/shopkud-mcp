@@ -76,7 +76,7 @@ async function run() {
     assert.match(await page.locator("#report-confidence").textContent(),/Agent.*ปานกลาง/u);
     assert.equal(await page.locator('[data-stage="detail"]').getAttribute("data-state"),"active");
     assert.match(await page.locator("#unknowns").textContent(),/ชื่อร้าน/u);
-    assert.equal(await page.locator(".workspace-label").textContent(),"พื้นที่ทำงานคัดสินค้า Affiliate");
+    assert.equal(await page.locator("#view-research .workspace-label").textContent(),"พื้นที่ทำงานคัดสินค้า Affiliate");
     const crossCategory=structuredClone(snapshot);
     const alternate=crossCategory.runs[0].dashboard;
     alternate.query="สมาร์ตโฟนถ่ายวิดีโอ งบไม่เกิน 15,000";

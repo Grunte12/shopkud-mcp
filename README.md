@@ -12,7 +12,7 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.11.0** - Visual product-research Dashboard and guided ShopKud v1 workflow. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
+**Version 0.11.1** - Visual product-research Dashboard, persistent Personal Workspace and guided ShopKud v1 workflow. See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 Installing for another user or coding agent: read [AGENTS.md](AGENTS.md) and
 [docs/INSTALL_FOR_AGENTS.md](docs/INSTALL_FOR_AGENTS.md). ShopKud is standalone;
@@ -21,8 +21,8 @@ no MCP gateway, Docker daemon, or external database is required.
 Architecture and trust boundaries: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 Cheap-model tool-selection evidence: [evals/LUNA_TOOL_SELECTION_2026-10-24.md](evals/LUNA_TOOL_SELECTION_2026-10-24.md).
 
-This is the public **0.11.0** release. The Python package and extension both
-declare **0.11.0**. Synthetic offline tests do not certify the
+This is the public **0.11.1** release. The Python package and extension both
+declare **0.11.1**. Synthetic offline tests do not certify the
 current Shopee UI, all product variants, or every account configuration.
 
 ## Current capabilities
@@ -41,6 +41,8 @@ current Shopee UI, all product variants, or every account configuration.
   reuse; concurrent identical live calls share only the same in-flight observation
 - ✅ Full-page Chrome Dashboard for research progress, cited market signals,
   winner, side-by-side product comparison and clickable evidence
+- ✅ Local Personal Workspace that keeps 20 completed research projects, 50
+  explicitly saved products and confirmed Affiliate links/SubIDs in Chrome
 - ✅ Compact Chrome Side Panel for per-invocation stages, queue/cache state,
   latency, success/effectiveness, browser operations and bounded response-token estimates
 - ✅ One `ShopKud` Chrome Tab Group for extension-owned work; finished inactive
@@ -83,6 +85,15 @@ shopkud-mcp set-tool-profile --config /absolute/private/shopkud-state/config.jso
 
 Restart only ShopKud after changing profiles. The connected MCP client can then
 rediscover the selected catalog.
+
+### What's New in 0.11.1
+
+- Completed product-research projects now remain available in a local Personal
+  Workspace with their matching Agent summary, citations and product evidence.
+- Confirmed Affiliate links and SubIDs flow from the Extension into the saved
+  product cards automatically; no server or external database is added.
+- Store names now survive the MCP-to-Dashboard boundary, and the Workspace is
+  covered by persistence, reload, link-safety and cross-category E2E tests.
 
 ### What's New in 0.11.0
 

@@ -4,14 +4,25 @@
   const $$ = selector => [...document.querySelectorAll(selector)];
   const api = globalThis.chrome;
   const savedKey = "shopkudSavedProducts";
-  const state = {runs: [], developer_logs: [], research_reports: [], connected: false, saved: []};
+  const historyKey = "shopkudResearchHistory";
+  const linkReceiptsKey = "shopkudLinkReceipts";
+  const historyLimit = 20;
+  const linkReceiptLimit = 100;
+  const state = {runs: [], developer_logs: [], research_reports: [], connected: false, saved: [], history: [], linkReceipts: [], selectedProjectId: null};
   let view = "research";
   let followLogs = true;
   let saving = false;
+  let historyReady = false;
+  let historyWritable = false;
+  let queuedHistory = [];
+  const historyQueued = new Map();
+  let historyWrites = Promise.resolve();
+  let historyStorageWarned = false;
   let current = {dashboard: null, report: null, run: null, query: ""};
   let renderedResearch = "";
   let renderedLogs = "";
   let renderedRuns = "";
+  let renderedWorkspace = "";
   const text = value => typeof value === "string" ? value : "";
   const array = value => Array.isArray(value) ? value : [];
   const finite = value => typeof value === "number" && Number.isFinite(value) && value >= 0;
@@ -80,6 +91,165 @@
   }
   function validProducts(value) {
     return array(value).filter(product => product && typeof product.product_id === "string" && /^[1-9][0-9]{0,19}$/u.test(product.product_id) && text(product.name)).slice(0,50);
+  }
+  function validSubIds(value) {
+    const values = Array.isArray(value) ? value : value && typeof value === "object" ? [1,2,3,4,5].map(index => value[`sub_id_${index}`]) : [];
+    return values.filter(item => typeof item === "string" && item.trim()).slice(0,5).map(item => item.trim().slice(0,100));
+  }
+  function safeAffiliateURL(value) {
+    if(typeof value !== "string" || value.length > 2048 || /[\s\\]/u.test(value)) return null;
+    const url = safeURL(value);
+    return url && /^https:\/\/s\.shopee\.co\.th\//iu.test(value) && url.hostname === "s.shopee.co.th" && !url.port && !url.search && !url.hash && url.pathname !== "/" ? url : null;
+  }
+  function validHistory(value) {
+    return array(value).filter(item => item && typeof item === "object" && text(item.id) && text(item.query) && item.dashboard?.schema_version === 1 && text(item.dashboard.query) && Array.isArray(item.dashboard.results)).slice(0,historyLimit);
+  }
+  function validLinkReceipts(value) {
+    const records = Array.isArray(value) ? value : Array.isArray(value?.receipts) ? value.receipts : value?.product_id ? [value] : value && typeof value === "object" ? Object.values(value) : [];
+    return records.filter(item => item && typeof item === "object" && item.status === "confirmed" && typeof item.product_id === "string" && /^[1-9][0-9]{0,19}$/u.test(item.product_id) &&
+      safeAffiliateURL(item.affiliate_url) && date(item.created_at))
+      .map(item => ({product_id:item.product_id,affiliate_url:safeAffiliateURL(item.affiliate_url).href,sub_ids:validSubIds(item.sub_ids),created_at:date(item.created_at).toISOString(),status:"confirmed"}))
+      .sort((a,b) => timestamp(b.created_at)-timestamp(a.created_at)).slice(0,linkReceiptLimit);
+  }
+  function workspaceReady() {
+    return ["workspace-project-count","workspace-product-count","workspace-link-count","workspace-history-list","workspace-history-empty","workspace-product-grid","workspace-product-empty"].every(id => $(`#${id}`));
+  }
+  function projectIdentity(item) {
+    const trace = text(item?.trace_id).trim();
+    if(trace) return `trace:${trace.slice(0,200)}`;
+    const query = normalizeQuery(item?.query || item?.dashboard?.query);
+    const updated = number(item?.updated_at_unix_ms) || timestamp(item?.dashboard?.observed_at);
+    return `fallback:${query}:${updated}`;
+  }
+  function mergeHistory(history, entry) {
+    const identity = projectIdentity(entry), previous = history.find(item => projectIdentity(item) === identity);
+    return [{...previous,...entry,saved_at:previous?.saved_at || entry.saved_at},...history.filter(item => projectIdentity(item) !== identity)].slice(0,historyLimit);
+  }
+  function projectForRun(run) {
+    const dashboard = run?.dashboard;
+    if(run?.status !== "completed" || dashboard?.schema_version !== 1 || !text(dashboard.query)) return null;
+    try {
+      const savedDashboard = JSON.parse(JSON.stringify(dashboard));
+      savedDashboard.results = validProducts(savedDashboard.results);
+      const report = state.research_reports.find(item => normalizeQuery(item.query) === normalizeQuery(dashboard.query));
+      let savedReport = null;
+      try { if(report) savedReport = JSON.parse(JSON.stringify(report)); } catch {}
+      return {id:projectIdentity({trace_id:run.trace_id,query:dashboard.query,updated_at_unix_ms:run.updated_at_unix_ms,dashboard}),trace_id:text(run.trace_id),query:dashboard.query,
+        updated_at_unix_ms:number(run.updated_at_unix_ms) || timestamp(dashboard.observed_at),saved_at:new Date().toISOString(),dashboard:savedDashboard,
+        report:savedReport && normalizeQuery(savedReport.query) === normalizeQuery(dashboard.query) ? savedReport : null};
+    } catch { return null; }
+  }
+  function recordCompletedProjects() {
+    for(const run of [...state.runs].sort((a,b) => number(a.updated_at_unix_ms)-number(b.updated_at_unix_ms))) {
+      const entry = projectForRun(run);
+      if(!entry) continue;
+      const identity = projectIdentity(entry), signature = JSON.stringify([entry.dashboard,entry.report]);
+      const existing = state.history.find(item => projectIdentity(item) === identity);
+      if(existing && JSON.stringify([existing.dashboard,existing.report]) === signature) continue;
+      if(historyQueued.get(identity) === signature) continue;
+      historyQueued.set(identity,signature);
+      if(!historyReady) queuedHistory.push(entry);
+      else persistHistory(entry);
+    }
+  }
+  function persistHistory(entry) {
+    const identity = projectIdentity(entry), signature = JSON.stringify([entry.dashboard,entry.report]);
+    historyWrites = historyWrites.then(async () => {
+      if(!historyWritable) {
+        state.history = mergeHistory(state.history,entry);
+        if(historyQueued.get(identity) === signature) historyQueued.delete(identity);
+        renderWorkspace();
+        return;
+      }
+      const stored = await api.storage.local.get(historyKey);
+      const existing = stored?.[historyKey];
+      if(existing !== undefined && !Array.isArray(existing)) throw new Error("invalid_history_storage");
+      const next = mergeHistory(validHistory(existing),entry);
+      await api.storage.local.set({[historyKey]:next});
+      state.history = next;
+      state.selectedProjectId = entry.id;
+      if(historyQueued.get(identity) === signature) historyQueued.delete(identity);
+      renderWorkspace();
+    }).catch(() => {
+      historyWritable = false;
+      state.history = mergeHistory(state.history,entry);
+      if(historyQueued.get(identity) === signature) historyQueued.delete(identity);
+      renderWorkspace();
+      if(!historyStorageWarned) { historyStorageWarned = true; announce("ประวัติโครงการเก็บไม่ได้ใน Chrome ตอนนี้ แต่ผลวิจัยปัจจุบันยังใช้งานได้"); }
+    });
+  }
+  async function loadHistory() {
+    try {
+      if(!api?.storage?.local?.get) throw new Error("storage_unavailable");
+      const stored = await api.storage.local.get(historyKey), value = stored?.[historyKey];
+      if(value !== undefined && !Array.isArray(value)) throw new Error("invalid_history_storage");
+      state.history = validHistory(value);
+      historyWritable = true;
+    } catch { historyWritable = false; }
+    historyReady = true;
+    for(const entry of queuedHistory.splice(0)) persistHistory(entry);
+    renderWorkspace();
+  }
+  function linkInfo(product) {
+    const receipt = state.linkReceipts.find(item => item.product_id === product.product_id);
+    const url = safeAffiliateURL(receipt?.affiliate_url || product.affiliate_url);
+    const receiptSubIds = validSubIds(receipt?.sub_ids), subIds = receiptSubIds.length ? receiptSubIds : validSubIds(product.sub_ids);
+    return url ? {url,subIds,confirmed:Boolean(receipt)} : null;
+  }
+  function appendWorkspaceLinks(card, product) {
+    const body = card.querySelector(".product-card-body"), links = node("div","workspace-product-links"), seen = new Set();
+    for(const [label,value] of [["ดูหน้าสินค้า",product.product_url],["ดูหน้าร้าน",product.store_url || product.shop_url]]) {
+      const url = safeURL(value);
+      if(!url || seen.has(url.href)) continue;
+      seen.add(url.href);
+      const anchor = node("a","",label); anchor.href = url.href; anchor.target = "_blank"; anchor.rel = "noopener noreferrer"; links.append(anchor);
+    }
+    const info = linkInfo(product);
+    if(info) {
+      const anchor = node("a","workspace-affiliate-link",info.confirmed ? "ลิงก์ Affiliate ที่ยืนยันแล้ว" : "ลิงก์ Affiliate ที่มีอยู่");
+      anchor.href = info.url.href; anchor.target = "_blank"; anchor.rel = "noopener noreferrer"; anchor.dataset.affiliateLink = ""; links.append(anchor);
+      if(info.subIds.length) links.append(node("p","product-subids",`Sub IDs: ${info.subIds.join(" · ")}`));
+    }
+    if(links.childElementCount) body.append(links);
+  }
+  function renderWorkspaceReport(report) {
+    const summary = $("#workspace-report-summary") || $(`[data-workspace-report-summary]`);
+    const sourceList = $("#workspace-report-citations") || $(`[data-workspace-report-citations]`);
+    if(summary) { summary.textContent = text(report?.summary); summary.hidden = !text(report?.summary); }
+    if(sourceList) { citations(sourceList,report?.citations); sourceList.hidden = !array(report?.citations).some(source => safeURL(source?.url)); }
+  }
+  function renderWorkspace() {
+    if(!workspaceReady()) return;
+    const selected = state.history.find(item => item.id === state.selectedProjectId) || state.history[0] || null;
+    if(selected && selected.id !== state.selectedProjectId) state.selectedProjectId = selected.id;
+    const fingerprint = JSON.stringify([state.history,state.saved,state.linkReceipts,state.selectedProjectId]);
+    if(fingerprint === renderedWorkspace) return;
+    renderedWorkspace = fingerprint;
+    const list = $("#workspace-history-list"), projectCount = $("#workspace-project-count"), productCount = $("#workspace-product-count"), linkCount = $("#workspace-link-count");
+    list.replaceChildren();
+    for(const item of state.history) {
+      const button = node("button","workspace-history-item"); button.type = "button"; button.dataset.historyId = item.id; button.setAttribute("aria-pressed",String(item.id === state.selectedProjectId));
+      button.append(node("strong","",item.query),node("small","",`บันทึก ${observed(item.saved_at)}`));
+      button.onclick = () => {
+        state.selectedProjectId = item.id; renderWorkspace();
+        $("#workspace-history-list [aria-pressed='true']")?.focus();
+      };
+      list.append(button);
+    }
+    $("#workspace-history-empty").hidden = state.history.length > 0;
+    projectCount.textContent = String(state.history.length);
+    const products = validProducts(selected?.dashboard?.results);
+    const uniqueLinks = new Set(state.linkReceipts.map(item => `${item.product_id}\u0000${item.affiliate_url}`));
+    productCount.textContent = String(state.saved.length); linkCount.textContent = String(uniqueLinks.size);
+    $("#workspace-product-empty").hidden = products.length > 0;
+    const grid = $("#workspace-product-grid");
+    grid.replaceChildren(...products.map((product,index) => {
+      const card = productCard(product,index+1,selected.dashboard,false,selected.query);
+      appendWorkspaceLinks(card,product);
+      return card;
+    }));
+    renderWorkspaceReport(selected?.report);
+    updateSavedButtons();
   }
   function isSaved(id) { return state.saved.some(product => product.product_id === id); }
   function price(product) {
@@ -225,7 +395,7 @@
     button.dataset.productName = text(product.name);
     button.onclick = () => toggleSaved(product, query);
   }
-  function productCard(product, rank, dashboard, saved = false) {
+  function productCard(product, rank, dashboard, saved = false, projectQuery = null) {
     const card = $("#product-template").content.firstElementChild.cloneNode(true);
     const winner = !saved && product.product_id === dashboard?.winner_product_id;
     card.dataset.productId = product.product_id; card.dataset.winner = String(winner);
@@ -241,7 +411,7 @@
     card.querySelector(".product-reason").textContent = saved ? "ข้อมูล ณ เวลาที่บันทึก · เปิดสินค้าตรวจราคาและค่าคอมอีกครั้ง" : reason(product,dashboard,winner);
     card.querySelector(".product-observed").textContent = `ตรวจ ${observed(product.observed_at || dashboard?.observed_at)}`;
     setLink(card.querySelector(".product-link"), product.offer_url);
-    saveControl(card.querySelector(".card-save"), product, saved ? product.saved_query : current.query);
+    saveControl(card.querySelector(".card-save"), product, saved ? product.saved_query : projectQuery || current.query);
     return card;
   }
   function renderComparison() {
@@ -318,8 +488,13 @@
   }
   function renderSaved() {
     $("#saved-empty").hidden = state.saved.length > 0;
-    $("#saved-grid").replaceChildren(...state.saved.map((product,index) => productCard(product,index+1,null,true)));
+    $("#saved-grid").replaceChildren(...state.saved.map((product,index) => {
+      const card = productCard(product,index+1,null,true);
+      appendWorkspaceLinks(card,product);
+      return card;
+    }));
     updateSavedButtons();
+    renderWorkspace();
   }
   async function toggleSaved(product,query) {
     if(saving) return;
@@ -381,7 +556,7 @@
     $("#connection").dataset.connected = String(state.connected);
     $("#connection span").textContent = state.connected ? "เชื่อมต่อแล้ว" : "ไม่ได้เชื่อมต่อ";
     $("#version").textContent = `ส่วนขยาย ${text(snapshot.extension_version) || "—"}`;
-    renderResearch(); renderLive();
+    renderResearch(); renderLive(); recordCompletedProjects(); renderWorkspace();
   }
   function switchView(next, focus = false) {
     if(!["research","saved","live"].includes(next)) return;
@@ -406,6 +581,11 @@
     catch { announce("อ่านรายการที่บันทึกไม่ได้ ลองเปิด Dashboard ใหม่"); }
     renderSaved();
   }
+  async function loadLinkReceipts() {
+    try { state.linkReceipts = validLinkReceipts((await api?.storage?.local?.get?.(linkReceiptsKey))?.[linkReceiptsKey]); }
+    catch { state.linkReceipts = []; }
+    renderWorkspace();
+  }
   for(const button of $$(".main-nav button")) {
     button.addEventListener("click",() => switchView(button.dataset.view));
     button.addEventListener("keydown",event => {
@@ -428,8 +608,18 @@
   });
   api?.runtime?.onMessage?.addListener(message => { if(message?.type === "shopkud-live-update") render(message.snapshot); });
   api?.storage?.onChanged?.addListener((changes,area) => {
-    if(area === "local" && changes?.[savedKey]) { state.saved = validProducts(changes[savedKey].newValue); renderSaved(); }
+    if(area !== "local") return;
+    if(changes?.[savedKey]) { state.saved = validProducts(changes[savedKey].newValue); renderSaved(); }
+    if(changes?.[historyKey]) {
+      const value = changes[historyKey].newValue;
+      const priorFirst = state.history[0]?.id || null;
+      historyWritable = value === undefined || Array.isArray(value);
+      state.history = validHistory(value);
+      if(!state.history.some(item => item.id === state.selectedProjectId) || state.selectedProjectId === priorFirst) state.selectedProjectId = state.history[0]?.id || null;
+      renderWorkspace();
+    }
+    if(changes?.[linkReceiptsKey]) { state.linkReceipts = validLinkReceipts(changes[linkReceiptsKey].newValue); renderWorkspace(); }
   });
   render({ok:true,connected:false,runs:[],developer_logs:[],research_reports:[]});
-  Promise.all([loadSaved(),refresh()]);
+  Promise.all([loadSaved(),loadHistory(),loadLinkReceipts()]).then(refresh);
 })();

@@ -64,6 +64,7 @@ function harness() {
   });
   vm.runInContext(source, context, { filename: "background.js" });
   return {
+    context,
     ports, timers, sentToTabs, get tabCreates() { return tabCreates; }, get reloads() { return reloads; }, runtimeMessage,
     fireTimer(id) { const timer = timers.get(id); assert.ok(timer, `timer ${id} exists`); timers.delete(id); timer.fn(); },
     fireDelay(delay) { const entry = [...timers].find(([, timer]) => timer.delay === delay); assert.ok(entry, `timer ${delay}ms exists`); this.fireTimer(entry[0]); },
@@ -82,6 +83,15 @@ function harness() {
 
 function run() {
   const h = harness();
+  const helpers = vm.runInContext("({confirmedLinkReceipts,sanitizeDashboard})", h.context);
+  const receipts = helpers.confirmedLinkReceipts("create_link_with_subids", {product_id:"123",sub_ids:["twitter","clip-1"]}, {
+    ok:true,status:"confirmed",product_id:"123",affiliate_url:"https://s.shopee.co.th/Abc123",link_receipt:{created_at:"2026-10-25T00:00:00.000Z"}
+  });
+  assert.equal(JSON.stringify(receipts),JSON.stringify([{product_id:"123",affiliate_url:"https://s.shopee.co.th/Abc123",sub_ids:["twitter","clip-1"],status:"confirmed",created_at:"2026-10-25T00:00:00.000Z"}]),"confirmed link receipts are safe and dashboard-ready");
+  assert.equal(helpers.confirmedLinkReceipts("create_link_with_subids", {product_id:"123",sub_ids:["x"]}, {ok:true,status:"confirmed",product_id:"123",affiliate_url:"https://evil.example/x"}).length,0,"foreign link receipts are rejected");
+  const dashboard = helpers.sanitizeDashboard({schema_version:1,query:"ทีวี",channel:"social",freshness:"live",partial_market_coverage:false,cache_hit:false,cache_age_ms:0,
+    criteria:{},scan:{},exclusions:{},results:[{product_id:"123",name:"ทีวี",shop_name:" ร้านทางการ ",offer_url:"https://affiliate.shopee.co.th/offer/product_offer/123",mall:true}],winner_product_id:"123"});
+  assert.equal(dashboard.results[0].shop_name,"ร้านทางการ","store name survives the MCP-to-dashboard boundary");
   assert.equal(h.ports.length, 1, "startup connects once");
 
   h.ports[0].onDisconnect.fire();
@@ -161,6 +171,7 @@ function run() {
     "manual connect timer cancellation and existing-port dedupe",
     "no command replay or tab creation; stale disconnect is harmless",
     "idle-only extension reload returns a receipt before reloading",
+    "safe link receipt capture and store-name preservation",
   ] }));
 }
 
