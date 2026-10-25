@@ -1,12 +1,12 @@
 # ShopKud P0 / P1 / P2 checklist
 
-Version 0.11.1. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
+Version 0.11.2. Extension-only: no Affiliate Open API, no link redirects, aggregate conversion data only.
 
 The standalone runtime, cache/freshness behavior, trust boundaries, and
 agent-installed macOS topology are documented in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
-Release verification: 228 Python tests plus 23 directly executed
+Release verification: 229 Python tests plus 27 directly executed
 Node/DOM/Playwright suites pass. They cover the Dashboard, Side Panel,
 tab lifecycle and the existing synthetic Shopee readers/actions. Native
 Messaging/live-account acceptance remains operator-specific. Live Shopee markup

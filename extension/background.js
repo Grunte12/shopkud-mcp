@@ -85,11 +85,24 @@ function sanitizeDashboard(value) {
       if(!finite(raw[key]) || raw[key]<0)continue;
       numeric[key]=raw[key];
     }
+    const commission_channels=[],seen_channels=new Set();
+    for(const observed of (Array.isArray(raw.commission_channels)?raw.commission_channels:[]).slice(0,8)){
+      if(!observed || typeof observed!=="object" || !["social","shopee_live","shopee_video"].includes(observed.channel) || seen_channels.has(observed.channel))continue;
+      seen_channels.add(observed.channel);
+      const channel={channel:observed.channel};
+      if(typeof observed.label==="string" && observed.label.trim())channel.label=observed.label.trim().slice(0,80);
+      for(const key of ["commission_pct","commission_thb_per_order","extra_commission_pct","shopee_commission_pct"]){
+        if(observed[key]===null || observed[key]===undefined)continue;
+        if(finite(observed[key]) && observed[key]>=0)channel[key]=observed[key];
+      }
+      commission_channels.push(channel);
+      if(commission_channels.length===3)break;
+    }
     rows.push({product_id:raw.product_id,name:raw.name,shop_name:typeof raw.shop_name==="string"&&raw.shop_name.trim()?raw.shop_name.trim().slice(0,240):null,offer_url,image_url:safeImage(raw.image_url),mall:raw.mall===true,
       channel:["social","shopee_live","shopee_video"].includes(raw.channel)?raw.channel:value.channel,
       offer_end_date:typeof raw.offer_end_date==="string"?raw.offer_end_date.slice(0,64):null,
       observed_at:typeof raw.observed_at==="string"?raw.observed_at.slice(0,64):null,
-      trust_basis:Array.isArray(raw.trust_basis)?raw.trust_basis.filter(item=>item==="mall").slice(0,4):[],...numeric});
+      trust_basis:Array.isArray(raw.trust_basis)?raw.trust_basis.filter(item=>item==="mall").slice(0,4):[],commission_channels,...numeric});
   }
   const criteria={};
   const rawCriteria=value.criteria && typeof value.criteria==="object"?value.criteria:{};

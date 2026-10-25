@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "ShopKud MCP",
-  "version": "0.11.1",
+  "version": "0.11.2",
   "description": "ให้เอเจนต์ช่วยค้นคว้าและคัดสินค้าจากหน้า Shopee Affiliate ที่คุณเปิดอยู่ พร้อมแผนให้ตรวจสอบก่อนเลือก",
   "permissions": ["nativeMessaging", "storage", "sidePanel", "tabGroups"],
   "action": {"default_title": "เปิด ShopKud Dashboard"},

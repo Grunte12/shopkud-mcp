@@ -8,7 +8,11 @@ const {chromium} = require("playwright");
 function fixture() {
   const now = Date.now();
   const products = [
-    {product_id:"10001",name:"Smart TV 55 นิ้ว · 4K Google TV",shop_name:"Official TV Store",price_min_thb:9990,price_max_thb:9990,sold:2100,commission_pct:6.5,commission_thb_per_order:649.35,mall:true,ranking_score:.93},
+    {product_id:"10001",name:"Smart TV 55 นิ้ว · 4K Google TV",shop_name:"Official TV Store",price_min_thb:9990,price_max_thb:9990,sold:2100,commission_pct:6.5,commission_thb_per_order:649.35,mall:true,ranking_score:.93,commission_channels:[
+      {channel:"social",commission_pct:0,commission_thb_per_order:0,extra_commission_pct:0,shopee_commission_pct:0},
+      {channel:"shopee_live",commission_pct:7.5,commission_thb_per_order:749.25,extra_commission_pct:2.5,shopee_commission_pct:5},
+      {channel:"shopee_video",commission_pct:null,commission_thb_per_order:null,extra_commission_pct:null}
+    ]},
     {product_id:"10002",name:"Smart TV 50 นิ้ว · จอ 4K HDR",shop_name:"Home Electronics",price_min_thb:7990,price_max_thb:7990,sold:3400,commission_pct:6,commission_thb_per_order:479.4,mall:true,ranking_score:.88},
     {product_id:"10003",name:"QLED TV 55 นิ้ว · สีสันคมชัด",shop_name:null,price_min_thb:12990,price_max_thb:12990,sold:1400,commission_pct:7,commission_thb_per_order:909.3,mall:true,ranking_score:.85},
     {product_id:"10004",name:"Smart TV 43 นิ้ว · สำหรับห้องเล็ก",shop_name:"Everyday Tech",price_min_thb:5990,price_max_thb:5990,sold:5600,commission_pct:5,commission_thb_per_order:299.5,mall:false,ranking_score:.82}
@@ -69,6 +73,42 @@ async function run() {
     assert.equal(await page.locator("#winner-shop").textContent(),"Official TV Store");
     assert.equal(await page.locator("#winner-open").getAttribute("href"),"https://affiliate.shopee.co.th/offer/product_offer/10001");
     assert.equal(await page.locator("#comparison-grid .product-card").count(),4);
+    const commissionCard=page.locator('#comparison-grid [data-product-id="10001"]');
+    const commissionDetails=commissionCard.locator(".commission-breakdown");
+    assert.equal(await commissionDetails.count(),1,"channel breakdown is only present when channel rows exist");
+    assert.equal(await commissionCard.locator(".product-metrics > div").count(),4,"channel breakdown keeps the four summary metrics");
+    assert.equal(await commissionCard.locator(".product-metrics dt").nth(1).textContent(),"คอม Social","the primary metric names the requested channel");
+    assert.equal(await commissionDetails.evaluate(node=>node.open),false,"channel breakdown starts collapsed");
+    assert.equal(await page.locator('#comparison-grid [data-product-id="10002"] .commission-breakdown').count(),0,"cards without channel data stay concise");
+    assert.match(await commissionDetails.locator("summary").textContent(),/คุ้มสุด · Shopee Live/u);
+    assert.match(await commissionDetails.locator("summary").textContent(),/฿749\.25\/ออเดอร์/u);
+    assert.match(await commissionDetails.locator("summary").textContent(),/กดเทียบ 3 ช่องทาง/u);
+    assert.equal(await commissionDetails.locator("table").count(),0,"channel comparison is a decision summary, not a copy of Shopee's table");
+    await commissionDetails.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    assert.equal(await commissionDetails.evaluate(node=>node.open),true,"native disclosure works from the keyboard");
+    assert.equal(await commissionCard.locator(".commission-channel").count(),3);
+    assert.deepEqual(await commissionCard.locator(".commission-channel-name").allTextContents(),["Shopee Live","Social","Shopee Video"],"channels are sorted by estimated THB per order");
+    assert.equal(await commissionCard.locator(".commission-channel-best").count(),1,"best known estimate is highlighted once");
+    assert.equal(await commissionCard.locator('.commission-channel[data-best="true"] .commission-channel-name').textContent(),"Shopee Live");
+    assert.equal(await commissionCard.locator('[data-channel="social"] .commission-channel-total').textContent(),"รวม 0%","zero total percent remains zero");
+    assert.match(await commissionCard.locator('[data-channel="social"] .commission-channel-estimate').textContent(),/0/u,"zero THB estimate remains zero");
+    assert.equal(await commissionCard.locator('[data-channel="social"] .commission-channel-components').textContent(),"ค่าคอมเพิ่ม 0% + Shopee 0%","zero split rates remain zero");
+    assert.equal(await commissionCard.locator('[data-channel="shopee_video"] .commission-channel-total').textContent(),"รวม ไม่ทราบ");
+    assert.equal(await commissionCard.locator('[data-channel="shopee_video"] .commission-channel-estimate').textContent(),"ประมาณ ไม่ทราบ/ออเดอร์");
+    assert.equal(await commissionCard.locator('[data-channel="shopee_video"] .commission-channel-components').textContent(),"ค่าคอมเพิ่ม ไม่ทราบ + Shopee ไม่ทราบ","missing values stay unknown instead of becoming zero");
+    assert.equal(await commissionDetails.evaluate(node=>node.scrollWidth<=node.clientWidth),true,"expanded channel details fit inside the card");
+    const commissionReview=path.join(__dirname,"../.impeccable/review");fs.mkdirSync(commissionReview,{recursive:true});
+    await commissionCard.screenshot({path:path.join(commissionReview,"commission-card-expanded.png"),animations:"disabled"});
+    await page.keyboard.press("Enter");
+    assert.equal(await commissionDetails.evaluate(node=>node.open),false);
+    await page.setViewportSize({width:1024,height:1100});
+    await commissionDetails.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,"expanded channel details do not cause page overflow at 1024px");
+    assert.equal(await commissionDetails.evaluate(node=>node.scrollWidth<=node.clientWidth),true,"expanded channel details fit inside a narrow card");
+    await page.keyboard.press("Enter");
+    await page.setViewportSize({width:1440,height:1100});
     assert.equal(await page.locator("#signals .signal-score").count(),3);
     assert.equal((await page.locator("#signals").textContent()).includes("ไม่ทราบทิศทาง"),false,"missing direction is omitted rather than invented");
     assert.equal(await page.locator("#signals .citation").first().getAttribute("href"),snapshot.research_reports[0].citations[0].url);

@@ -1,6 +1,6 @@
 # ShopKud P0–P2 report
 
-Version 0.11.1. Public branch `main`.
+Version 0.11.2. Public branch `main`.
 
 The service stays extension-only. It does not sign Affiliate Open API requests, follow `s.shopee.co.th` redirects, or store buyer or order identifiers. Remote MCP remains loopback plus a bearer token.
 
@@ -19,9 +19,9 @@ The requirement-by-requirement checklist, test commands, and live-UI assumptions
 
 ## Tests
 
-`python3 -m unittest discover -s tests -p 'test_*.py'` — 228 tests, passing.
+`python3 -m unittest discover -s tests -p 'test_*.py'` — 229 tests, passing.
 
-This release also passed 23 directly executed Node/DOM/Playwright suites,
+This release also passed 27 directly executed Node/DOM/Playwright suites,
 including the new Dashboard interaction/safety matrix and tab-lifecycle tests.
 
 ## Codex review at a38b33f

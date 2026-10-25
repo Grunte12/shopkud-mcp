@@ -66,11 +66,19 @@ class PlaybookBroker:
                     "price_min_thb": row["price_min_thb"], "price_max_thb": row["price_max_thb"],
                     "observed_at": "2026-10-24T00:00:00Z",
                     "images": [{"url": f"https://down-th.img.susercontent.com/file/{self.detail_id}"}],
-                    "channels": [{
-                        "channel": "shopee_video", "total_pct": pct,
-                        "estimated_commission_thb": amount,
-                        "extra_commission": {"pct": pct}, "shopee_commission": {"pct": 0},
-                    }]}
+                    "channels": [
+                        {"channel": "social", "label": "Social", "total_pct": float("nan"),
+                         "estimated_commission_thb": -1,
+                         "extra_commission": {"pct": "unknown"}, "shopee_commission": {"pct": 1.25}},
+                        {"channel": "shopee_live", "label": "Shopee Live", "total_pct": 4,
+                         "estimated_commission_thb": float("inf"),
+                         "extra_commission": {"pct": -1}, "shopee_commission": {"pct": True}},
+                        {"channel": "shopee_video", "label": "Shopee Video", "total_pct": pct,
+                         "estimated_commission_thb": amount,
+                         "extra_commission": {"pct": pct}, "shopee_commission": {"pct": 0}},
+                        {"channel": "future_channel", "label": "Unknown", "total_pct": 99,
+                         "estimated_commission_thb": 99},
+                    ]}
         raise AssertionError((page_id, operation, arguments))
 
 
@@ -111,6 +119,32 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
                          "https://down-th.img.susercontent.com/file/1")
         self.assertEqual(events[-1]["dashboard"]["criteria"]["ranking_goal"], "commission_value")
         self.assertTrue(any(event["stage"] == "detail_check" for event in events))
+
+    async def test_results_include_all_known_channel_commissions_from_the_same_detail_read(self):
+        result = await self.tool("ทีวี", freshness="live")
+        expected_channels = [
+            {"channel": "social", "label": "Social", "commission_pct": None,
+             "commission_thb_per_order": None, "extra_commission_pct": None, "shopee_commission_pct": 1.25},
+            {"channel": "shopee_live", "label": "Shopee Live", "commission_pct": 4,
+             "commission_thb_per_order": None, "extra_commission_pct": None, "shopee_commission_pct": None},
+            {"channel": "shopee_video", "label": "Shopee Video", "commission_pct": 5,
+             "commission_thb_per_order": 2904.5, "extra_commission_pct": 5, "shopee_commission_pct": 0},
+        ]
+        first = result["results"][0]
+        self.assertEqual(first["commission_channels"], expected_channels)
+        self.assertEqual([row["channel"] for row in first["commission_channels"]],
+                         ["social", "shopee_live", "shopee_video"])
+        self.assertEqual([[item["channel"] for item in row["commission_channels"]]
+                          for row in result["results"]],
+                         [["social", "shopee_live", "shopee_video"]] * 2)
+        self.assertTrue(all(set(row) == {
+            "channel", "label", "commission_pct", "commission_thb_per_order",
+            "extra_commission_pct", "shopee_commission_pct",
+        } for row in first["commission_channels"]))
+        self.assertEqual(first["commission_pct"], 5)
+        self.assertEqual(first["commission_thb_per_order"], 2904.5)
+        self.assertEqual(sum(call[1] == "detail" for call in self.broker.calls), 2)
+        self.assertEqual(result["trace"]["browser_operations"]["detail"], 2)
 
     async def test_concurrent_identical_agents_share_one_scan(self):
         first, second = await asyncio.gather(self.tool("ทีวี"), self.tool("ทีวี"))

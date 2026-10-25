@@ -395,6 +395,40 @@
     button.dataset.productName = text(product.name);
     button.onclick = () => toggleSaved(product, query);
   }
+  function commissionBreakdown(product, metrics) {
+    const rows = array(product.commission_channels);
+    if(!rows.length) return;
+    const details = node("details","commission-breakdown"), list = node("ul","commission-channel-list");
+    const ordered = ["social","shopee_live","shopee_video"].map((key,order) => ({key,order,row:rows.find(item => item?.channel === key)})).filter(item => item.row);
+    ordered.sort((a,b) => {
+      const av = finite(a.row.commission_thb_per_order) ? a.row.commission_thb_per_order : null;
+      const bv = finite(b.row.commission_thb_per_order) ? b.row.commission_thb_per_order : null;
+      if(av === null) return bv === null ? a.order-b.order : 1;
+      if(bv === null) return -1;
+      return bv-av || a.order-b.order;
+    });
+    const best = ordered.findIndex(item => finite(item.row.commission_thb_per_order) && item.row.commission_thb_per_order > 0);
+    ordered.forEach(({key,row},index) => {
+      const item = node("li","commission-channel"); item.dataset.channel = key; item.dataset.best = String(index === best);
+      const heading = node("div","commission-channel-top"); heading.append(node("strong","commission-channel-name",channels[key]));
+      if(index === best) heading.append(node("span","commission-channel-best","คุ้มสุด"));
+      const primary = node("div","commission-channel-primary");
+      primary.append(node("span","commission-channel-total",`รวม ${percent(row.commission_pct)}`),node("strong","commission-channel-estimate",`ประมาณ ${money(row.commission_thb_per_order)}/ออเดอร์`));
+      item.append(heading,primary,node("small","commission-channel-components",`ค่าคอมเพิ่ม ${percent(row.extra_commission_pct)} + Shopee ${percent(row.shopee_commission_pct)}`));
+      list.append(item);
+    });
+    if(!list.childElementCount) return;
+    const summary = node("summary","commission-summary"), decision = node("span","commission-summary-decision");
+    const bestItem = best >= 0 ? ordered[best] : null;
+    decision.append(
+      node("span","commission-summary-label",bestItem ? `คุ้มสุด · ${channels[bestItem.key]}` : "ค่าคอมแต่ละช่องทาง"),
+      node("small","commission-summary-help",`กดเทียบ ${ordered.length} ช่องทาง`)
+    );
+    summary.append(decision);
+    if(bestItem) summary.append(node("strong","commission-summary-value",`${money(bestItem.row.commission_thb_per_order)}/ออเดอร์`));
+    details.append(summary,list);
+    metrics.after(details);
+  }
   function productCard(product, rank, dashboard, saved = false, projectQuery = null) {
     const card = $("#product-template").content.firstElementChild.cloneNode(true);
     const winner = !saved && product.product_id === dashboard?.winner_product_id;
@@ -405,9 +439,11 @@
     card.querySelector(".product-name").textContent = product.name;
     card.querySelector(".product-shop").textContent = text(product.shop_name) || "ไม่ทราบชื่อร้าน";
     const metrics = card.querySelector(".product-metrics");
-    for(const [label,value] of [["ราคา",price(product)],["คอม / ออเดอร์",money(product.commission_thb_per_order)],["ยอดขายที่เห็น",count(product.sold)],["อัตราคอม",percent(product.commission_pct)]]) {
+    const metricChannel = {social:"Social",shopee_live:"Live",shopee_video:"Video"}[product.channel || dashboard?.channel] || "ช่องทาง";
+    for(const [label,value] of [["ราคา",price(product)],[`คอม ${metricChannel}`,money(product.commission_thb_per_order)],["ยอดขายที่เห็น",count(product.sold)],["อัตราคอม",percent(product.commission_pct)]]) {
       const group = node("div"); group.append(node("dt","",label), node("dd","",value)); metrics.append(group);
     }
+    commissionBreakdown(product,metrics);
     card.querySelector(".product-reason").textContent = saved ? "ข้อมูล ณ เวลาที่บันทึก · เปิดสินค้าตรวจราคาและค่าคอมอีกครั้ง" : reason(product,dashboard,winner);
     card.querySelector(".product-observed").textContent = `ตรวจ ${observed(product.observed_at || dashboard?.observed_at)}`;
     setLink(card.querySelector(".product-link"), product.offer_url);

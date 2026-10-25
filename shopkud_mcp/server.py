@@ -896,6 +896,14 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
 
             verified, detail_errors = [], []
             mark = time.monotonic()
+
+            def nonnegative_finite_number(value):
+                if type(value) is int:
+                    return value if value >= 0 else None
+                if type(value) is float and math.isfinite(value) and value >= 0:
+                    return value
+                return None
+
             await emit("detail_checks_started", candidate_count=len(candidates))
             for index, row in enumerate(candidates, start=1):
                 operations["detail"] += 1
@@ -905,7 +913,8 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 if detail.get("ok") is not True:
                     detail_errors.append({"product_id": row.get("product_id"), "error": detail.get("error", "detail_failed")})
                     continue
-                offer = next((item for item in detail.get("channels", [])
+                detail_channels = detail.get("channels") if type(detail.get("channels")) is list else []
+                offer = next((item for item in detail_channels
                               if type(item) is dict and item.get("channel") == channel), None)
                 amount = offer.get("estimated_commission_thb") if offer else None
                 if type(amount) not in (int, float) or isinstance(amount, bool):
@@ -915,12 +924,29 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 shopee = offer.get("shopee_commission") if type(offer.get("shopee_commission")) is dict else {}
                 image_url = next((image.get("url") for image in detail.get("images", [])
                                   if isinstance(image, dict) and isinstance(image.get("url"), str)), None)
+                commission_channels, seen_channels = [], set()
+                for item in detail_channels:
+                    channel_name = item.get("channel") if type(item) is dict else None
+                    if channel_name not in {"social", "shopee_live", "shopee_video"} or channel_name in seen_channels:
+                        continue
+                    seen_channels.add(channel_name)
+                    extra_channel = item.get("extra_commission") if type(item.get("extra_commission")) is dict else {}
+                    shopee_channel = item.get("shopee_commission") if type(item.get("shopee_commission")) is dict else {}
+                    commission_channels.append({
+                        "channel": channel_name,
+                        "label": item.get("label") if type(item.get("label")) is str else None,
+                        "commission_pct": nonnegative_finite_number(item.get("total_pct")),
+                        "commission_thb_per_order": nonnegative_finite_number(item.get("estimated_commission_thb")),
+                        "extra_commission_pct": nonnegative_finite_number(extra_channel.get("pct")),
+                        "shopee_commission_pct": nonnegative_finite_number(shopee_channel.get("pct")),
+                    })
                 verified.append({
                     "product_id": row.get("product_id"), "name": detail.get("name") or row.get("name"),
                     "price_min_thb": detail.get("price_min_thb"), "price_max_thb": detail.get("price_max_thb"),
                     "sold": row.get("sold"), "mall": row.get("mall"), "channel": channel,
                     "commission_pct": offer.get("total_pct"), "commission_thb_per_order": amount,
                     "extra_commission_pct": extra.get("pct"), "shopee_commission_pct": shopee.get("pct"),
+                    "commission_channels": commission_channels,
                     "offer_end_date": detail.get("offer_end_date"),
                     "extra_comm": row.get("extra_comm"), "offer_url": detail.get("offer_url") or row.get("product_url"),
                     "observed_at": detail.get("observed_at"),

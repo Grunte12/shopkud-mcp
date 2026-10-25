@@ -21,6 +21,11 @@ function completedSnapshot({query, traceId, productId, productName, affiliateUrl
     product_id: productId, name: productName, shop_name: `ร้าน ${productId}`,
     price_min_thb: 490, price_max_thb: 490, sold: 125, commission_pct: 5,
     commission_thb_per_order: 24.5, mall: false, channel: "social",
+    commission_channels: [
+      {channel:"social",commission_pct:5,commission_thb_per_order:24.5,extra_commission_pct:1,shopee_commission_pct:4},
+      {channel:"shopee_live",commission_pct:6,commission_thb_per_order:29.4,extra_commission_pct:2,shopee_commission_pct:4},
+      {channel:"shopee_video",commission_pct:0,commission_thb_per_order:0,shopee_commission_pct:0}
+    ],
     offer_url: `https://affiliate.shopee.co.th/offer/product_offer/${productId}`,
     product_url: `https://shopee.co.th/product/12345/${productId}`,
     shop_url: "https://shopee.co.th/shop/12345",
@@ -181,6 +186,20 @@ async function run() {
     assert.ok(await page.locator('a[href="https://shopee.co.th/product/12345/71001"]').count(), "safe product link is rendered");
     assert.ok(await page.locator('a[href="https://shopee.co.th/shop/12345"]').count(), "safe store link is rendered");
     assert.ok(await page.locator('a[href="https://example.com/research/workspace"]').count(), "safe research source is rendered");
+    const workspaceCommission=kitchenCard.locator(".commission-breakdown");
+    assert.equal(await workspaceCommission.count(),1,"workspace product cards include available channel details");
+    assert.equal(await kitchenCard.locator(".product-metrics > div").count(),4,"workspace cards keep the four summary metrics");
+    assert.equal(await kitchenCard.locator(".product-metrics dt").nth(1).textContent(),"คอม Social","workspace keeps the researched channel explicit");
+    await workspaceCommission.locator("summary").focus();
+    await page.keyboard.press("Enter");
+    assert.equal(await kitchenCard.locator(".commission-channel").count(),3,"workspace shows one row for each supplied channel");
+    assert.deepEqual(await kitchenCard.locator(".commission-channel-name").allTextContents(),["Shopee Live","Social","Shopee Video"],"workspace channels are sorted by estimated THB per order");
+    assert.equal(await kitchenCard.locator('.commission-channel[data-best="true"] .commission-channel-name').textContent(),"Shopee Live");
+    assert.equal(await kitchenCard.locator('[data-channel="shopee_video"] .commission-channel-total').textContent(),"รวม 0%","workspace preserves zero rates");
+    assert.match(await kitchenCard.locator('[data-channel="shopee_video"] .commission-channel-estimate').textContent(),/0/u,"workspace preserves a zero estimate");
+    assert.equal(await kitchenCard.locator('[data-channel="shopee_video"] .commission-channel-components').textContent(),"ค่าคอมเพิ่ม ไม่ทราบ + Shopee 0%","workspace keeps the missing split value unknown");
+    assert.equal(await workspaceCommission.evaluate(node=>node.scrollWidth<=node.clientWidth),true,"expanded workspace details fit inside the card");
+    await page.keyboard.press("Enter");
     assert.equal(await page.locator('a[href^="javascript:"]').count(), 0, "unsafe schemes never become links");
     assert.equal(await page.locator('a[href^="https://user:secret@"]').count(), 0, "credential-bearing source URLs are rejected");
 
@@ -249,6 +268,7 @@ async function run() {
     await page.locator("#tab-saved").click();
     assert.equal(await page.locator("#saved-count").textContent(), "2", "existing explicitly saved-product count remains intact and updates");
     assert.equal(await page.locator("#saved-grid .product-card").count(), 2);
+    assert.equal(await page.locator("#saved-grid .commission-breakdown").count(), 0, "saved cards without channel data stay concise");
     assert.match(await page.locator("#saved-grid").textContent(), /สินค้าที่บันทึกไว้ก่อนเปิด Workspace/u);
 
     for(let index = 1; index <= 21; index++) {
