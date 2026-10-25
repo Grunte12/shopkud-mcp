@@ -5,7 +5,7 @@ const path = require("node:path");
 const {pathToFileURL} = require("node:url");
 const {chromium} = require("playwright");
 async function run(){
-  const browser=await chromium.launch({headless:true});
+  const browser=await chromium.launch({headless:true,executablePath:process.env.SHOPKUD_TEST_CHROMIUM});
   const page=await browser.newPage({viewport:{width:390,height:844}});
   await page.addInitScript(()=>{
     const listeners=[];

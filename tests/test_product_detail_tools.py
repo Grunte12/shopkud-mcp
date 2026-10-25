@@ -24,6 +24,9 @@ DETAIL = {
     "name": "สินค้าทดสอบ", "offer_url": OFFER_URL,
     "product_url": f"https://shopee.co.th/product/12345/{PRODUCT_ID}",
     "price_min_thb": 10.0, "price_max_thb": 20.0,
+    "offer_end_date": "2026-10-29", "offer_end_date_source": "visible_offer_dom",
+    "extra_commission_start_date": None, "extra_commission_end_date": None,
+    "attribution_duration_days": None, "attribution_duration_source": None,
     "affiliate_url": None,
     "link_source": None, "link_action": None, "observations_only": True,
     "link_attribution_verified": False, "missing_fields": [], "retry_automatically": False,
@@ -163,7 +166,9 @@ class ProductDetailToolTests(unittest.IsolatedAsyncioTestCase):
         brief = await self.tool("get_product_detail")(PAGE, view="brief")
         self.assertEqual(self.broker.calls, [(PAGE, "detail", {}, 20)])
         for key in ("ok", "kind", "page_id", "product_id", "item_id", "shop_id", "offer_url", "product_url",
-                    "price_min_thb", "price_max_thb", "observed_at", "variant_info", "affiliate_url",
+                    "price_min_thb", "price_max_thb", "observed_at", "variant_info", "offer_end_date",
+                    "offer_end_date_source", "extra_commission_start_date", "extra_commission_end_date",
+                    "attribution_duration_days", "attribution_duration_source", "affiliate_url",
                     "link_source", "link_action", "link_attribution_verified", "missing_fields"):
             self.assertEqual(brief.get(key), full.get(key), key)
         self.assertEqual(brief["channels"][0]["channel"], "social")

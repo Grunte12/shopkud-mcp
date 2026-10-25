@@ -73,6 +73,21 @@ async function main() {
     assert.ok(baseline.channels.every(row => row.total_pct_source === "component_sum"));
     assert.ok(baseline.channels.every(row => row.extra_commission_displayed === true));
     assert.ok(baseline.channels.every(row => row.cap_thb === null && row.cap_source === null));
+    assert.equal(baseline.offer_end_date, "2026-10-29");
+    assert.equal(baseline.offer_end_date_source, "visible_offer_dom");
+    assert.equal(baseline.extra_commission_start_date, null);
+    assert.equal(baseline.extra_commission_end_date, null);
+    assert.equal(baseline.attribution_duration_days, null);
+    assert.equal(baseline.attribution_duration_source, null);
+    assert.ok(baseline.missing_fields.includes("extra_commission_period"));
+    assert.ok(baseline.missing_fields.includes("attribution_duration"));
+    const invalidOfferDate = await page.evaluate(url => {
+      document.querySelector(".comm-end-date").textContent = "ข้อเสนอสิ้นสุดวันที่ 31-02-2026";
+      return window.ShopKudDetail.read(document, url, window.ShopeePickerCore);
+    }, URL);
+    assert.equal(invalidOfferDate.offer_end_date, null);
+    assert.equal(invalidOfferDate.offer_end_date_source, null);
+    assert.ok(invalidOfferDate.missing_fields.includes("offer_end_date"));
     assert.equal(baseline.affiliate_url, "https://s.shopee.co.th/Fixture123");
     assert.equal(baseline.link_source, "visible_link_dialog");
     assert.equal(baseline.commission_layout_evidence, null, "normal channel layout remains separately parsed");

@@ -9,7 +9,7 @@ const ROOT = path.resolve(__dirname, "..");
 const URL = "https://affiliate.shopee.co.th/offer/product_offer/123";
 
 async function main() {
-  const browser = await chromium.launch({ headless: true, executablePath: chromium.executablePath() });
+  const browser = await chromium.launch({ headless: true, executablePath: process.env.SHOPKUD_TEST_CHROMIUM || chromium.executablePath() });
   const page = await browser.newPage();
   await page.route("https://**/*", route => route.abort());
   await page.setContent(fixture());

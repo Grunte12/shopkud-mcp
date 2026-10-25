@@ -43,6 +43,15 @@
     const commission=text=>({pct:Core.parseCommissionPct(text,true),amount_thb:money(text)});
     const clip=node=>(node?.textContent || "").replace(/\s+/gu," ").trim().slice(0,240);
     const eligible=node=>node.getClientRects().length && !node.closest('nav,aside,.reviews,.review,.customer-review,[data-testid="review"]');
+    const date=text=>{
+      const match=/^ข้อเสนอสิ้นสุดวันที่\s+([0-9]{1,2})-([0-9]{1,2})-([0-9]{4})$/u.exec(Core.normalizeDigits(text).trim());
+      if(!match)return null;
+      const day=Number(match[1]),month=Number(match[2]),year=Number(match[3]),value=new Date(Date.UTC(year,month-1,day));
+      return value.getUTCFullYear()===year && value.getUTCMonth()===month-1 && value.getUTCDate()===day
+        ?`${year}-${String(month).padStart(2,"0")}-${String(day).padStart(2,"0")}`:null;
+    };
+    const offerEndNodes=[...main.querySelectorAll(".comm-end-date")].filter(eligible);
+    const offer_end_date=offerEndNodes.length===1?date(offerEndNodes[0].textContent):null;
     const channels=[];
     for(const table of [...main.querySelectorAll("table")].slice(0,10)) {
       if(!eligible(table))continue;
@@ -82,9 +91,12 @@
     const linkSource=candidates.length===1?(captured.source || "visible_link_dialog"):null;
     return {ok:true,kind:"product_detail",product_id:context.product_id,item_id:context.product_id,shop_id,name,offer_url:context.url,product_url:links[0],price_min_thb:price.min,price_max_thb:price.max,
       images,variant_info:{model_id:null,model_name:null,color:null,source:null},gallery_complete:false,
-      channels,commission_layout_evidence,affiliate_url:candidates.length===1?candidates[0]:null,link_source:linkSource,
+      channels,commission_layout_evidence,offer_end_date,offer_end_date_source:offer_end_date?"visible_offer_dom":null,
+      extra_commission_start_date:null,extra_commission_end_date:null,
+      attribution_duration_days:null,attribution_duration_source:null,
+      affiliate_url:candidates.length===1?candidates[0]:null,link_source:linkSource,
       observed_at:new Date().toISOString(),observations_only:true,link_attribution_verified:false,
-      missing_fields:[...(!channels.length?["channels"]:[]),...(!images.length?["images"]:[]),...(!images.some(i=>i.role==="gallery")?["gallery"]:[]),"variant_model","variant_color","commission_caps"]};
+      missing_fields:[...(!channels.length?["channels"]:[]),...(!images.length?["images"]:[]),...(!images.some(i=>i.role==="gallery")?["gallery"]:[]),...(!offer_end_date?["offer_end_date"]:[]),"variant_model","variant_color","commission_caps","extra_commission_period","attribution_duration"]};
   }
   const attempted=new Set();
   async function openLink(doc,value,Core,stillCurrent) {

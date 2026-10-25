@@ -143,3 +143,29 @@ Verification after restarting only the ShopKud worker:
   three observed channel commissions.
 - Both runs were read-only and appeared in the Dev Console; no affiliate link,
   post, purchase or mission enrollment was created.
+
+## Commission-lifetime evidence check
+
+Date: 2026-10-25
+
+For Philips NA331 product `26570814201`, the live Affiliate page visibly
+separates Extra commission from the current Shopee component and shows an offer
+end date. It does not show an Extra-specific start/end period, per-order cap or
+attribution-cookie duration. ShopKud now returns those missing facts as explicit
+`null` values instead of inferring them from general policy.
+
+Live read after reloading the installed extension:
+
+- current price: ฿3,885;
+- offer end date: `2026-10-29` (`visible_offer_dom`);
+- Shopee Video: Extra 6.5% (฿252.53), current Shopee component 0%, total 6.5%;
+- Social: Extra 5% (฿194.25), current Shopee component 2% (฿77.70), total 7%;
+- `extra_commission_start_date`, `extra_commission_end_date`,
+  `attribution_duration_days`, `cap_thb`: `null`;
+- the current Shopee component is not a guarantee of the rate after the offer
+  ends; `offer_end_date` is not relabeled as an Extra expiry date.
+
+The same `offer_end_date` is projected into `rank_affiliate_products`. A live
+one-page query for `Philips NA331 Air Fryer` returned the target as the winner,
+with 10,000 visible sales, Mall evidence, zero detail errors and trace
+`ce10a14e55fe564e` in 10.49 seconds. The run was read-only.

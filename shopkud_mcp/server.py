@@ -507,7 +507,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                                  target_model: Annotated[str | None,Field(strict=True,max_length=32)] = None,
                                  view: Literal["full","brief"] = "full",
                                  product_id: Annotated[str | None,Field(strict=True,pattern=r"^[1-9][0-9]{0,19}$")] = None) -> dict:
-        """อ่านสินค้าและค่าคอมสดจาก Affiliate ด้วย page_id/offer_url หรือ product_id ที่ทราบแล้ว; product_id เปิดข้อเสนอตรงเมื่อ open_if_missing=true โดยไม่ค้นตลาด และผลคืน offer_url/product_url ที่คลิกได้ view=brief คืนราคา ค่าคอมแยกช่องทาง และสถานะลิงก์ ไม่ส่งรูป/ข้อมูลวินิจฉัย หรืออ่านรุ่น/สีสาธารณะด้วย product_url=https://shopee.co.th/product/<ร้าน>/<สินค้า>; target_model ใช้เฉพาะ product_url, view=brief คืนหลักฐานรุ่นสั้น ๆ ห้ามรวม product_url กับ page_id/offer_url/product_id/save/open_link_dialog ต้องเปิดสิทธิ์เสริมผ่านส่วนขยายก่อน open_if_missing=true เปิด/ใช้ซ้ำแท็บเบื้องหลังเฉพาะของส่วนขยาย open_link_dialog=true เปิดกล่องรับลิงก์หนึ่งครั้งเฉพาะ owned inactive idle offer ที่ตรงรหัส อ่าน URL จาก dialog ทางการ ไม่ clipboard/privateAPI ไม่แก้ SubID/สี ไม่ retry เมื่อไม่แน่นอน ต้องเจ้าของสั่งเอาลิงก์ก่อนใช้ save=true บันทึกประวัติเมื่อเจ้าของสั่ง ไม่รับรอง attribution/รุ่น/สี/เพดานคอม ค่าเริ่มต้นไม่เปิดหน้า/กล่อง หยุดเมื่อ login/challenge."""
+        """อ่านสินค้าและค่าคอมสดจาก Affiliate ด้วย page_id/offer_url หรือ product_id ที่ทราบแล้ว; product_id เปิดข้อเสนอตรงเมื่อ open_if_missing=true โดยไม่ค้นตลาด และผลคืน offer_url/product_url ที่คลิกได้ view=brief คืนราคา ค่าคอมแยกช่องทาง วันสิ้นสุดข้อเสนอที่หน้าแสดง และสถานะลิงก์ โดย shopee_commission เป็นเรตพื้นฐานที่เห็นตอนนี้ ไม่รับรองหลังข้อเสนอหมด; ช่วงเวลา extra, cap และ attribution duration ที่หน้าไม่แสดงคืน null ไม่เดา ไม่ส่งรูป/ข้อมูลวินิจฉัย หรืออ่านรุ่น/สีสาธารณะด้วย product_url=https://shopee.co.th/product/<ร้าน>/<สินค้า>; target_model ใช้เฉพาะ product_url, view=brief คืนหลักฐานรุ่นสั้น ๆ ห้ามรวม product_url กับ page_id/offer_url/product_id/save/open_link_dialog ต้องเปิดสิทธิ์เสริมผ่านส่วนขยายก่อน open_if_missing=true เปิด/ใช้ซ้ำแท็บเบื้องหลังเฉพาะของส่วนขยาย open_link_dialog=true เปิดกล่องรับลิงก์หนึ่งครั้งเฉพาะ owned inactive idle offer ที่ตรงรหัส อ่าน URL จาก dialog ทางการ ไม่ clipboard/privateAPI ไม่แก้ SubID/สี ไม่ retry เมื่อไม่แน่นอน ต้องเจ้าของสั่งเอาลิงก์ก่อนใช้ save=true บันทึกประวัติเมื่อเจ้าของสั่ง ไม่รับรอง attribution/รุ่น/สี/เพดานคอม ค่าเริ่มต้นไม่เปิดหน้า/กล่อง หยุดเมื่อ login/challenge."""
         if type(save) is not bool or type(open_if_missing) is not bool or type(open_link_dialog) is not bool:return {"ok":False,"error":"invalid_input"}
         if view not in ("full","brief") or target_model is not None and normalize_model(target_model) is None:return {"ok":False,"error":"invalid_input"}
         if product_url is None and target_model is not None:return {"ok":False,"error":"public_product_url_required"}
@@ -578,7 +578,8 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
             if entry is not None:result["entry"]=entry
             if view=="brief":
                 fields=("ok","kind","page_id","product_id","item_id","shop_id","name","offer_url","product_url",
-                        "price_min_thb","price_max_thb","observed_at","variant_info","affiliate_url","link_source",
+                        "price_min_thb","price_max_thb","observed_at","variant_info","offer_end_date","offer_end_date_source",
+                        "extra_commission_start_date","extra_commission_end_date","attribution_duration_days","attribution_duration_source","affiliate_url","link_source",
                         "link_action","observations_only","link_attribution_verified","missing_fields","retry_automatically",
                         "history_saved","history_receipt","entry")
                 channel_fields=("channel","label","extra_commission","shopee_commission","extra_commission_displayed",
@@ -824,6 +825,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                     "sold": row.get("sold"), "mall": row.get("mall"), "channel": channel,
                     "commission_pct": offer.get("total_pct"), "commission_thb_per_order": amount,
                     "extra_commission_pct": extra.get("pct"), "shopee_commission_pct": shopee.get("pct"),
+                    "offer_end_date": detail.get("offer_end_date"),
                     "extra_comm": row.get("extra_comm"), "offer_url": detail.get("offer_url") or row.get("product_url"),
                     "observed_at": detail.get("observed_at"),
                     "trust_basis": ["mall"] if row.get("mall") is True else [],
