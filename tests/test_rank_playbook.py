@@ -1,8 +1,9 @@
 import asyncio
 import copy
 import unittest
+import time
 
-from shopkud_mcp.server import create_service
+from shopkud_mcp.server import create_service, _ranking_state, _RANKING_CACHE_MAX_ENTRIES
 
 
 LIST_PAGE = "1:" + "a" * 32
@@ -160,6 +161,26 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(live["cache_hit"])
         self.assertEqual(live["cache_ttl_seconds"], 0)
         self.assertEqual(sum(call[1] == "search_scan" for call in self.broker.calls), 2)
+
+    async def test_cached_criteria_reflect_current_request_without_mutating_observation(self):
+        first = await self.tool("ทีวี", freshness="live")
+        cached = await self.tool("ทีวี", freshness="recent")
+        self.assertTrue(cached["cache_hit"])
+        self.assertEqual(cached["criteria"]["freshness"], "recent")
+        self.assertEqual(first["criteria"]["freshness"], "live")
+
+    async def test_cache_evicts_oldest_and_prunes_expired_observations(self):
+        _, cache = _ranking_state(self.broker)
+        for index in range(_RANKING_CACHE_MAX_ENTRIES):
+            cache[("seed", index)] = (time.monotonic(), {})
+        await self.tool("ทีวี")
+        self.assertEqual(len(cache), _RANKING_CACHE_MAX_ENTRIES)
+        self.assertNotIn(("seed", 0), cache)
+        cache[("expired",)] = (time.monotonic() - 601, {})
+        result = await self.tool("ทีวี", freshness="recent")
+        self.assertTrue(result["cache_hit"])
+        self.assertNotIn(("expired",), cache)
+        self.assertEqual(len(cache), _RANKING_CACHE_MAX_ENTRIES)
 
     async def test_agent_selected_commission_and_price_constraints_are_enforced(self):
         result = await self.tool("ทีวี", freshness="live", min_commission_thb=2000,

@@ -59,6 +59,8 @@ GUIDED_TOOLS = frozenset().union(*GUIDED_TOOL_GROUPS.values())
 # service wrapper around the same Broker shares one queue and one short cache.
 _RANKING_STATES_GUARD = threading.Lock()
 _RANKING_STATES = weakref.WeakKeyDictionary()
+_RANKING_CACHE_MAX_ENTRIES = 64
+_RANKING_CACHE_MAX_AGE_SECONDS = 600
 
 
 def _ranking_state(broker):
@@ -703,6 +705,10 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         async with ranking_turn():
             timings["queue_wait_ms"] = (time.monotonic() - queued) * 1000
             await emit("lane_started", queue_wait_ms=round(timings["queue_wait_ms"], 2))
+            now = time.monotonic()
+            for stale_key, (saved_at, _) in list(ranking_cache.items()):
+                if now - saved_at > _RANKING_CACHE_MAX_AGE_SECONDS:
+                    del ranking_cache[stale_key]
             cached = ranking_cache.get(key)
             cache_age_seconds = time.monotonic() - cached[0] if cached else None
             coalesced_live_call = bool(cached and freshness == "live" and cached[0] >= requested_at)
@@ -712,6 +718,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 reuse_reason = "coalesced_concurrent" if coalesced_live_call else "age_allowed"
                 await emit("cache_hit", cache_hit=True, cache_age_ms=cache_age_ms, cache_reuse_reason=reuse_reason)
                 return await finish({**cached[1], "cache_hit": True, "cache_age_ms": cache_age_ms,
+                                     "criteria": {**cached[1]["criteria"], "freshness": freshness},
                                      "cache_reuse_reason": reuse_reason, "freshness": freshness,
                                      "cache_ttl_seconds": cache_ttl_seconds}, cache_hit=True)
 
@@ -913,6 +920,9 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 "cache_hit": False, "partial_market_coverage": scan.get("reached_end") is not True,
                 "limitations": ["seller ratings and ad spend are not observed", "ranking covers only detail candidates checked"],
             }
+            ranking_cache.pop(key, None)
+            while len(ranking_cache) >= _RANKING_CACHE_MAX_ENTRIES:
+                del ranking_cache[next(iter(ranking_cache))]
             ranking_cache[key] = (time.monotonic(), result)
             return await finish(result)
 

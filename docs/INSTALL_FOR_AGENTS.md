@@ -139,4 +139,5 @@ Restart only the ShopKud service afterward. This creates a private `workspace.sq
 - Browser actions are serialized so agents do not race one Chrome tab.
 - Result freshness is caller-selected: the default `live` does not reuse an earlier completed result, `recent` = 60 seconds, and `fast` = 10 minutes. Concurrent identical `live` calls that began before the first finished may share that one in-flight observation.
 - Cache responses disclose age and observation timestamps.
+- Research results are kept in memory for at most 64 distinct requests; entries older than 10 minutes are pruned on the next research call. Restarting the worker clears them. This does not change the default live-read policy.
 - Closing the Side Panel does not stop the worker; opening it shows live traces for the current extension session.
