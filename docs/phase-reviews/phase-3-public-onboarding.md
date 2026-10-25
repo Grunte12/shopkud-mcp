@@ -57,6 +57,7 @@ configuration or saved data by default.
 | Commit | Purpose |
 |---|---|
 | `54e0c9514ac745aea7f5595785eb439742ce93a2` | Streamline public setup and document safe lifecycle/storage behavior. |
+| `d60f77c436850ede651fbe53fe01f63b161036a3` | Correct the historical JavaScript inventory to 26 executable suites plus one helper. |
 
 The evidence-document commit SHA is intentionally pending; a commit cannot
 truthfully contain its own SHA.
@@ -168,6 +169,10 @@ service restart, token rotation, database migration or Chrome change is needed.
 
 ## Review record
 
+- Independent review of `90fd133d84621b55add4ea2b3fc0baaafeb229aa`
+  failed because the moved changelog repeated the old 27-suite claim. Commit
+  `d60f77c436850ede651fbe53fe01f63b161036a3` corrects that public wording; a
+  fresh exact-SHA review is required.
 - Independent local review: pending for the final evidence-commit SHA.
 - Push authorization: pending for the final evidence-commit SHA.
 - Hosted CI: pending for the pushed final SHA.
