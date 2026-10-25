@@ -6,7 +6,9 @@ One focused pull request is easier to review than a broad refactor.
 ## Development setup
 
 Requirements: Python 3.11+, Node.js 20+ and the locked development dependencies.
-Live Shopee credentials are not needed for the test suite.
+The complete browser/native suite is currently supported on macOS, matching the
+public runtime and hosted `macos-14` CI job. Live Shopee credentials are not
+needed for any test.
 
 ```sh
 python3 -m venv .venv
@@ -28,9 +30,12 @@ also checks Python 3.11 and 3.13, builds and installs the wheel, and audits the
 resolved Python and locked npm dependencies.
 
 For a small change, run its focused test while working, then run `npm test`
-before requesting review. New behavior or a bug fix should include the smallest
-regression test that proves it. Browser fixtures must use synthetic pages and
-block external requests.
+before requesting review on macOS. On another operating system, run the focused
+portable Python/Node checks relevant to the change and use the hosted macOS CI
+result for the complete native/browser gate; do not report an unsupported local
+platform path as a product regression. New behavior or a bug fix should include
+the smallest regression test that proves it. Browser fixtures must use
+synthetic pages and block external requests.
 
 ## Pull-request scope
 
