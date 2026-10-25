@@ -1,7 +1,10 @@
 # ShopKud MCP — Public MVP Release Implementation Plan
 
 Date: 2026-10-26
-Status: APPROVED FOR IMPLEMENTATION — Phase 0 complete; Phase 1 pending.
+Status: IN IMPLEMENTATION — Phases 0–4 complete; Phase 5 supported settings are
+applied and reviewed while main protection remains pending owner mobile
+confirmation; Phase 6 candidate evidence is prepared for independent review
+and exact-SHA CI.
 Baseline: `238160e`, package/extension `0.11.8`, guide `1.5.6`.
 Repository: https://github.com/Grunte12/shopkud-mcp
 Canonical workspace: `/Users/grunte/Workspace/repos/shopkud`.
