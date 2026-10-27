@@ -21,7 +21,9 @@ ShopKud worker (one per OS user)
   - trace and performance events
   - optional embedded SQLite file
       |
-      | private Unix socket + Chrome Native Messaging
+      | private local bridge + Chrome Native Messaging
+      | macOS: owner-only Unix socket
+      | Windows: secret-authenticated loopback TCP
       v
 ShopKud Chrome extension
   - validates the native host and command allowlist
@@ -43,12 +45,14 @@ ShopKud architecture.
 
 Chrome extensions cannot expose a local MCP endpoint by themselves. The small
 Python worker provides the protocol boundary, owns the browser queue, validates
-requests, and keeps multi-step workflows deterministic. On macOS it runs as one
-per-user launchd service and uses approximately tens of MiB of RAM.
+requests, and keeps multi-step workflows deterministic. It runs once per user
+through launchd on macOS or the per-user Startup registry on Windows and uses
+approximately tens of MiB of RAM.
 
 The worker is not a cloud backend. It binds to `127.0.0.1`, stores its bearer
-key in a private local config, and communicates with the extension through a
-private Unix socket. Multiple agents share this one worker rather than starting
+key in a private local config, and communicates with the extension through an
+owner-only Unix socket on macOS or a separate secret-authenticated loopback port
+on Windows. Multiple agents share this one worker rather than starting
 one process or browser profile per agent.
 
 ## Freshness and cache correctness
@@ -156,7 +160,7 @@ that the guided workflows already compose safely.
 
 ## Installation model
 
-The supported public path is native macOS installation because ShopKud must
+The supported public path is native macOS or Windows installation because ShopKud must
 attach to the owner's real Chrome profile. Docker would still require host
 Chrome, profile access and a platform-specific Native Messaging registration,
 so it adds a daemon without removing the platform work.
@@ -166,8 +170,8 @@ agent should read the root [`AGENTS.md`](../AGENTS.md), then follow
 [`INSTALL_FOR_AGENTS.md`](INSTALL_FOR_AGENTS.md). The human only needs to
 approve/load the unpacked Chrome extension and sign in to Shopee when needed.
 
-Verified public target: macOS, Google Chrome, Python 3.11 or newer. Linux and
-Windows packaging are not claimed until their native-host and service-manager
+Verified public targets: macOS or Windows 10/11, Google Chrome and Python 3.11
+or newer. Linux packaging is not claimed until its native-host and service-manager
 paths have their own tests.
 
 ## Observability

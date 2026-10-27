@@ -4,15 +4,19 @@ from __future__ import annotations
 
 import asyncio
 import errno
+import hmac
 import json
 import os
 import re
 import secrets
+import socket
 import stat
 import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+from .platform_security import has_private_mode, owned_by_current_user
 
 
 MAX_FRAME_BYTES = 512_000
@@ -137,9 +141,10 @@ async def _read_frame(reader: asyncio.StreamReader) -> dict[str, Any]:
 
 
 class Broker:
-    """Serve an exact-origin extension bridge over a private Unix socket."""
+    """Serve an exact-origin extension bridge over a private local transport."""
 
-    def __init__(self, socket_path: Path, allowed_origins: list[str]):
+    def __init__(self, socket_path: Path, allowed_origins: list[str], *,
+                 native_port: int | None = None, native_token: str | None = None):
         try:
             self.socket_path = Path(socket_path)
         except (TypeError, ValueError):
@@ -152,8 +157,15 @@ class Broker:
             raise BrokerError("configuration")
         if len(set(allowed_origins)) != len(allowed_origins):
             raise BrokerError("configuration")
+        if (native_port is None) != (native_token is None):
+            raise BrokerError("configuration")
+        if native_port is not None and (type(native_port) is not int or not 0 <= native_port <= 65535
+                or type(native_token) is not str or not re.fullmatch(r"[0-9a-f]{64}", native_token)):
+            raise BrokerError("configuration")
 
         self._allowed_origins = frozenset(allowed_origins)
+        self.native_port = native_port
+        self._native_token = native_token
         self._server: asyncio.AbstractServer | None = None
         self._socket_identity: tuple[int, int] | None = None
         self._peers: set[_Peer] = set()
@@ -163,6 +175,27 @@ class Broker:
         if self._server is not None:
             raise BrokerError("already_started")
         self._validate_parent_directory()
+        if self.native_port is not None:
+            try:
+                server = await asyncio.start_server(
+                    self._handle_peer,
+                    host="127.0.0.1",
+                    port=self.native_port,
+                    family=socket.AF_INET,
+                    limit=MAX_FRAME_BYTES + 4,
+                )
+            except OSError as exc:
+                if exc.errno == errno.EADDRINUSE:
+                    raise BrokerError("socket_in_use") from None
+                raise BrokerError("startup_failed") from None
+            sockets = server.sockets or []
+            if len(sockets) != 1 or sockets[0].getsockname()[0] != "127.0.0.1":
+                server.close()
+                await server.wait_closed()
+                raise BrokerError("startup_failed")
+            self.native_port = int(sockets[0].getsockname()[1])
+            self._server = server
+            return
         try:
             os.lstat(self.socket_path)
         except FileNotFoundError:
@@ -181,14 +214,14 @@ class Broker:
                 limit=MAX_FRAME_BYTES + 4,
             )
             info = os.lstat(self.socket_path)
-            if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
+            if not stat.S_ISSOCK(info.st_mode) or not owned_by_current_user(info):
                 raise BrokerError("startup_failed")
             identity = (info.st_dev, info.st_ino)
             os.chmod(self.socket_path, 0o600, follow_symlinks=False)
             secured = os.lstat(self.socket_path)
             if ((secured.st_dev, secured.st_ino) != identity
                     or not stat.S_ISSOCK(secured.st_mode)
-                    or secured.st_uid != os.getuid()
+                    or not owned_by_current_user(secured)
                     or stat.S_IMODE(secured.st_mode) != 0o600):
                 raise BrokerError("startup_failed")
         except BrokerError:
@@ -217,7 +250,8 @@ class Broker:
             self._drop_peer(peer, "closed")
         if server is not None:
             await server.wait_closed()
-        self._unlink_if_owned(self._socket_identity)
+        if self._native_token is None:
+            self._unlink_if_owned(self._socket_identity)
         self._socket_identity = None
 
     def pages(self) -> list[dict[str, str]]:
@@ -397,15 +431,15 @@ class Broker:
         except OSError:
             raise BrokerError("unsafe_directory") from None
         if (resolved != parent or not stat.S_ISDIR(info.st_mode)
-                or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700):
+                or not owned_by_current_user(info) or not has_private_mode(info, 0o700)):
             raise BrokerError("unsafe_directory")
 
     def _unlink_if_owned(self, identity: tuple[int, int] | None) -> None:
-        if identity is None:
+        if identity is None or self._native_token is not None:
             return
         try:
             info = os.lstat(self.socket_path)
-            if (stat.S_ISSOCK(info.st_mode) and info.st_uid == os.getuid()
+            if (stat.S_ISSOCK(info.st_mode) and owned_by_current_user(info)
                     and (info.st_dev, info.st_ino) == identity):
                 os.unlink(self.socket_path)
         except OSError:
@@ -415,7 +449,11 @@ class Broker:
         peer: _Peer | None = None
         try:
             hello = await asyncio.wait_for(_read_frame(reader), timeout=HANDSHAKE_TIMEOUT)
-            if (set(hello) != {"type", "origin"} or hello.get("type") != "hello"
+            expected = {"type", "origin", "token"} if self._native_token is not None else {"type", "origin"}
+            token_ok = (self._native_token is None or
+                        type(hello.get("token")) is str and
+                        hmac.compare_digest(hello["token"], self._native_token))
+            if (set(hello) != expected or hello.get("type") != "hello" or not token_ok
                     or type(hello.get("origin")) is not str
                     or hello["origin"] not in self._allowed_origins):
                 raise BrokerError("origin_denied")

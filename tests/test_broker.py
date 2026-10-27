@@ -5,8 +5,10 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import stat
 import struct
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -62,6 +64,58 @@ class FakePeer:
             await self.writer.wait_closed()
         except (ConnectionError, OSError):
             pass
+
+
+class TcpBrokerTests(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.temp=tempfile.TemporaryDirectory(prefix="shopkud-tcp-broker-")
+        self.root=Path(self.temp.name).resolve();os.chmod(self.root,0o700)
+        self.token="f"*64
+        self.broker=Broker(self.root/"unused.sock",[ORIGIN],native_port=0,native_token=self.token)
+        await self.broker.start()
+
+    async def asyncTearDown(self):
+        await self.broker.stop();self.temp.cleanup()
+
+    async def connect(self,token):
+        reader,writer=await asyncio.open_connection("127.0.0.1",self.broker.native_port)
+        writer.write(encode_frame({"type":"hello","origin":ORIGIN,"token":token}))
+        await writer.drain()
+        return reader,writer
+
+    async def test_tcp_bridge_requires_secret_and_accepts_exact_origin(self):
+        rejected_reader,rejected_writer=await self.connect("0"*64)
+        self.assertEqual(await asyncio.wait_for(rejected_reader.read(),timeout=1),b"")
+        rejected_writer.close();await rejected_writer.wait_closed()
+        reader,writer=await self.connect(self.token)
+        self.assertEqual(await asyncio.wait_for(read_frame(reader),timeout=1),{"type":"hello-ack"})
+        writer.close();await writer.wait_closed()
+
+    async def test_native_host_relays_over_tcp(self):
+        config=self.root/"config.json"
+        config.write_text(json.dumps({
+            "token":"a"*64,"port":8176,"socket_path":str(self.root/"native.sock"),
+            "allowed_origins":[ORIGIN],"native_port":self.broker.native_port,
+            "native_token":self.token,
+        }))
+        os.chmod(config,0o600)
+        launcher=shutil.which("shopkud-native-host")
+        command=[launcher] if launcher else [sys.executable,str(Path(__file__).parents[1]/"shopkud_mcp"/"native_host.py")]
+        process=await asyncio.create_subprocess_exec(
+            *command,"--config",str(config),ORIGIN,"--parent-window=0",
+            stdin=asyncio.subprocess.PIPE,stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        self.assertEqual(await asyncio.wait_for(read_frame(process.stdout),timeout=2),{"type":"hello-ack"})
+        process.stdin.write(encode_frame({"type":"pages","pages":[page(31)]}))
+        await process.stdin.drain()
+        for _ in range(100):
+            if len(self.broker.pages())==1:break
+            await asyncio.sleep(0.01)
+        self.assertEqual(len(self.broker.pages()),1)
+        process.stdin.close()
+        await asyncio.wait_for(process.wait(),timeout=2)
+        self.assertEqual(process.returncode,0)
 
 
 class BrokerTests(unittest.IsolatedAsyncioTestCase):

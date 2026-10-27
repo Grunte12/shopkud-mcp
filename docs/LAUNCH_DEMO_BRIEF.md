@@ -4,7 +4,7 @@
 ShopKud ให้ยึด implementation และ UI จริงใน repository นี้เป็นหลัก หากภาพใน
 เอกสารขัดกับ runtime ให้ใช้ runtime ล่าสุดและบันทึกข้อจำกัดตามจริง
 
-Brief นี้ตรวจเทียบกับ ShopKud 0.11.8 และ workflow guide 1.5.6
+Brief นี้ตรวจเทียบกับ ShopKud 0.12.0 และ workflow guide 1.5.6
 
 ## 1. Product direction ที่ล็อกแล้ว
 
@@ -172,7 +172,7 @@ Dashboard แสดง:
 ### Local architecture
 
 - Chrome Extension ใช้ profile Shopee ที่ผู้ใช้ล็อกอินอยู่แล้ว
-- Local MCP worker ฟังเฉพาะ loopback และเริ่มพร้อม login บน macOS
+- Local MCP worker ฟังเฉพาะ loopback และเริ่มพร้อม login บน macOS หรือ Windows
 - หนึ่ง browser queue รองรับหลาย Agent โดยทำ action ต่อคิว
 - automation tabs อยู่ใน Chrome Tab Group ชื่อ ShopKud และปิดเมื่อทำงานเสร็จ
 - cache เปิดเผยอายุข้อมูล: live, recent 60 วินาที, fast 10 นาที

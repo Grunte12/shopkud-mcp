@@ -2,6 +2,20 @@
 
 Historical release notes moved from the README so installation and current use stay easy to find.
 
+### What's New in 0.12.0
+
+- Windows 10/11 now has a per-user installer path: Chrome Native Messaging is
+  registered under HKCU and the worker starts through one hidden per-user
+  Startup entry; neither step needs Administrator access.
+- The macOS owner-only Unix socket remains unchanged. Windows uses a separate
+  secret-authenticated loopback port because Python asyncio does not support
+  Unix-domain servers on Windows.
+- The same package installs a native-host executable, accepts Chrome's Windows
+  `--parent-window` argument and preserves the 19-tool guided profile, local
+  Dashboard and optional embedded SQLite workspace on both platforms.
+- CI includes a Windows installer, TCP native-host relay and storage job in
+  addition to the complete macOS browser/native fixture suite.
+
 ### What's New in 0.11.8
 
 - Live search survives Shopee replacing its search input after submit while

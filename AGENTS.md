@@ -4,8 +4,8 @@ Purpose: install and verify the standalone ShopKud MCP on the owner's machine. D
 
 ## Supported target
 
-- Verified: macOS user session + Google Chrome + Python 3.11 or newer.
-- Not yet verified: Linux and Windows native-host registration. Stop with `unsupported_platform`; do not improvise system paths or claim support.
+- Supported: macOS or Windows 10/11 user session + Google Chrome + Python 3.11 or newer.
+- Linux native-host registration is not yet verified. Stop with `unsupported_platform`; do not improvise system paths or claim support.
 - ShopKud must use the owner's existing logged-in Chrome profile. Never copy cookies, tokens, or profile data.
 
 ## Installation route
@@ -40,7 +40,7 @@ The target topology is one local ShopKud worker per OS user. The worker owns the
 
 Installation is complete only when all are true:
 
-1. `org.shopkud.mcp` is running in the user's launchd domain.
+1. The per-user worker is running: `org.shopkud.mcp` in launchd on macOS, or the exact `ShopKudMCP` HKCU Startup entry on Windows.
 2. The MCP client initializes the direct loopback endpoint and lists 19 guided tools.
 3. Chrome shows the same extension version as the Python package.
 4. `list_pages` reports the extension connected; an open supported Shopee page is required only for page-specific reads.

@@ -1,5 +1,8 @@
 # ShopKud MCP — Public MVP Release Implementation Plan
 
+> Historical 0.11.8 plan. Windows support was added afterward in 0.12.0; use
+> `AGENTS.md` and `docs/INSTALL_FOR_AGENTS.md` for the current platform contract.
+
 Date: 2026-10-26
 Status: IN IMPLEMENTATION — Phases 0–4 complete; Phase 5 supported settings are
 applied and reviewed while main protection remains pending owner mobile

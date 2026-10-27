@@ -26,6 +26,8 @@ from pathlib import Path
 from typing import Any, Iterator
 from urllib.parse import urlsplit
 
+from .platform_security import fchmod_private, has_private_mode, owned_by_current_user
+
 
 DB_FILENAME = "campaigns.sqlite3"
 MAX_CSV_BYTES = 200_000
@@ -251,7 +253,7 @@ class CampaignStore:
             _fail("unsafe_directory")
         if canonical != supplied or not stat.S_ISDIR(info.st_mode):
             _fail("unsafe_directory")
-        if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+        if not owned_by_current_user(info) or not has_private_mode(info,0o700):
             _fail("unsafe_directory")
         self.root = supplied
         self.db_path = self.root / DB_FILENAME
@@ -609,9 +611,9 @@ class CampaignStore:
         except OSError:
             _fail("unsafe_database")
         try:
-            os.fchmod(fd, 0o600)
+            fchmod_private(fd,0o600)
             opened = os.fstat(fd)
-            if not stat.S_ISREG(opened.st_mode) or opened.st_uid != os.getuid() or opened.st_nlink != 1:
+            if not stat.S_ISREG(opened.st_mode) or not owned_by_current_user(opened) or opened.st_nlink != 1:
                 _fail("unsafe_database")
         finally:
             os.close(fd)
@@ -623,8 +625,8 @@ class CampaignStore:
             canonical = self.root.resolve(strict=True)
         except OSError:
             _fail("unsafe_directory")
-        if (canonical != self.root or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
-                or stat.S_IMODE(info.st_mode) != 0o700):
+        if (canonical != self.root or not stat.S_ISDIR(info.st_mode) or not owned_by_current_user(info)
+                or not has_private_mode(info,0o700)):
             _fail("unsafe_directory")
 
     def _verify_database_file(self, expected: tuple[int, int] | None = None) -> tuple[int, int]:
@@ -633,8 +635,8 @@ class CampaignStore:
             info = os.lstat(self.db_path)
         except OSError:
             _fail("unsafe_database")
-        if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1
-                or stat.S_IMODE(info.st_mode) != 0o600):
+        if (not stat.S_ISREG(info.st_mode) or not owned_by_current_user(info) or info.st_nlink != 1
+                or not has_private_mode(info,0o600)):
             _fail("unsafe_database")
         identity = (info.st_dev, info.st_ino)
         if expected is not None and identity != expected:

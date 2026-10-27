@@ -12,28 +12,39 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.11.9** — the Python package and Chrome extension declare the same
+**Version 0.12.0** — the Python package and Chrome extension declare the same
 version. ShopKud is standalone; no MCP gateway, Docker daemon or external
 database is required.
 
 ## Requirements
 
-- macOS, Google Chrome and Python 3.11 or newer
+- macOS or Windows 10/11, Google Chrome and Python 3.11 or newer
 - a local MCP client that supports Streamable HTTP and a private authorization
   header
 - the owner available once to approve the unpacked extension and log in to
   Shopee Affiliate in the intended Chrome profile
 
-Linux and Windows native-host installation are not yet validated. Installing
+Linux native-host installation is not yet validated. Installing
 the code does not bypass Chrome approval, Shopee login or a challenge page.
 
 ## Quick start
+
+macOS:
 
 ```sh
 git clone https://github.com/Grunte12/shopkud-mcp.git
 cd shopkud-mcp
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
+```
+
+Windows PowerShell:
+
+```powershell
+git clone https://github.com/Grunte12/shopkud-mcp.git
+Set-Location shopkud-mcp
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
 ```
 
 Then give the coding agent this handoff:
@@ -160,8 +171,7 @@ evals/         Offline broker cancellation check
 ## Development setup
 
 Requires Python 3.11+, Node.js for extension tests, and Chrome on the operator's
-machine. The native setup workflow currently targets macOS; other native-host
-registration paths require independent validation.
+machine. Public installation supports macOS and Windows 10/11.
 
 ```sh
 python3 -m venv .venv
@@ -170,9 +180,9 @@ python3 -m venv .venv
 
 1. Load `extension/` as an unpacked extension in Chrome Developer mode. Note its
    extension ID. This is a one-time operator action, not an MCP capability.
-2. Run the operator-only setup with private absolute paths **outside** the
-   checkout. It generates the local bearer key; do not copy a live config into
-   this repository.
+2. Run the operator-only setup. It generates the local bearer key; do not copy
+   a live config into this repository. On macOS use private absolute paths **outside** the
+   checkout:
 
 ```sh
 .venv/bin/shopkud-mcp setup \
@@ -189,6 +199,14 @@ For a per-user macOS worker that starts automatically at login:
 ```sh
 .venv/bin/shopkud-mcp install-macos-service \
   --config /absolute/private/shopkud-state/config.json
+```
+
+On Windows PowerShell, setup uses `%LOCALAPPDATA%\ShopKud MCP`, registers the
+native host under the current user, and adds one hidden per-user startup entry:
+
+```powershell
+.\.venv\Scripts\shopkud-mcp.exe setup-windows --extension-id YOUR_EXTENSION_ID
+.\.venv\Scripts\shopkud-mcp.exe install-windows-startup
 ```
 
 The service listens on `127.0.0.1`, default port `8176`, with MCP at `/mcp`.
@@ -247,8 +265,9 @@ They use synthetic HTML and block external requests. Set
 `SHOPKUD_TEST_CHROMIUM` only to override Playwright's browser path. A failed
 fixture fails the command; it is never counted as a pass.
 
-GitHub CI runs Python 3.11 and 3.13 checks, the same complete fixture command on
-a hosted macOS runner, clean wheel installation and explicit Python/npm
+GitHub CI runs Python 3.11 and 3.13 checks, the complete fixture command on
+a hosted macOS runner, a focused Windows installer/native-bridge/storage job,
+clean wheel installation and explicit Python/npm
 dependency audits. It uses synthetic pages only; CI never receives a Shopee
 login, browser profile or ShopKud bearer token.
 

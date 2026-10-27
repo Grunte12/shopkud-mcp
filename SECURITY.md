@@ -4,8 +4,8 @@
 
 | Version | Security fixes |
 |---|---|
-| `0.11.x` | Supported |
-| `< 0.11` | Not supported; upgrade before reporting behavior already changed in current code |
+| `0.12.x` | Supported |
+| `< 0.12` | Not supported; upgrade before reporting behavior already changed in current code |
 
 This is a single-maintainer open-source MVP. No response or remediation SLA is
 promised.
@@ -28,7 +28,7 @@ details into a public issue, chat, email or another unverified channel.
 A useful sanitized report contains:
 
 - ShopKud package and extension versions
-- macOS, Chrome and MCP-client versions
+- operating system version, Chrome version and MCP-client version
 - the affected tool or component and exact error code
 - minimal steps using synthetic IDs, links and fixture data
 - expected versus actual behavior and security impact
@@ -43,6 +43,9 @@ ShopKud is local-first, but the selected Agent provider is still a data boundary
 
 - The worker binds to loopback and requires a private bearer token. The token,
   Chrome profile and cookies must remain on the owner's machine.
+- The extension bridge uses an owner-only Unix socket on macOS or a separate
+  secret-authenticated loopback port on Windows; its secret also stays only in
+  the private per-user config.
 - The Chrome extension reads only supported pages/operations and returns
   bounded observations. It does not expose a general cookie, DOM, shell or
   arbitrary-JavaScript tool.

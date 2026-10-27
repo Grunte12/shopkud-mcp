@@ -25,6 +25,13 @@ from urllib.parse import urlsplit
 from .broker import Broker, BrokerError
 from .model_match import normalize_model, model_match, brief_listing
 from .guides import workflow_guide
+from .platform_security import (
+    has_private_mode,
+    is_windows,
+    nofollow_flag,
+    owned_by_current_user,
+    windows_config_path,
+)
 
 _PAGE_ID_RE = re.compile(r"(?:0|[1-9][0-9]{0,9}):[0-9a-f]{32}\Z")
 _SAFE_MEDIA_HOST_RE = re.compile(r"(?:[a-z0-9-]+\.)*(?:susercontent|shopeemobile)\.com\Z")
@@ -225,13 +232,17 @@ def read_config(path):
     info = path.lstat()
     parent = path.parent.lstat()
     if (path.resolve() != path or not stat.S_ISREG(info.st_mode)
-            or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o600
+            or not owned_by_current_user(info) or not has_private_mode(info,0o600)
             or info.st_nlink != 1 or info.st_size > 8192
-            or not stat.S_ISDIR(parent.st_mode) or stat.S_IMODE(parent.st_mode) != 0o700
-            or parent.st_uid != os.getuid()):
+            or not stat.S_ISDIR(parent.st_mode) or not has_private_mode(parent,0o700)
+            or not owned_by_current_user(parent)):
+        raise ValueError("unsafe_config")
+    if is_windows() and path != windows_config_path().resolve(strict=True):
         raise ValueError("unsafe_config")
     config = json.loads(path.read_text())
-    if set(config)-{"token", "allowed_origins", "socket_path", "port", "workspace_enabled", "tool_profile"} or not {"token", "allowed_origins", "socket_path", "port"}<=set(config):
+    allowed={"token","allowed_origins","socket_path","port","workspace_enabled","tool_profile",
+             "native_port","native_token"}
+    if set(config)-allowed or not {"token", "allowed_origins", "socket_path", "port"}<=set(config):
         raise ValueError("invalid_config")
     if "workspace_enabled" in config and type(config["workspace_enabled"]) is not bool:
         raise ValueError("invalid_config")
@@ -245,6 +256,15 @@ def read_config(path):
     if Path(config["socket_path"]).parent != path.parent or Path(config["socket_path"]).name != "native.sock":
         raise ValueError("invalid_config")
     if type(config["port"]) is not int or not 1024 <= config["port"] <= 65535:
+        raise ValueError("invalid_config")
+    if ("native_port" in config)!=("native_token" in config):
+        raise ValueError("invalid_config")
+    if "native_port" in config and (type(config["native_port"]) is not int
+            or not 1024<=config["native_port"]<=65535 or config["native_port"]==config["port"]
+            or type(config["native_token"]) is not str
+            or not re.fullmatch(r"[0-9a-f]{64}",config["native_token"])):
+        raise ValueError("invalid_config")
+    if is_windows() and "native_port" not in config:
         raise ValueError("invalid_config")
     return config
 
@@ -328,7 +348,10 @@ def sanitize_selector_health(result: dict) -> dict:
 
 
 def create_service(config, broker=None, workspace_store=None, campaign_store=None):
-    broker = broker or Broker(Path(config["socket_path"]), config["allowed_origins"])
+    broker = broker or Broker(
+        Path(config["socket_path"]),config["allowed_origins"],
+        native_port=config.get("native_port"),native_token=config.get("native_token"),
+    )
     enabled=config.get("workspace_enabled",False) or workspace_store is not None
     stores={"workspace":workspace_store,"campaign":campaign_store}
     def store(kind):
@@ -1761,10 +1784,10 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
             path=folder/csv_file
             try:
                 parent=folder.lstat();info=path.lstat()
-                if (folder.resolve()!=folder or not stat.S_ISDIR(parent.st_mode) or parent.st_uid!=os.getuid() or stat.S_IMODE(parent.st_mode)!=0o700
-                        or path.resolve()!=path or not stat.S_ISREG(info.st_mode) or info.st_uid!=os.getuid() or info.st_nlink!=1
-                        or info.st_mode&0o077 or not 1<=info.st_size<=200000):raise ValueError("unsafe_intake")
-                fd=os.open(path,os.O_RDONLY|os.O_NOFOLLOW)
+                if (folder.resolve()!=folder or not stat.S_ISDIR(parent.st_mode) or not owned_by_current_user(parent) or not has_private_mode(parent,0o700)
+                        or path.resolve()!=path or not stat.S_ISREG(info.st_mode) or not owned_by_current_user(info) or info.st_nlink!=1
+                        or not has_private_mode(info,0o600) or not 1<=info.st_size<=200000):raise ValueError("unsafe_intake")
+                fd=os.open(path,os.O_RDONLY|nofollow_flag())
                 with os.fdopen(fd,"rb") as stream:
                     opened=os.fstat(stream.fileno())
                     if (opened.st_dev,opened.st_ino)!=(info.st_dev,info.st_ino):raise ValueError("intake_changed")
@@ -2386,6 +2409,11 @@ def main():
     workspace.add_argument("--config",type=Path,required=True)
     service=commands.add_parser("install-macos-service",help="Install and start the per-user ShopKud worker with launchd")
     service.add_argument("--config",type=Path,required=True)
+    windows_setup=commands.add_parser("setup-windows",help="Create private config and per-user Chrome registration on Windows")
+    windows_setup.add_argument("--extension-id",required=True)
+    windows_setup.add_argument("--port",type=int,default=8176)
+    windows_setup.add_argument("--native-port",type=int,default=8177)
+    windows_service=commands.add_parser("install-windows-startup",help="Start ShopKud now and at Windows sign-in")
     profile=commands.add_parser("set-tool-profile",help="Choose guided workflows or the full compatibility tool catalog")
     profile.add_argument("--config",type=Path,required=True)
     profile.add_argument("profile",choices=("guided","full"))
@@ -2400,6 +2428,18 @@ def main():
         try:setup(args.extension_id,args.state_dir,args.manifest_dir,args.port)
         except (ValueError,OSError,TypeError,KeyError):parser.exit(2,"ShopKud setup refused; existing configuration was not replaced. Inspect private targets locally.\n")
         print("ShopKud private setup ready. MCP key was not printed. Start serve, then connect the extension.")
+        return
+    if args.command=="setup-windows":
+        from .setup import setup_windows
+        try:setup_windows(args.extension_id,args.port,args.native_port)
+        except (ValueError,OSError,TypeError,KeyError):parser.exit(2,"ShopKud Windows setup refused; existing configuration was not replaced. Inspect private targets locally.\n")
+        print("ShopKud private Windows setup ready. MCP key was not printed.")
+        return
+    if args.command=="install-windows-startup":
+        from .setup import install_windows_startup
+        try:result=install_windows_startup()
+        except (ValueError,OSError,TypeError,KeyError):parser.exit(2,"ShopKud Windows startup install refused. Existing settings were not replaced.\n")
+        print(f"ShopKud per-user Windows worker {result['state']}; bearer key was not printed.")
         return
     if args.command=="enable-workspace":
         from .setup import enable_workspace

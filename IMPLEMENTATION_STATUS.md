@@ -1,15 +1,15 @@
 # ShopKud P0 / P1 / P2 checklist
 
-Version 0.11.8. Extension-only: no Affiliate Open API, no link redirects,
+Version 0.12.0. Extension-only: no Affiliate Open API, no link redirects,
 aggregate conversion data only.
 
-Supported public MVP target: macOS + Google Chrome + Python 3.11+ and an MCP
-client supporting Streamable HTTP with private headers. Linux and Windows
-native-host registration, Chrome Web Store delivery and a fresh-machine Chrome
-install have not been validated.
+Supported public MVP target: macOS or Windows 10/11 + Google Chrome + Python
+3.11+ and an MCP client supporting Streamable HTTP with private headers. Linux
+native-host registration, Chrome Web Store delivery and a fresh owner-account
+Chrome install remain outside automated validation.
 
 The standalone runtime, cache/freshness behavior, trust boundaries, and
-agent-installed macOS topology are documented in
+agent-installed macOS/Windows topology are documented in
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 Historical verification at commit `238160e`: 244 Python tests, 27 directly

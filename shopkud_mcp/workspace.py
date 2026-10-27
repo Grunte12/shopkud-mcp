@@ -21,6 +21,8 @@ import secrets
 from typing import Iterator
 from urllib.parse import urlsplit
 
+from .platform_security import fchmod_private, has_private_mode, owned_by_current_user
+
 
 _ID_RE = re.compile(r"[0-9a-f]{32}\Z")
 _PRODUCT_ID_RE = re.compile(r"(?:[A-Za-z0-9._~!$&'()*+,;=:@-]|%[0-9a-fA-F]{2})+\Z")
@@ -208,8 +210,8 @@ def _safe_path_info(path: Path, *, directory: bool = False) -> os.stat_result:
         raise ValueError("unsafe_workspace_store") from error
     expected_type = stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode)
     expected_mode = 0o700 if directory else 0o600
-    if (not expected_type or info.st_uid != os.getuid()
-            or stat.S_IMODE(info.st_mode) != expected_mode
+    if (not expected_type or not owned_by_current_user(info)
+            or not has_private_mode(info,expected_mode)
             or (not directory and info.st_nlink != 1)):
         raise ValueError("unsafe_workspace_store")
     return info
@@ -343,15 +345,15 @@ class AnalysisStore:
                 raise ValueError("unsafe_workspace_store") from error
             else:
                 try:
-                    os.chmod(self.root, 0o700, follow_symlinks=False)
+                    if os.name!="nt":os.chmod(self.root, 0o700, follow_symlinks=False)
                 except OSError as error:
                     raise ValueError("unsafe_workspace_store") from error
             try:
                 info = self.root.lstat()
             except OSError as error:
                 raise ValueError("unsafe_workspace_store") from error
-        if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
-                or stat.S_IMODE(info.st_mode) != 0o700):
+        if (not stat.S_ISDIR(info.st_mode) or not owned_by_current_user(info)
+                or not has_private_mode(info,0o700)):
             raise ValueError("unsafe_workspace_store")
 
     def _ensure_database_file(self) -> None:
@@ -368,7 +370,7 @@ class AnalysisStore:
                 raise ValueError("unsafe_workspace_store") from error
             else:
                 try:
-                    os.fchmod(descriptor, 0o600)
+                    fchmod_private(descriptor,0o600)
                 except OSError as error:
                     raise ValueError("unsafe_workspace_store") from error
                 finally:
@@ -389,8 +391,8 @@ class AnalysisStore:
                 continue
             except OSError as error:
                 raise ValueError("unsafe_workspace_store") from error
-            if (not stat.S_ISREG(side_info.st_mode) or side_info.st_uid != os.getuid()
-                    or stat.S_IMODE(side_info.st_mode) != 0o600 or side_info.st_nlink != 1
+            if (not stat.S_ISREG(side_info.st_mode) or not owned_by_current_user(side_info)
+                    or not has_private_mode(side_info,0o600) or side_info.st_nlink != 1
                     or side_info.st_size > _MAX_DATABASE_BYTES):
                 raise ValueError("unsafe_workspace_store")
 

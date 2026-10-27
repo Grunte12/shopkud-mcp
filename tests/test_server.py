@@ -337,5 +337,10 @@ class FramingTests(unittest.TestCase):
     def test_non_object_rejected(self):
         with self.assertRaises(ValueError):native.read_frame(io.BytesIO(struct.pack("=I",2)+b"[]"))
 
+    def test_windows_parent_window_argument_is_accepted(self):
+        args=native.parse_args(["chrome-extension://"+"a"*32+"/","--parent-window=0"])
+        self.assertEqual(args.origin,"chrome-extension://"+"a"*32+"/")
+        self.assertEqual(args.parent_window,"0")
+
 
 if __name__=="__main__":unittest.main()

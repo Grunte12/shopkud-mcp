@@ -4,13 +4,28 @@ import argparse
 import json
 import os
 from pathlib import Path
-import selectors
+import re
 import socket
 import stat
 import struct
 import sys
+import threading
 
 MAX=512000
+
+
+def default_config_path():
+    value=os.environ.get("LOCALAPPDATA")
+    if not value: raise ValueError("configuration_invalid")
+    return Path(value).expanduser().absolute()/"ShopKud MCP"/"config.json"
+
+
+def _owned(info):
+    return os.name=="nt" or info.st_uid==os.getuid()
+
+
+def _private_mode(info,mode):
+    return os.name=="nt" or stat.S_IMODE(info.st_mode)==mode
 
 
 def read_frame(stream):
@@ -46,45 +61,69 @@ def write_frame(stream,value):
 def run(config_path,origin):
     path=Path(config_path)
     info=path.lstat(); directory=path.parent.lstat()
-    if (path.resolve()!=path or not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode)!=0o600
-            or info.st_uid!=os.getuid() or info.st_nlink!=1 or info.st_size>8192
-            or not stat.S_ISDIR(directory.st_mode) or stat.S_IMODE(directory.st_mode)!=0o700
-            or directory.st_uid!=os.getuid()):
+    if (path.resolve()!=path or not stat.S_ISREG(info.st_mode) or not _private_mode(info,0o600)
+            or not _owned(info) or info.st_nlink!=1 or info.st_size>8192
+            or not stat.S_ISDIR(directory.st_mode) or not _private_mode(directory,0o700)
+            or not _owned(directory)):
         raise ValueError("configuration_invalid")
     config=json.loads(path.read_text())
     if origin not in config["allowed_origins"]: raise ValueError("origin_rejected")
-    sock_path=Path(config["socket_path"])
-    if sock_path.parent!=path.parent or sock_path.name!="native.sock": raise ValueError("configuration_invalid")
-    info=sock_path.lstat()
-    if not stat.S_ISSOCK(info.st_mode) or info.st_uid!=os.getuid() or stat.S_IMODE(info.st_mode)!=0o600:
-        raise ValueError("connection_unavailable")
-    with socket.socket(socket.AF_UNIX,socket.SOCK_STREAM) as connection:
+    if "native_port" in config:
+        if (type(config.get("native_port")) is not int or not 1024<=config["native_port"]<=65535
+                or type(config.get("native_token")) is not str
+                or not re.fullmatch(r"[0-9a-f]{64}",config["native_token"])):
+            raise ValueError("configuration_invalid")
+        connection=socket.create_connection(("127.0.0.1",config["native_port"]),timeout=5)
+        hello={"type":"hello","origin":origin,"token":config["native_token"]}
+    else:
+        sock_path=Path(config["socket_path"])
+        if sock_path.parent!=path.parent or sock_path.name!="native.sock": raise ValueError("configuration_invalid")
+        info=sock_path.lstat()
+        if not stat.S_ISSOCK(info.st_mode) or not _owned(info) or not _private_mode(info,0o600):
+            raise ValueError("connection_unavailable")
+        connection=socket.socket(socket.AF_UNIX,socket.SOCK_STREAM)
         connection.settimeout(5); connection.connect(str(sock_path))
+        hello={"type":"hello","origin":origin}
+    with connection:
         channel=connection.makefile("rwb",buffering=0)
-        write_frame(channel,{"type":"hello","origin":origin})
+        write_frame(channel,hello)
         ack=read_frame(channel)
         if ack!={"type":"hello-ack"}: raise ValueError("connection_unavailable")
         connection.settimeout(None)
         write_frame(sys.stdout.buffer,ack)
-        chrome_input=sys.stdin.buffer.raw
-        with selectors.DefaultSelector() as selector:
-            selector.register(chrome_input,selectors.EVENT_READ,"chrome")
-            selector.register(connection,selectors.EVENT_READ,"broker")
-            while True:
-                for key,_ in selector.select():
-                    source=chrome_input if key.data=="chrome" else channel
-                    target=channel if key.data=="chrome" else sys.stdout.buffer
-                    message=read_frame(source)
-                    if message is None: return
-                    write_frame(target,message)
+        def forward_chrome():
+            try:
+                while True:
+                    message=read_frame(sys.stdin.buffer)
+                    if message is None:return
+                    write_frame(channel,message)
+            except (OSError,ValueError,TypeError):
+                pass
+            finally:
+                try:connection.shutdown(socket.SHUT_WR)
+                except OSError:pass
+        threading.Thread(target=forward_chrome,daemon=True).start()
+        while True:
+            message=read_frame(channel)
+            if message is None:return
+            write_frame(sys.stdout.buffer,message)
+
+
+def parse_args(argv=None):
+    parser=argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--config")
+    parser.add_argument("--parent-window")
+    parser.add_argument("origin")
+    return parser.parse_args(argv)
 
 
 def main():
-    parser=argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--config",required=True)
-    parser.add_argument("origin")
-    args=parser.parse_args()
-    try: run(args.config,args.origin)
+    if os.name=="nt":
+        import msvcrt
+        msvcrt.setmode(sys.stdin.fileno(),os.O_BINARY)
+        msvcrt.setmode(sys.stdout.fileno(),os.O_BINARY)
+    args=parse_args()
+    try: run(args.config or default_config_path(),args.origin)
     except (OSError,ValueError,KeyError,TypeError):
         # Fixed diagnostic only; never stdout noise, private paths or tokens.
         write_frame(sys.stdout.buffer,{"type":"bridge-error","error":"native_connection_unavailable"})
