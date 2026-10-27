@@ -7,6 +7,23 @@ const EXTENSION_ROOT = typeof chrome.runtime.getURL==="function" ? chrome.runtim
 const pages = new Map();
 const inFlight = new Map();
 const ownedEntries = new Map();
+const workTabs = new Map();
+let tabLedgerWrite=Promise.resolve();
+const tabRecovery=(async()=>{
+  const saved=await chrome.storage?.session?.get?.("shopkudWorkTabs");
+  for(const entry of saved?.shopkudWorkTabs || []){
+    if(!Number.isInteger(entry.id) || typeof entry.url!=="string")continue;
+    const tab=await tabInfo(entry.id);
+    // Recovery never adopts tabs by URL or by their group name.
+    if(tab?.url===entry.url && tab.active===false){workTabs.set(entry.id,entry.url);}
+  }
+})().catch(()=>{});
+function saveWorkTabs(){
+  const entries=[...workTabs].map(([id,url])=>({id,url}));
+  tabLedgerWrite=tabLedgerWrite.catch(()=>{}).then(()=>chrome.storage?.session?.set?.({shopkudWorkTabs:entries}));
+  return tabLedgerWrite;
+}
+async function rememberWorkTab(id,url){await tabRecovery;workTabs.set(id,url);await saveWorkTabs();}
 const claimedEntries = new Set();
 const opening = new Map();
 const uncertainEntries = new Set();
@@ -362,6 +379,10 @@ async function groupShopKudTab(tabId) {
     ? dashboard : managed.find(item=>Number.isInteger(item.groupId) && item.groupId>=0);
   let groupId=grouped?.groupId ?? null;
   try {
+    if(groupId===null && typeof chrome.tabGroups.query==="function"){
+      const existing=await chrome.tabGroups.query({windowId:tab.windowId,title:"ShopKud"});
+      groupId=existing.sort((a,b)=>a.id-b.id)[0]?.id ?? null;
+    }
     const tabIds=managed.map(item=>item.id);
     groupId=await chrome.tabs.group(groupId===null?{tabIds}:{groupId,tabIds});
     await chrome.tabGroups.update(groupId,{title:"ShopKud",color:"orange",collapsed:false});
@@ -385,24 +406,30 @@ async function ensureDashboard({active=false,windowId=null}={}) {
   return tab;
 }
 async function closeOwnedTabIfIdle(tabId) {
+  await tabRecovery;
   if(!Number.isInteger(tabId) || tabBusy(tabId))return false;
   if(claimedEntries.has(tabId)){
     for(const [url,id] of ownedEntries)if(id===tabId)ownedEntries.delete(url);
     if(listingEntry?.tab===tabId)listingEntry=null;
+    workTabs.delete(tabId);await saveWorkTabs();
     roster();return false;
   }
   if(typeof chrome.tabs?.remove!=="function")return false;
   const current=await tabInfo(tabId);if(!current || current.active!==false)return false;
+  const expected=workTabs.get(tabId) || (listingEntry?.tab===tabId?listingEntry.url:[...ownedEntries].find(([,id])=>id===tabId)?.[0]);
+  if(!expected || current.url!==expected){workTabs.delete(tabId);await saveWorkTabs();return false;}
   // A cleanup timer may pass the first check just before the next read starts.
   if(tabBusy(tabId) || claimedEntries.has(tabId))return false;
   try {await chrome.tabs.remove(tabId);} catch {return false;}
+  workTabs.delete(tabId);await saveWorkTabs();
   for(const [url,id] of ownedEntries)if(id===tabId)ownedEntries.delete(url);
   uncertainEntries.delete(tabId);for(const [id,page] of pages)if(page.tab===tabId)pages.delete(id);
   if(listingEntry?.tab===tabId)listingEntry=null;
   roster();return true;
 }
 async function cleanupAutomationTabs() {
-  const tabs=new Set([...ownedEntries.values()]);if(Number.isInteger(listingEntry?.tab))tabs.add(listingEntry.tab);
+  await tabRecovery;
+  const tabs=new Set([...workTabs.keys(),...ownedEntries.values()]);if(Number.isInteger(listingEntry?.tab))tabs.add(listingEntry.tab);
   await Promise.all([...tabs].map(closeOwnedTabIfIdle));
 }
 const listingURL = value => typeof value==="string" && /^https:\/\/shopee\.co\.th\/product\/[1-9][0-9]{0,19}\/[1-9][0-9]{0,19}$/u.test(value) && !/[\r\n]/u.test(value);
@@ -459,10 +486,11 @@ async function readListing(args,task) {
       // Retain uncertainty even if create's outcome is unknown; never replay it.
       listingEntry={tab:null,url,uncertain:true};
       const opened=await chrome.tabs.create({url,active:false});
-      listingEntry.tab=opened.id;created=true;await groupShopKudTab(opened.id);
+      listingEntry.tab=opened.id;created=true;await rememberWorkTab(opened.id,url);await groupShopKudTab(opened.id);
     } else {
       listingEntry={tab:listingEntry.tab,url,uncertain:true};reused=true;
       await chrome.tabs.update(listingEntry.tab,{url,active:false});
+      await rememberWorkTab(listingEntry.tab,url);
     }
     if(task.cancelled)return listingFailure("cancelled");
     let loaded=await waitForListingTab(listingEntry.tab,url,task);
@@ -480,14 +508,13 @@ async function readListing(args,task) {
   current=await tabInfo(listingEntry.tab);
   if(task.cancelled)return listingFailure("cancelled");
   if(!current || current.url!==url)return listingFailure("listing_context_changed");
-  if(current.active!==false || current.status!=="complete")return listingFailure("listing_tab_not_idle");
+  if(current.active!==false || current.status!=="complete")return {...listingFailure("listing_tab_not_idle"),readiness:{phase:"before_read",active:current.active,status:current.status}};
   if(!await chrome.permissions.contains(listingAccess))return await listingPermissionFailure();
   if(task.cancelled)return listingFailure("cancelled");
-  // One-shot local consent: never steal focus during ordinary background reads.
-  const consent=await chrome.storage?.session?.get?.("shopkudListingForegroundOnce");
+  // Public product pages defer seller/rating hydration until their tab is active.
+  const preferences=await chrome.storage?.local?.get?.("shopkudListingForeground");
   let previousTab=null,foregroundUsed=false,focusRestored=false,injected;
-  if(consent?.shopkudListingForegroundOnce===true){
-    await chrome.storage.session.remove("shopkudListingForegroundOnce");
+  if(preferences && preferences.shopkudListingForeground!==false){
     const active=await chrome.tabs.query({active:true,windowId:current.windowId});
     previousTab=active.find(tab=>tab.id!==current.id) || null;
   }
@@ -499,16 +526,17 @@ async function readListing(args,task) {
     injected=await chrome.scripting.executeScript({target:{tabId:listingEntry.tab,frameIds:[0]},files:["listing.js"],world:"ISOLATED"});
   } finally {
     // Do not override a tab switch the user made while the reader was running.
-    if(foregroundUsed && (await tabInfo(current.id))?.active===true && await tabInfo(previousTab.id)){
-      await chrome.tabs.update(previousTab.id,{active:true});focusRestored=true;
-    }
-    listingForegroundTab=null;
+    try {
+      if(foregroundUsed && (await tabInfo(current.id))?.active===true && await tabInfo(previousTab.id)){
+        await chrome.tabs.update(previousTab.id,{active:true});focusRestored=true;
+      }
+    } finally {listingForegroundTab=null;}
   }
   if(task.cancelled)return listingFailure("cancelled");
   const finalTab=await tabInfo(listingEntry.tab);
   if(task.cancelled)return listingFailure("cancelled");
   if(!finalTab || finalTab.url!==url)return listingFailure("listing_context_changed");
-  if(finalTab.active!==false || finalTab.status!=="complete")return listingFailure("listing_tab_not_idle");
+  if(finalTab.active!==false || finalTab.status!=="complete")return {...listingFailure("listing_tab_not_idle"),readiness:{phase:"after_read",active:finalTab.active,status:finalTab.status,foreground_used:foregroundUsed,focus_restored:focusRestored}};
   const result=injected?.length===1 && injected[0].frameId===0?injected[0].result:null;
   const parts=url.split("/");
   if(!result || typeof result!=="object" || result.source_url!==url || result.shop_id!==parts[4] || result.product_id!==parts[5])throw new Error("invalid listing evidence");
@@ -561,9 +589,10 @@ async function openOfferOnce(args) {
       roster();
       // Mark before dispatch; an unknown update must never be automatically replayed.
       await chrome.tabs.update(tab,{url,active:false});
+      await rememberWorkTab(tab,url);
     } else {
       const newTab=await chrome.tabs.create({url,active:false});
-      tab=newTab.id;ownedEntries.set(url,tab);created=true;await groupShopKudTab(tab);
+      tab=newTab.id;ownedEntries.set(url,tab);created=true;await rememberWorkTab(tab,url);await groupShopKudTab(tab);
     }
   }
   const evidence={tab_id:tab,entry_url:url,created_tab:created,reused_tab:reused,owner_tab_changed:false,extension_version:chrome.runtime.getManifest().version};
@@ -572,6 +601,7 @@ async function openOfferOnce(args) {
     const finish=result=>{
       if(settled)return;settled=true;clearTimeout(timer);opening.delete(tab);chrome.tabs.onUpdated.removeListener(loaded);
       if(!result.ok)uncertainEntries.add(tab);
+      if(!result.ok)setTimeout(()=>closeOwnedTabIfIdle(tab),800);
       resolve({...result,...evidence,retry_automatically:false});
     };
     const probe=()=>chrome.tabs.sendMessage(tab,{type:"shopkud-discover"},reply=>{
@@ -660,8 +690,10 @@ function connect(automatic=false) {
         readListing(message.arguments,task).catch(()=>{
           if(listingEntry)listingEntry.uncertain=true;
           return {...listingFailure("listing_unconfirmed"),outcome:"unconfirmed"};
-        }).then(result=>{if(port===channel)channel.postMessage({type:"result",id:message.id,result});
-          if(result?.ok===true)setTimeout(()=>closeOwnedTabIfIdle(listingEntry?.tab),800);
+        }).then(result=>{
+          const tabId=listingEntry?.tab;
+          setTimeout(()=>closeOwnedTabIfIdle(tabId),800);
+          if(port===channel)channel.postMessage({type:"result",id:message.id,result});
         }).finally(()=>{if(listingTask===task)listingTask=null;});
         return;
       }
@@ -682,7 +714,7 @@ function connect(automatic=false) {
           channel.postMessage({type:"result",id:message.id,result:{ok:false,error:"extension_busy",status:"not_reloaded",retry_automatically:false}});return;
         }
         channel.postMessage({type:"result",id:message.id,result:{ok:true,status:"reloading",extension_version:chrome.runtime.getManifest().version}});
-        setTimeout(()=>chrome.runtime.reload(),100);
+        setTimeout(()=>{cleanupAutomationTabs().finally(()=>chrome.runtime.reload());},100);
         return;
       }
       if(message.page_id==="extension" && ["open_offer","entry_info"].includes(message.operation)) {
@@ -712,7 +744,7 @@ function connect(automatic=false) {
           chrome.tabs.sendMessage(page.tab,{type:"shopkud-command",nonce:page.nonce,request_id:message.id,operation:message.operation,arguments:message.arguments},result=>{
             const error=chrome.runtime.lastError;inFlight.delete(message.id);
             if(port===channel)channel.postMessage({type:"result",id:message.id,result:error?{ok:false,error:"page_context_unavailable",outcome:"unconfirmed",retry_automatically:false}:result || {ok:false,error:"invalid_page_result",outcome:"unconfirmed",retry_automatically:false}});
-            if(!error && result?.ok===true)setTimeout(()=>closeOwnedTabIfIdle(page.tab),800);
+            setTimeout(()=>closeOwnedTabIfIdle(page.tab),800);
           });
         })().catch(()=>reject("link_preflight_failed"));
         return;
@@ -720,6 +752,7 @@ function connect(automatic=false) {
       chrome.tabs.sendMessage(page.tab,{type:"shopkud-command",nonce:page.nonce,request_id:message.id,operation:message.operation,arguments:message.arguments},result=>{
         const error=chrome.runtime.lastError;
         inFlight.delete(message.id);
+        if(message.operation==="detail")setTimeout(()=>closeOwnedTabIfIdle(page.tab),800);
         if(port!==channel) return; // Unknown operation outcome: no replay.
         if(error) {
           pages.delete(page.page_id);roster();
@@ -727,7 +760,6 @@ function connect(automatic=false) {
         } else {
           void rememberConfirmedLinks(message.operation,message.arguments,result);
           channel.postMessage({type:"result",id:message.id,result:result || {ok:false,error:"invalid_page_result",outcome:"unconfirmed"}});
-          if(message.operation==="detail" && result?.ok===true)setTimeout(()=>closeOwnedTabIfIdle(page.tab),800);
         }
       });
     });
@@ -793,6 +825,7 @@ chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   return false;
 });
 chrome.tabs.onRemoved.addListener(tab=>{
+  workTabs.delete(tab);void saveWorkTabs();
   if(dashboardTabId===tab){dashboardTabId=null;try {chrome.storage?.session?.remove?.("shopkudDashboardTabId");} catch {}}
   if(listingEntry?.tab===tab){listingTask && (listingTask.cancelled=true);listingTask?.finishWait?.();listingEntry=null;}
   uncertainEntries.delete(tab);claimedEntries.delete(tab);
@@ -803,7 +836,8 @@ chrome.tabs.onRemoved.addListener(tab=>{
 });
 chrome.tabs.onActivated?.addListener?.(({tabId})=>{
   if(tabId===listingForegroundTab)return;
-  const owned=[...ownedEntries.values()].includes(tabId) || listingEntry?.tab===tabId;
+  const owned=workTabs.has(tabId) || [...ownedEntries.values()].includes(tabId) || listingEntry?.tab===tabId;
+  if(workTabs.has(tabId)){workTabs.delete(tabId);void saveWorkTabs();}
   if(!owned)return;claimedEntries.add(tabId);
   if(!tabBusy(tabId))closeOwnedTabIfIdle(tabId).catch(()=>{});
 });
@@ -811,6 +845,7 @@ chrome.tabs.onActivated?.addListener?.(({tabId})=>{
 chrome.sidePanel?.setPanelBehavior?.({openPanelOnActionClick:false}).catch(()=>{});
 chrome.action?.onClicked?.addListener?.(tab=>{ensureDashboard({active:true,windowId:tab?.windowId}).catch(()=>{});});
 hydrateTelemetry().catch(()=>{});
+tabRecovery.then(()=>cleanupAutomationTabs()).catch(()=>{});
 if(typeof importScripts==="function") {
   // MV3 reload can leave the worker dormant until an event wakes it. A Chrome
   // alarm survives worker suspension; short timers only run while awake.

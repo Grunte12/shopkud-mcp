@@ -81,7 +81,7 @@ function harness() {
   };
 }
 
-function run() {
+async function run() {
   const h = harness();
   const helpers = vm.runInContext("({confirmedLinkReceipts,sanitizeDashboard})", h.context);
   const receipts = helpers.confirmedLinkReceipts("create_link_with_subids", {product_id:"123",sub_ids:["twitter","clip-1"]}, {
@@ -172,6 +172,7 @@ function run() {
   assert.equal(JSON.stringify(reloadPort.messages.at(-1)),JSON.stringify({type:"result",id:"e".repeat(32),result:{ok:true,status:"reloading",extension_version:"test"}}));
   assert.equal(reload.reloads,0,"reload waits until its receipt is sent");
   reload.fireDelay(100);
+  await new Promise(resolve=>setImmediate(resolve));
   assert.equal(reload.reloads,1,"idle extension reloads once");
 
   console.log(JSON.stringify({ ok: true, checks: [
@@ -184,4 +185,4 @@ function run() {
   ] }));
 }
 
-run();
+run().catch(error=>{console.error(error);process.exitCode=1;});

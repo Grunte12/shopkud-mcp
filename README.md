@@ -282,6 +282,21 @@ All fixture identities, links and credentials must be synthetic. Test outputs,
 screenshots, runtime files and captured evidence are not source assets and must
 remain outside commits. Do not visit fixture tracking links.
 
+### Public product tabs
+
+When reading public product details, ShopKud temporarily foregrounds its own
+work tab so Shopee can load seller and rating fields, then restores the previous
+tab. It does not override a tab switch you make during the read. In Chrome's
+ShopKud extension options, disable **เปิดแท็บงานด้านหน้าชั่วคราว** for
+background-only reading; seller/rating data may then remain unavailable.
+Chrome DevTools and remote debugging are not required.
+
+Work tabs reuse one ShopKud group per window and are cleaned up after successful
+or failed reads when still owned, inactive and idle. User-created, claimed or
+navigated tabs are preserved. Untracked tabs left by older versions are not
+deleted by guessing their owner. MCP-triggered reload cleans up first; manual
+extension reload or browser shutdown can discard session ownership records.
+
 ## Security and scope
 
 - No arbitrary JavaScript/shell operation, cookie export, account login,

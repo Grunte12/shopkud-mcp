@@ -309,6 +309,11 @@ async function main() {
     assert.equal(noMain.error, "unsupported_product_layout");
     assert.deepEqual(noMain.layout_evidence, { main_found: false, matched_product_metadata: 0 });
     results.push("unsupported layout returns explicit main-not-found error");
+    await page.setContent("<main>Loading or unavailable product</main>");
+    const emptyProduct=await read();
+    assert.equal(emptyProduct.ok,false);
+    assert.equal(emptyProduct.error,"listing_product_not_ready");
+    results.push("an empty product shell is not successful product evidence");
   } finally {
     await browser.close();
   }

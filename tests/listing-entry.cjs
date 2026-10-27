@@ -25,7 +25,7 @@ function harness(options={}){
   let nextCommand=0;
   const chrome={runtime:{id:"fixture-extension",lastError:null,getManifest:()=>({version:manifest.version,optional_permissions:manifest.optional_permissions||[],optional_host_permissions:manifest.optional_host_permissions||[]}),getURL:file=>`chrome-extension://fixture/${file}`,onMessage:runtimeMessage,
     connectNative(host){const p={host,messages:[],onDisconnect:event(),onMessage:event(),postMessage(value){this.messages.push(value);}};ports.push(p);return p;}},
-    storage:{session:{async get(){return {shopkudListingForegroundOnce:options.foregroundOnce===true};},async remove(){options.foregroundOnce=false;}}},
+    storage:{local:{async get(){return options.freshPreferences?{}:{shopkudListingForeground:options.foregroundEnabled===true};}}},
     permissions:{contains(permission,callback){permissionChecks.push(permission);
       const hasScripting=options.scriptingGranted??options.permissionsGranted!==false;
       const hasHost=options.hostGranted??options.permissionsGranted!==false;
@@ -133,14 +133,19 @@ async function main(){
   jsonEqual(created,{...PRODUCT_RESULT,entry:{tab_id:500,entry_url:PRODUCT,created_tab:true,reused_tab:false,owner_tab_changed:false,extension_version:manifest.version},retry_automatically:false});
   jsonEqual(create.creates,[{id:500,url:PRODUCT,active:false}]);
   assert.equal(create.updates.length,0);
-  const foreground=harness({foregroundOnce:true,tabs:[{id:42,url:"https://example.com",active:true}]});
+  const foreground=harness({freshPreferences:true,tabs:[{id:42,url:"https://example.com",active:true}]});
   const focused=await foreground.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
   assert.equal(focused.ok,true);assert.equal(focused.entry.focus_restored,true);
-  assert.equal(foreground.tabs.get(42).active,true);assert.equal(foreground.options.foregroundOnce,false);
-  const focusFailure=harness({foregroundOnce:true,scriptFails:true,tabs:[{id:42,url:"https://example.com",active:true}]});
+  assert.equal(foreground.tabs.get(42).active,true);
+  const repeatFocused=await foreground.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
+  assert.equal(repeatFocused.entry.focus_restored,true,"normal mode applies to subsequent reads too");
+  const backgroundOnly=harness({foregroundEnabled:false,tabs:[{id:42,url:"https://example.com",active:true}]});
+  const backgroundRead=await backgroundOnly.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
+  assert.equal(backgroundRead.entry.owner_tab_changed,false);assert.equal(backgroundOnly.updates.length,0);
+  const focusFailure=harness({foregroundEnabled:true,scriptFails:true,tabs:[{id:42,url:"https://example.com",active:true}]});
   await focusFailure.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
   assert.equal(focusFailure.tabs.get(42).active,true,"restore focus even when injection fails");
-  const userSwitch=harness({foregroundOnce:true,tabs:[{id:42,url:"https://example.com",active:true}],scriptCallback:({tab})=>{tab.active=false;}});
+  const userSwitch=harness({foregroundEnabled:true,tabs:[{id:42,url:"https://example.com",active:true}],scriptCallback:({tab})=>{tab.active=false;}});
   const userSwitched=await userSwitch.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
   assert.equal(userSwitched.entry.focus_restored,false,"do not override a user switch");
   assert.equal(create.executions.length,1);
@@ -233,6 +238,16 @@ async function main(){
   const failedRetry=await unknown.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
   assert.equal(failedRetry.error,"listing_unconfirmed");assert.equal(unknown.creates.length,1,"unknown create/injection is never automatically replayed");
   assert.equal(unknown.executions.length,1);
+  await unknown.runTimers(800);
+  assert.deepEqual(unknown.removals,[500],"failed owned read is cleaned up too");
+  await repeat.runTimers(800);
+  assert.deepEqual(repeat.removals,[500],"successful read closes only its own tab");
+  assert.equal(repeat.tabs.has(30),true,"owner's identical URL tab remains open");
+  const navigated=harness();
+  await navigated.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
+  navigated.tabs.get(500).url="https://example.com";
+  await navigated.runTimers(800);
+  assert.equal(navigated.removals.length,0,"do not close a changed tab");
 
   const createUnknown=harness({createFails:true});
   assert.equal((await createUnknown.command("read_listing",{product_url:PRODUCT,open_if_missing:true})).error,"listing_unconfirmed");

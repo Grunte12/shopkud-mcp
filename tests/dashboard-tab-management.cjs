@@ -20,7 +20,7 @@ async function main(){
       connectNative(){return{onDisconnect:event(),onMessage:event(),postMessage(){}};},sendMessage(_message,callback){callback?.();}},
     storage:{session:{async get(key){return{[key]:saved[key]};},async set(value){Object.assign(saved,value);},async remove(key){delete saved[key];}}},
     sidePanel:{async setPanelBehavior(){},async open(){}},action:{onClicked:actionClicked},windows:{async update(){}},
-    tabGroups:{async update(id,info){groupUpdates.push({id,info});return{id,...info};}},
+    tabGroups:{async query(){return [{id:40,windowId:8,title:"ShopKud"}];},async update(id,info){groupUpdates.push({id,info});return{id,...info};}},
     tabs:{onActivated:tabsActivated,onRemoved:tabsRemoved,onUpdated:tabsUpdated,
       async query(){return[...tabs.values()];},
       get(id,callback){callback(tabs.get(id)||null);},
@@ -41,6 +41,7 @@ async function main(){
   assert.equal(creates[0].active,true);
   assert.equal(groupUpdates.at(-1).info.title,"ShopKud");
   assert.equal(groupUpdates.at(-1).info.color,"orange");
+  assert.equal(groups[0].groupId,40,"reuses an existing group even before a Dashboard is tracked");
 
   actionClicked.fire({windowId:8});await tick();await tick();
   assert.equal(creates.length,1,"second action focuses the existing Dashboard");
@@ -64,6 +65,19 @@ async function main(){
   assert.ok(tabs.has(2),"claimed evidence remains open for human review");
   tabs.delete(2);tabsRemoved.fire(2);
   assert.equal(vm.runInContext("claimedEntries.has(2)",context),false,"a manually closed claimed tab leaves no stale lifecycle state");
+  tabs.set(4,{id:4,windowId:8,url:"https://shopee.co.th/product/1/4",active:false,status:"complete"});
+  tabs.set(5,{id:5,windowId:8,url:"https://shopee.co.th/product/1/4",active:false,status:"complete"});
+  await vm.runInContext('rememberWorkTab(4,"https://shopee.co.th/product/1/4")',context);
+  assert.equal(saved.shopkudWorkTabs[0].id,4);
+  const recovered=vm.createContext({chrome,URL,Map,Set,Promise,Object,Array,Number,String,RegExp,Date,setTimeout,clearTimeout});
+  vm.runInContext(source,recovered);await tick();await tick();
+  assert.equal(tabs.has(4),false,"worker restart cleans up recorded work tabs");
+  assert.equal(tabs.has(5),true,"recovery does not adopt matching user tabs");
+  await vm.runInContext('rememberWorkTab(5,"https://shopee.co.th/product/1/4")',recovered);
+  tabsActivated.fire({tabId:5});await tick();
+  assert.equal(vm.runInContext("claimedEntries.has(5)",recovered),true,"claim survives removal from the recovered ledger");
+  await vm.runInContext("cleanupAutomationTabs()",recovered);
+  assert.equal(tabs.has(5),true,"a user-claimed recovered tab survives cleanup");
 
   console.log(JSON.stringify({ok:true,checks:["one Dashboard is reused","ShopKud tabs share one Chrome group","idle automation tabs close","human-claimed and Dashboard tabs remain"]}));
 }

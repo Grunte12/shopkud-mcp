@@ -11,6 +11,11 @@
 <button id="enable" type="button">อนุญาตอ่านหน้าสินค้า</button>
 <button id="disable" type="button">ปิดสิทธิ์อ่านหน้าสินค้า</button>
 <p id="status" role="status">กำลังตรวจสิทธิ์…</p>
+<h2>วิธีอ่านข้อมูลสินค้า</h2>
+<label><input id="foreground" type="checkbox" checked disabled aria-describedby="foreground-help"> เปิดแท็บงานด้านหน้าชั่วคราว (แนะนำ)</label>
+<p id="foreground-help">ช่วยให้ Shopee โหลดชื่อร้านและคะแนนก่อนอ่าน เปิดเป็นค่าเริ่มต้น ใช้เฉพาะแท็บที่ ShopKud สร้าง แล้วกลับแท็บเดิมเมื่อเสร็จ หากคุณสลับแท็บเอง ShopKud จะไม่แย่งกลับ ไม่ซื้อหรือเลือกตัวเลือกสินค้า</p>
+<p>ปิดตัวเลือกนี้เพื่อทำงานเบื้องหลังเท่านั้น แต่ข้อมูลร้านหรือคะแนนอาจโหลดไม่ครบ ไม่ต้องเปิด Remote debugging หรือติดตั้ง DevTools</p>
+<p id="foreground-status" role="status"></p>
 </main>
 <script src="listing-access.js"></script>
 </body>

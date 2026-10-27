@@ -15,3 +15,19 @@ document.getElementById("disable").addEventListener("click",async event=>{
   try{await chrome.permissions.remove(access);await refresh();}catch{status.textContent="ปิดสิทธิ์ไม่สำเร็จ กรุณาตรวจการตั้งค่าส่วนขยาย";}
 });
 refresh().catch(()=>{status.textContent="ตรวจสิทธิ์ไม่สำเร็จ";});
+const foreground=document.getElementById("foreground");
+const foregroundStatus=document.getElementById("foreground-status");
+chrome.storage.local.get("shopkudListingForeground").then(preferences=>{
+  foreground.checked=preferences.shopkudListingForeground!==false;
+  foreground.disabled=false;
+}).catch(()=>{foregroundStatus.textContent="อ่านการตั้งค่าไม่สำเร็จ กรุณาเปิดหน้านี้ใหม่";});
+foreground.addEventListener("change",async event=>{
+  if(!event.isTrusted)return;
+  const enabled=foreground.checked;foreground.disabled=true;
+  try{
+    await chrome.storage.local.set({shopkudListingForeground:enabled});
+    foregroundStatus.textContent=enabled?"บันทึกแล้ว — เปิดแท็บงานชั่วคราวแล้วกลับแท็บเดิม":"บันทึกแล้ว — อ่านในเบื้องหลัง ข้อมูลบางส่วนอาจไม่ครบ";
+  }catch{
+    foreground.checked=!enabled;foregroundStatus.textContent="บันทึกไม่สำเร็จ ยังใช้การตั้งค่าเดิม กรุณาลองอีกครั้ง";
+  }finally{foreground.disabled=false;}
+});

@@ -54,6 +54,7 @@
   const product=products.length===1?products[0]:null;
   const heading=main?[...main.querySelectorAll("h1")].find(visible):null;
   const name=product?text(product.name):heading?text(heading.innerText):null;
+  if(main && !name)return failure("listing_product_not_ready");
   const variant={model:null,sku:null,color:null,selected_options:[],available_options:[]};
   const optionLabel=/^(?:สี|color|รุ่น|model|ขนาด|size|ขนาดจอ|ความจุ|capacity|ตัวเลือก|แบบ|type)$/iu;
   const specEvidence=[];
