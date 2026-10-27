@@ -147,7 +147,12 @@
         const timer=setTimeout(()=>finish(fail("product_detail_unavailable")),args.open_link_dialog?6000:15000);
         observer.observe(document.documentElement,{childList:true,subtree:true,characterData:true});
       });
-      if(!initial.ok || !args.open_link_dialog)return initial;
+      if(!initial.ok)return initial;
+      if(!args.open_link_dialog){
+        busy=true;
+        try{return await Detail.withTerms(document,location.href,Core,()=>!command.cancelled && active && Detail.route(location.href)?.url===activeUrl,initial);}
+        finally{busy=false;}
+      }
       busy=true;
       try{return await Detail.openLink(document,location.href,Core,()=>!command.cancelled && active && Detail.route(location.href)?.url===activeUrl && Detail.route(location.href)?.product_id===args.expected_product_id);}
       finally{busy=false;}

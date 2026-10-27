@@ -28,6 +28,7 @@ DETAIL = {
     "extra_commission_start_date": None, "extra_commission_end_date": None,
     "attribution_duration_days": None, "attribution_duration_source": None,
     "affiliate_url": None,
+    "offer_terms": {"status": "observed", "sections": [{"title": "ค่าคอมจากร้านค้า", "rows": [], "notes": ["เงื่อนไขตัวอย่าง"]}]},
     "link_source": None, "link_action": None, "observations_only": True,
     "link_attribution_verified": False, "missing_fields": [], "retry_automatically": False,
     "variant_info": {"model_id": None, "model_name": None, "color": None},
@@ -174,6 +175,7 @@ class ProductDetailToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(brief["channels"][0]["channel"], "social")
         self.assertEqual(brief["channels"][0]["total_pct"], 5)
         self.assertFalse(brief["affiliate_link_available"])
+        self.assertEqual(brief["offer_terms"], full["offer_terms"])
         self.assertNotIn("images", brief)
         self.assertNotIn("gallery", brief)
         self.assertNotIn("gallery_complete", brief)

@@ -76,6 +76,7 @@ class PlaybookBroker:
                     "price_min_thb": override.get("price_min_thb", row["price_min_thb"]),
                     "price_max_thb": override.get("price_max_thb", row["price_max_thb"]),
                     "observed_at": "2026-10-24T00:00:00Z",
+                    "offer_terms": {"status": "observed", "sections": [{"title": "ค่าคอมพิเศษ", "rows": [], "notes": ["fixture credit rule"]}]},
                     "images": [{"url": f"https://down-th.img.susercontent.com/file/{self.detail_id}"}],
                     "channels": [
                         {"channel": "social", "label": "Social", "total_pct": float("nan"),
@@ -167,6 +168,7 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
             "extra_commission_cap_thb", "shopee_commission_cap_thb",
         } for row in first["commission_channels"]))
         self.assertEqual(first["commission_pct"], 5)
+        self.assertEqual(first["offer_terms"]["sections"][0]["notes"], ["fixture credit rule"])
         self.assertEqual(first["commission_thb_per_order"], 2904.5)
         self.assertEqual(first["shop_id"], "12345")
         self.assertEqual(first["product_url"], f"https://shopee.co.th/product/12345/{first['product_id']}")

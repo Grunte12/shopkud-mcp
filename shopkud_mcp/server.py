@@ -783,7 +783,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                         "price_min_thb","price_max_thb","observed_at","variant_info","offer_end_date","offer_end_date_source",
                         "extra_commission_start_date","extra_commission_end_date","attribution_duration_days","attribution_duration_source","affiliate_url","link_source",
                         "link_action","observations_only","link_attribution_verified","missing_fields","missing_fields_scope","commission_caps_status","retry_automatically",
-                        "history_saved","history_receipt","entry")
+                        "history_saved","history_receipt","entry","offer_terms")
                 channel_fields=("channel","label","extra_commission","shopee_commission","extra_commission_displayed",
                                 "commission_layout","total_pct_source","total_pct","estimated_commission_thb","cap_thb","cap_source")
                 result={**{key:result[key] for key in fields if key in result},
@@ -1233,6 +1233,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 verified.append({
                     "product_id": row.get("product_id"), "name": detail_name,
                     "detail_verified": True, "detail_source": "affiliate_offer_detail",
+                    "offer_terms": detail.get("offer_terms") if type(detail.get("offer_terms")) is dict else None,
                     "detail_missing_fields": [field for field in (detail.get("missing_fields") if type(detail.get("missing_fields")) is list else [])[:20]
                                               if type(field) is str and re.fullmatch(r"[a-z0-9_]{1,64}",field)],
                     "variant_info": ({key: detail.get("variant_info", {}).get(key)

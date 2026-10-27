@@ -15,6 +15,85 @@
     try {const u=new URL(value);return u.protocol==="https:" && u.hostname==="s.shopee.co.th" && !u.username && !u.password && !u.port && !u.hash && /^\/[A-Za-z0-9]+$/u.test(u.pathname)?value:null;}
     catch {return null;}
   }
+  const visible=node=>Boolean(node.getClientRects().length) && node.ownerDocument.defaultView.getComputedStyle(node).visibility!=="hidden";
+  const termsDialogs=doc=>[...doc.querySelectorAll('[role="dialog"]')].filter(node=>visible(node) && node.querySelector('.ant-modal-title')?.textContent.trim()==="รายละเอียดข้อเสนอ");
+  function readTerms(doc,value,Core) {
+    const dialogs=termsDialogs(doc);
+    const base={source:"visible_offer_terms_dialog",source_url:route(value)?.url || null,sections:[]};
+    if(dialogs.length!==1)return {...base,status:dialogs.length?"ambiguous":"not_observed"};
+    const dialog=dialogs[0],nodes=[...dialog.querySelectorAll('.comm-table-title,table,.comm-tip')].filter(visible);
+    if(nodes.length>30)return {...base,status:"unsupported_layout"};
+    let section=null,unsupported=false;
+    const text=node=>(node.textContent || "").replace(/\s+/gu," ").trim();
+    for(const node of nodes) {
+      if(node.matches('.comm-table-title')) {
+        const title=text(node);
+        if(title.length>240 || base.sections.length>=8){unsupported=true;break;}
+        section={title,rows:[],notes:[]};base.sections.push(section);
+      } else if(!section){unsupported=true;}
+      else if(node.matches('.comm-tip')) {
+        const notes=[...node.querySelectorAll('li')].filter(visible);
+        for(const note of notes.length?notes:[node]) {
+          const value=text(note);
+          if(value.length>1500 || section.notes.length>=12){unsupported=true;break;}
+          if(value)section.notes.push(value);
+        }
+      } else {
+        const headers=[...node.querySelectorAll('thead th')].map(text);
+        if(headers.length!==3 || !headers[0].includes('ประเภทช่องทาง') || !headers[1].includes('เครดิต') || !headers[2].includes('ค่าคอม')){unsupported=true;continue;}
+        const carry=new Map(),rows=[...node.querySelectorAll('tbody tr')].filter(visible);
+        if(rows.length>12){unsupported=true;continue;}
+        for(const row of rows) {
+          const values=[],cells=[...row.querySelectorAll('td')];let index=0;
+          for(let col=0;col<3;col++) {
+            const span=carry.get(col);
+            if(span){values.push(span.value);if(--span.left===0)carry.delete(col);continue;}
+            const cell=cells[index++];
+            if(!cell || cell.colSpan!==1 || cell.rowSpan<1 || cell.rowSpan>12){unsupported=true;break;}
+            const value=text(cell);if(value.length>600){unsupported=true;break;}
+            values.push(value);if(cell.rowSpan>1)carry.set(col,{value,left:cell.rowSpan-1});
+          }
+          if(values.length!==3 || index!==cells.length){unsupported=true;continue;}
+          const normalized=Core.normalizeDigits(values[2]);
+          section.rows.push({channel_label:values[0],credit_rule:values[1],rate_text:values[2],
+            commission_pct:/^[0-9]+(?:\.[0-9]+)?%$/u.test(normalized)?Core.parseCommissionPct(normalized,true):null});
+        }
+        if(carry.size)unsupported=true;
+      }
+    }
+    return {...base,status:unsupported || !base.sections.length || base.sections.some(s=>!s.rows.length)?"unsupported_layout":"observed"};
+  }
+  async function withTerms(doc,value,Core,stillCurrent,initial) {
+    const attach=terms=>({...initial,offer_terms:terms});
+    if(!stillCurrent())return {...initial,offer_terms:{status:"page_changed",sections:[]}};
+    if(termsDialogs(doc).length)return attach(readTerms(doc,value,Core));
+    if([...doc.querySelectorAll('[role="dialog"]')].some(visible))return attach({status:"other_dialog_open",sections:[]});
+    const buttons=[...doc.querySelectorAll('main button,main a,main span')].filter(node=>visible(node) && !node.disabled && node.getAttribute('aria-disabled')!=="true" && node.children.length===0 && node.textContent.trim()==="ดูรายละเอียด");
+    if(buttons.length!==1)return attach({status:"opener_unavailable",sections:[]});
+    let opened=null;
+    try {
+      buttons[0].click();
+      return await new Promise(resolve=>{
+        let done=false;
+        const finish=terms=>{if(done)return;done=true;observer.disconnect();clearTimeout(timer);resolve(attach(terms));};
+        const inspect=()=>{
+          if(!stillCurrent())return finish({status:"page_changed",sections:[]});
+          const detail=read(doc,value,Core);
+          if(!detail.ok)return finish({status:detail.error,sections:[]});
+          const dialogs=termsDialogs(doc);if(dialogs.length===1)opened=dialogs[0];
+          const terms=readTerms(doc,value,Core);
+          if(terms.status==="observed" || terms.status==="ambiguous")finish(terms);
+        };
+        const observer=new doc.defaultView.MutationObserver(inspect);
+        const timer=setTimeout(()=>finish(stillCurrent()?{...readTerms(doc,value,Core),status:"incomplete_or_timeout"}:{status:"page_changed",sections:[]}),2000);
+        observer.observe(doc.documentElement,{childList:true,subtree:true,characterData:true,attributes:true});inspect();
+      });
+    } catch {return attach({status:"read_failed",sections:[]});}
+    finally {
+      // Never close a pre-existing/user dialog or one on a changed route.
+      if(opened && stillCurrent() && opened.isConnected){const close=opened.querySelector('button[aria-label="Close"]');if(close && visible(close))close.click();}
+    }
+  }
   function read(doc,value,Core) {
     const context=route(value);
     if(context?.kind!=="detail")return {ok:false,error:"product_detail_page_required"};
@@ -140,5 +219,5 @@
       inspect();
     });
   }
-  window.ShopKudDetail={route,shortLink,read,openLink};
+  window.ShopKudDetail={route,shortLink,read,readTerms,withTerms,openLink};
 })();
