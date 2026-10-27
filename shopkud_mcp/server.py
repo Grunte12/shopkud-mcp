@@ -256,7 +256,10 @@ def read_config(path):
     if (not isinstance(config["allowed_origins"], list) or not 1 <= len(config["allowed_origins"]) <= 8
             or any(not isinstance(x,str) or not re.fullmatch(r"chrome-extension://[a-p]{32}/", x) for x in config["allowed_origins"])):
         raise ValueError("invalid_config")
-    if Path(config["socket_path"]).parent != path.parent or Path(config["socket_path"]).name != "native.sock":
+    socket_path=Path(config["socket_path"])
+    same_socket_parent=(same_existing_file(socket_path.parent,path.parent) if is_windows()
+                        else socket_path.parent==path.parent)
+    if not same_socket_parent or socket_path.name!="native.sock":
         raise ValueError("invalid_config")
     if type(config["port"]) is not int or not 1024 <= config["port"] <= 65535:
         raise ValueError("invalid_config")
