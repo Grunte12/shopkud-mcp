@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .platform_security import has_private_mode, owned_by_current_user
+from .platform_security import has_private_mode, is_unaliased_path, owned_by_current_user
 
 
 MAX_FRAME_BYTES = 512_000
@@ -426,11 +426,10 @@ class Broker:
     def _validate_parent_directory(self) -> None:
         parent = self.socket_path.parent
         try:
-            resolved = parent.resolve(strict=True)
             info = parent.stat()
         except OSError:
             raise BrokerError("unsafe_directory") from None
-        if (resolved != parent or not stat.S_ISDIR(info.st_mode)
+        if (not is_unaliased_path(parent) or not stat.S_ISDIR(info.st_mode)
                 or not owned_by_current_user(info) or not has_private_mode(info, 0o700)):
             raise BrokerError("unsafe_directory")
 
