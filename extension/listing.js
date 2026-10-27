@@ -227,6 +227,11 @@
     shipping_fee:field(summaryPanel,/^(?:ค่าจัดส่ง|shipping fee)$/iu,"visible_product_summary",value=>/^(?:ฟรี|free|(?:฿|THB)?\s*[0-9][0-9,.]*(?:\s*[-–]\s*(?:฿|THB)?\s*[0-9][0-9,.]*)?\s*(?:บาท|THB)?)$/iu.test(value)),
     stock:field(summaryPanel,/^(?:มีสินค้าทั้งหมด|จำนวนสินค้าทั้งหมด|stock)$/iu,"visible_product_summary",value=>count.test(value))
   };
+  for(const [key,label] of [["stock",/^(?:คลัง|stock)$/iu],["ships_from",/^(?:ส่งจาก|ships from)$/iu]]){
+    if(shipping_info[key])continue;
+    const values=[...new Set(specEvidence.filter(item=>label.test(item.label)).map(item=>item.value))];
+    if(values.length===1 && (key!=="stock" || count.test(values[0])))shipping_info[key]=observation(values[0],"visible_product_spec");
+  }
   return {ok:true,kind:"public_product_detail",...source,observed_at:new Date().toISOString(),name,
     variant_info:variant,spec_evidence:specEvidence,model_evidence:modelEvidence,seller_info,product_metrics,shipping_info,gallery,gallery_complete:false,
     metadata_source:product?"exact_product_json_ld":null,

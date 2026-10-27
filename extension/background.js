@@ -408,15 +408,17 @@ const listingURL = value => typeof value==="string" && /^https:\/\/shopee\.co\.t
 const listingFailure = error => ({ok:false,error,outcome:"not_completed",retry_automatically:false});
 async function waitForListingTab(tabId,url,task,timeoutMs=30000) {
   const ready=tab=>Boolean(tab && tab.url===url && tab.active===false && tab.status==="complete");
+  const waiting=tab=>Boolean(tab && tab.active===false && (tab.url===url || tab.status==="loading" && tab.pendingUrl===url && (!tab.url || tab.url==="about:blank")));
   const initial=await tabInfo(tabId);if(ready(initial))return true;
-  if(!initial || initial.url!==url || initial.active!==false || task.cancelled)return false;
+  if(!waiting(initial) || task.cancelled)return false;
   return await new Promise(resolve=>{
     let done=false;
     const finish=value=>{if(done)return;done=true;clearTimeout(timer);chrome.tabs.onUpdated.removeListener(update);if(task.finishWait===cancel)task.finishWait=null;resolve(value);};
-    const check=async()=>{if(task.cancelled)return finish(false);finish(ready(await tabInfo(tabId)));};
-    const update=(id,change)=>{if(id===tabId && change.status==="complete")void check();};
+    const check=async()=>{if(task.cancelled)return finish(false);const tab=await tabInfo(tabId);if(ready(tab))finish(true);else if(!waiting(tab))finish(false);};
+    const update=(id)=>{if(id===tabId)void check();};
     const cancel=()=>finish(false),timer=setTimeout(cancel,timeoutMs);
     task.finishWait=cancel;chrome.tabs.onUpdated.addListener(update);
+    void check();
   });
 }
 async function listingPermissionState() {
@@ -464,7 +466,11 @@ async function readListing(args,task) {
     if(task.cancelled)return listingFailure("cancelled");
     const loaded=await waitForListingTab(listingEntry.tab,url,task);
     if(task.cancelled)return listingFailure("cancelled");
-    if(!loaded)return {...listingFailure("listing_unconfirmed"),outcome:"unconfirmed"};
+    if(!loaded){
+      const tab=await tabInfo(listingEntry.tab);
+      const challenge=typeof tab?.url==="string" && /^https:\/\/shopee\.co\.th\/verify\//u.test(tab.url);
+      return {...listingFailure(challenge?"challenge_detected":"listing_unconfirmed"),outcome:"unconfirmed",readiness:{tab_present:Boolean(tab),inactive:tab?.active===false,status:tab?.status || null,exact_url:tab?.url===url,pending_exact_url:tab?.pendingUrl===url,challenge_redirect:challenge}};
+    }
   }
   current=await tabInfo(listingEntry.tab);
   if(task.cancelled)return listingFailure("cancelled");

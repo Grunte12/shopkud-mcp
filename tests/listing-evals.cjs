@@ -166,6 +166,8 @@ async function main() {
           <div><h3>สินค้า</h3><a href="/shop">FixtureShop</a></div>
           <div><h3>ขนาดความจุของแบตสำรอง</h3><div>&gt;20000mAh</div></div>
           <div><h3>จำนวนพอร์ต</h3><div>2</div></div>
+          <div><h3>คลัง</h3><div>7</div></div>
+          <div><h3>ส่งจาก</h3><div>จังหวัดสมุทรปราการ</div></div>
           <div style="display:none"><h3>ซ่อน</h3><div>HIDDEN SPEC</div></div>
         </div></section>
         <section class="flex items-center"><h2>สี</h2><div>
@@ -183,7 +185,11 @@ async function main() {
       { label: "สินค้า", value: "FixtureShop", source: "visible_product_spec" },
       { label: "ขนาดความจุของแบตสำรอง", value: ">20000mAh", source: "visible_product_spec" },
       { label: "จำนวนพอร์ต", value: "2", source: "visible_product_spec" },
+      { label: "คลัง", value: "7", source: "visible_product_spec" },
+      { label: "ส่งจาก", value: "จังหวัดสมุทรปราการ", source: "visible_product_spec" },
     ]);
+    assert.equal(nativeEvidence.shipping_info.stock.display,"7");
+    assert.equal(nativeEvidence.shipping_info.ships_from.display,"จังหวัดสมุทรปราการ");
     assert.equal(nativeEvidence.variant_info.color, null, "selected CSS class is not explicit selection evidence");
     const colorGroup = nativeEvidence.variant_info.available_options.find(group => group.label === "สี");
     assert.deepEqual(colorGroup.options, ["สีดำ", "ขาว", "ดำ 95 ใหม่"]);

@@ -43,7 +43,7 @@ function harness(options={}){
     tabs:{onRemoved:tabsRemoved,onUpdated:tabsUpdated,
       query(_query,callback){const result=[...tabs.values()].map(t=>({...t}));if(callback)callback(result);return Promise.resolve(result);},
       get(id,callback){const tab=tabs.get(id);if(options.deferGet)return options.deferGet.then(()=>{callback?.(tab);return tab;});if(callback)callback(tab);return Promise.resolve(tab);},
-      create(info,callback){const id=500+creates.length;creates.push({id,...info});if(options.createFails)return Promise.reject(new Error("synthetic create failure"));const tab={id,url:info.url,active:info.active,status:"complete"};tabs.set(id,tab);if(callback)callback(tab);return Promise.resolve(tab);},
+      create(info,callback){const id=500+creates.length;creates.push({id,...info});if(options.createFails)return Promise.reject(new Error("synthetic create failure"));const tab={id,url:info.url,active:info.active,status:"complete",...options.initialTab};tabs.set(id,tab);if(callback)callback(tab);return Promise.resolve(tab);},
       update(id,info,callback){updates.push({id,info});if(options.updateFails){chrome.runtime.lastError={message:"synthetic update failure"};callback?.();chrome.runtime.lastError=null;return Promise.reject(new Error("synthetic update failure"));}
         const tab=tabs.get(id);if(!tab){callback?.();return Promise.reject(new Error("missing tab"));}
         Object.assign(tab,info,{status:"complete"});tabsUpdated.fire(id,{status:"complete"},tab);if(callback)callback(tab);return Promise.resolve(tab);
@@ -175,6 +175,18 @@ async function main(){
   assert.equal(claimed.creates.length,2);assert.equal(claimed.updates.length,0);assert.equal(claimed.tabs.get(500).url,PRODUCT);
 
   const settles=harness();
+  const pendingCreate=harness({initialTab:{url:"",pendingUrl:PRODUCT,status:"loading"}});
+  const pendingCreateId=pendingCreate.send("read_listing",{product_url:PRODUCT,open_if_missing:true});
+  for(let i=0;i<20 && !pendingCreate.hasTimer(30000);i++)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(pendingCreate.hasTimer(30000),true);
+  pendingCreate.tabs.get(500).url=PRODUCT;pendingCreate.completeTab(500);
+  assert.equal((await pendingCreate.resultFor(pendingCreateId)).ok,true);
+  assert.equal(pendingCreate.creates.length,1);
+  const challengeCreate=harness({initialTab:{url:"https://shopee.co.th/verify/captcha",status:"complete"}});
+  const challenged=await challengeCreate.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
+  assert.equal(challenged.error,"challenge_detected");
+  assert.equal(challenged.readiness.challenge_redirect,true);
+  assert.equal(challengeCreate.executions.length,0);
   await settles.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
   await new Promise(resolve=>setImmediate(resolve));
   settles.tabs.get(500).status="loading";
