@@ -302,6 +302,7 @@ async function run() {
     await page.reload();
     await page.locator("#tab-saved").click();
     await page.waitForSelector("#workspace-history-empty");
+    await page.waitForFunction(() => document.querySelector("#saved-count")?.textContent === "2");
     assert.equal(await page.locator("#workspace-history-empty").isVisible(), true, "malformed storage fails closed to an empty history");
     assert.equal(await countAt(page, "#workspace-project-count"), 0);
     assert.equal(await page.locator("#workspace-history-list [data-history-id]").count(), 0);
