@@ -758,7 +758,8 @@ function connect(automatic=false) {
           chrome.tabs.sendMessage(page.tab,{type:"shopkud-command",nonce:page.nonce,request_id:message.id,operation:message.operation,arguments:message.arguments},result=>{
             const error=chrome.runtime.lastError;inFlight.delete(message.id);
             if(port===channel)channel.postMessage({type:"result",id:message.id,result:error?{ok:false,error:"page_context_unavailable",outcome:"unconfirmed",retry_automatically:false}:result || {ok:false,error:"invalid_page_result",outcome:"unconfirmed",retry_automatically:false}});
-            setTimeout(()=>closeOwnedTabIfIdle(page.tab),800);
+            // Keep the requested link dialog alive for the subsequent create_link call.
+            if(error || result?.ok!==true)setTimeout(()=>closeOwnedTabIfIdle(page.tab),800);
           });
         })().catch(()=>reject("link_preflight_failed"));
         return;

@@ -11,7 +11,7 @@
       'input[name="subId4"], input[placeholder*="Sub ID 4"]',
       'input[name="subId5"], input[placeholder*="Sub ID 5"]'
     ],
-    create_button_text: ["สร้างลิงก์", "Create Link", "รับลิงก์", "Get Link", "Convert", "คัดลอกลิงก์"],
+    create_button_text: ["เพิ่มการเชื่อมโยง", "สร้างลิงก์", "Create Link", "รับลิงก์", "Get Link", "Convert", "คัดลอกลิงก์"],
     link_output_selector: "textarea, input",
     max_subid_length: 128
   };
@@ -115,15 +115,17 @@
 
   function detectSubIdInputs(dialog) {
     const inputs = [null, null, null, null, null];
+    const duplicates=new Set();
     const nodes = [...dialog.querySelectorAll("input, textarea")].filter(isTextInput);
     for (const input of nodes) {
-      if (input.disabled || input.readOnly) continue;
+      if (input.disabled || input.readOnly || !input.getClientRects().length) continue;
       const blob = fieldBlob(input, dialog);
       const match = SLOT_RE.exec(blob);
       if (!match) continue;
       const index = Number(match[1]) - 1;
-      if (!inputs[index]) inputs[index] = input;
+      if (inputs[index]) duplicates.add(index); else inputs[index] = input;
     }
+    for(const index of duplicates)inputs[index]=null;
     const available = inputs.filter(Boolean).length;
     return {
       ok: true,
@@ -132,6 +134,24 @@
       detection_method: available > 0 ? "specific_selector" : "none",
       requires_manual_verification: available === 0
     };
+  }
+
+  async function ensureSubIdMode(dialog,subIds){
+    const required=subIds.map((value,index)=>value?index:null).filter(index=>index!==null);
+    if(!required.length || required.every(index=>detectSubIdInputs(dialog).inputs[index]))return {ok:true};
+    const controls=[...dialog.querySelectorAll('label')].filter(label=>label.getClientRects().length && /^(?:ขั้นกว่า|ขั้นสูง|advanced)$/iu.test(String(label.innerText || label.textContent || "").trim()))
+      .map(label=>label.querySelector('input[type="radio"]')).filter(input=>input && !input.disabled && input.getClientRects().length);
+    if(!controls.length)return {ok:true}; // Existing field diagnostics handle layouts without a mode control.
+    if(controls.length!==1)return {ok:false,error:"subid_advanced_mode_unavailable",status:"not_attempted"};
+    const control=controls[0];
+    if(!control.checked)control.click();
+    const deadline=Date.now()+2000;
+    while(Date.now()<deadline){
+      if(!dialog.getClientRects().length)return {ok:false,error:"dialog_not_found",status:"not_attempted"};
+      if(control.checked && required.every(index=>detectSubIdInputs(dialog).inputs[index]))return {ok:true};
+      await new Promise(resolve=>setTimeout(resolve,50));
+    }
+    return {ok:false,error:"subid_advanced_mode_unconfirmed",status:"not_attempted"};
   }
 
   function validateSubIds(subIds) {
@@ -164,24 +184,25 @@
     }
     const filled = [];
     const missing = [];
-    for (let idx = 0; idx < subIds.length; idx += 1) {
-      const value = subIds[idx];
-      if (value === null || value === undefined || value === "") continue;
+    for (let idx = 0; idx < 5; idx += 1) {
+      const value = subIds[idx] || "";
       const input = detection.inputs[idx];
       if (!input) {
-        missing.push(idx + 1);
+        if (value) missing.push(idx + 1);
         continue;
       }
       try {
-        input.value = "";
-        input.dispatchEvent(new Event("input", {bubbles: true}));
-        input.value = value;
+        // Use the native setter so controlled inputs observe the change as user input.
+        const view = input.ownerDocument?.defaultView;
+        const prototype = input.tagName === "TEXTAREA" ? view?.HTMLTextAreaElement?.prototype : view?.HTMLInputElement?.prototype;
+        const setter = prototype && Object.getOwnPropertyDescriptor(prototype, "value")?.set;
+        if (setter) setter.call(input, value); else input.value = value;
         input.dispatchEvent(new Event("input", {bubbles: true}));
         input.dispatchEvent(new Event("change", {bubbles: true}));
         if (input.value !== value) {
           return {ok: false, error: "fill_readback_mismatch", status: "not_attempted", slot: idx + 1};
         }
-        filled.push({slot: idx + 1});
+        if (value) filled.push({slot: idx + 1});
       } catch {
         return {ok: false, error: "fill_failed", status: "not_attempted", slot: idx + 1};
       }
@@ -199,25 +220,31 @@
   }
 
   function findCreateButton(dialog) {
-    const buttons = [...dialog.querySelectorAll("button, [role=button]")].filter(button => {
+    let buttons = [...dialog.querySelectorAll("button, [role=button]")].filter(button => {
       if (button.disabled || !button.getClientRects().length) return false;
       const named = (button.getAttribute && button.getAttribute("aria-label")) || button.innerText || button.textContent || "";
       const text = String(named).replace(/\s+/gu, " ").trim();
-      return config.create_button_text.some(pattern => new RegExp(`^${pattern}$`, "iu").test(text));
+      return config.create_button_text.some(label => label.toLocaleLowerCase() === text.toLocaleLowerCase());
     });
+    // Advanced mode shows a separate copy action; never copy the old link instead of generating.
+    const creation = buttons.filter(button => String(button.getAttribute("aria-label") || button.innerText || button.textContent || "").trim() !== "คัดลอกลิงก์");
+    if (creation.length) buttons = creation;
     if (buttons.length === 0) return {ok: false, error: "create_button_not_found", status: "not_attempted"};
     if (buttons.length > 1) return {ok: false, error: "multiple_create_buttons", status: "not_attempted", count: buttons.length};
     return {ok: true, button: buttons[0], button_text: (buttons[0].innerText || buttons[0].textContent || "").trim()};
   }
 
-  async function waitForLinkOutput(dialog, timeout = 10000) {
+  function visibleLinkOutputs(dialog) {
+    return [...dialog.querySelectorAll(config.link_output_selector)]
+      .filter(el => el.value && el.getClientRects().length > 0)
+      .map(el => el.value.trim()).filter(url => /^https:\/\/s\.shopee\.co\.th\/[A-Za-z0-9]+$/u.test(url));
+  }
+
+  async function waitForLinkOutput(dialog, baseline, timeout = 10000) {
     const start = Date.now();
     while (Date.now() - start < timeout) {
-      const outputs = [...dialog.querySelectorAll(config.link_output_selector)].filter(el => {
-        return el.value && el.getClientRects().length > 0;
-      });
-      const urls = outputs.map(el => el.value.trim()).filter(url => /^https:\/\/s\.shopee\.co\.th\/[A-Za-z0-9]+$/u.test(url));
-      if (urls.length === 1) return {ok: true, affiliate_url: urls[0]};
+      const urls = visibleLinkOutputs(dialog);
+      if (urls.length === 1 && !baseline.includes(urls[0])) return {ok: true, affiliate_url: urls[0]};
       await new Promise(resolve => setTimeout(resolve, 50));
     }
     return {ok: false, error: "link_output_timeout", status: "unconfirmed", retry_automatically: false, clicked: true};
@@ -244,6 +271,10 @@
     const dialogDetection = detectDialog(doc);
     if (!dialogDetection.ok) return {...dialogDetection, clicked: false};
     const dialog = dialogDetection.dialog;
+    const valid=validateSubIds(subIds || []);
+    if(!valid.ok)return {...valid,clicked:false};
+    const mode=await ensureSubIdMode(dialog,subIds || []);
+    if(!mode.ok)return {...mode,clicked:false,product_id:expected_product_id};
     const fillResult = fillSubIds(dialog, subIds || []);
     if (!fillResult.ok) return {...fillResult, clicked: false, product_id: expected_product_id};
     if (dry_run) {
@@ -254,13 +285,14 @@
     const buttonDetection = findCreateButton(dialog);
     if (!buttonDetection.ok) return {...buttonDetection, clicked: false};
     const clickTime = new Date().toISOString();
+    const baseline = visibleLinkOutputs(dialog);
     await saveAttempt(intent_key, {status: "unconfirmed", product_id: expected_product_id, at: clickTime});
     try {
       buttonDetection.button.click();
     } catch {
       return {ok: false, error: "click_failed", status: "unconfirmed", retry_automatically: false, clicked: true, product_id: expected_product_id};
     }
-    const linkResult = await waitForLinkOutput(dialog, options.output_timeout || 10000);
+    const linkResult = await waitForLinkOutput(dialog, baseline, options.output_timeout || 10000);
     if (!linkResult.ok) {
       await saveAttempt(intent_key, {status: "unconfirmed", product_id: expected_product_id, at: clickTime});
       return {...linkResult, product_id: expected_product_id, retry_automatically: false};
