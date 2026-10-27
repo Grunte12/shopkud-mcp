@@ -202,13 +202,17 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
             product("107", "Roborock Q Revo S หุ่นยนต์ดูดฝุ่นและถูพื้น", 19990, 1200),
             product("108", "น้ำยาทำความสะอาดพื้น Roborock ขนาด 1 ลิตร", 690, 5000),
             product("109", "แบตเตอรี่สำหรับ Roborock S5 S6", 1290, 3000),
+            product("110", "Original Roborock Qrevo S7 ล้อเดินล้อซ้ายขวาสำหรับ Roborock", 347, 186),
+            product("111", "[ของแท้ Original] โรลเลอร์ ผ้าถู สำหรับรุ่น Roborock Flexi Pro", 999, 62),
+            product("112", "Roborock Flexi Pro อุปกรณ์เสริมแปรงลูกกลิ้งกรอง", 252, 8),
+            product("113", "สำหรับ Roborock S8 เครื่องดูดฝุ่นหุ่นยนต์ชุดถุงสูญญากาศ", 129, 1),
         ]
         self.broker.amounts = {row["product_id"]: (row["commission_pct"], row["baht_per_order"])
                                for row in self.broker.records}
         result = await self.tool("Roborock", target_kind="product", mall_only=False, min_sold=0,
                                  freshness="live")
         self.assertEqual([row["product_id"] for row in result["results"]], ["107"])
-        self.assertEqual(result["exclusions"]["accessory_mismatch"], 2)
+        self.assertEqual(result["exclusions"]["accessory_mismatch"], 6)
 
     async def test_accessory_intent_keeps_matching_accessories_but_not_main_product(self):
         self.broker.records = [

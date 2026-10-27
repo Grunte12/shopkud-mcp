@@ -44,7 +44,8 @@
     `);
     const panel = element("section", undefined, {"aria-label":"พื้นที่ทำงาน ShopKud",lang:"th"});
     const header = element("header");
-    header.append(element("h2","ShopKud MCP"),element("span","0.8.4",{class:"version"}));
+    const version = globalThis.chrome?.runtime?.getManifest?.().version || "—";
+    header.append(element("h2","ShopKud MCP"),element("span",version,{class:"version"}));
     const status = element("p","กำลังเชื่อมต่อกับเครื่องมือคัดสินค้า…",{id:"status",role:"status","aria-live":"polite"});
     const toolbar = element("div",undefined,{class:"toolbar"});
     const detailHelp=element("p","หน้ารายละเอียดสินค้า: เอเจนต์อ่านสินค้าและลิงก์ที่แสดงอยู่ได้ สั่งเอเจนต์บันทึกเพื่อค้นย้อนหลัง ไม่เก็บประวัติการท่องเว็บ",{id:"detail-help",hidden:""});

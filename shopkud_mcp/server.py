@@ -64,8 +64,14 @@ _RANKING_CACHE_MAX_AGE_SECONDS = 600
 
 _ACCESSORY_TERM_RE = re.compile(
     unicodedata.normalize("NFKC",
-        r"\b(?:case|cover|pouch|sleeve|screen[\s-]*protector|film|skin|shell|strap|holder|mount|replacement|accessor(?:y|ies))\b"
-        r"|(?:เคส|ปลอก|ฟิล์ม|กระจกกันรอย|กันรอย|ฝาครอบ|ซอง|สายคล้อง|ขาตั้ง|ที่ยึด|อะไหล่|อุปกรณ์เสริม|น้ำยาทำความสะอาด|แบตเตอรี่|ไส้กรอง|แปรง|ถุงเก็บฝุ่น)"),
+        r"\b(?:case|cover|pouch|sleeve|screen[\s-]*protector|film|skin|shell|strap|holder|mount|replacement|accessor(?:y|ies)|spare[\s-]*parts?|battery|filter|brush|wheel|roller|mop[\s-]*pad|(?:dust|vacuum)[\s-]*bag|cleaning[\s-]*(?:liquid|solution))\b"
+        r"|(?:เคส|ปลอก|ฟิล์ม|กระจกกันรอย|กันรอย|ฝาครอบ|ซอง|สายคล้อง|ขาตั้ง|ที่ยึด|อะไหล่|อุปกรณ์เสริม|น้ำยาทำความสะอาด|แบตเตอรี่|ไส้กรอง|แปรง|ลูกกลิ้ง|โรลเลอร์|ล้อ|ผ้าถู|ถุงเก็บฝุ่น|ถุงสูญญากาศ)"),
+    re.I,
+)
+_ACCESSORY_STRONG_TERM_RE = re.compile(
+    unicodedata.normalize("NFKC",
+        r"\b(?:replacement|accessor(?:y|ies)|spare[\s-]*parts?)\b"
+        r"|(?:อะไหล่|อุปกรณ์เสริม|น้ำยาทำความสะอาด|แบตเตอรี่|ไส้กรอง|ถุงเก็บฝุ่น|ถุงสูญญากาศ)"),
     re.I,
 )
 _ACCESSORY_COMPATIBILITY_RE = re.compile(
@@ -113,7 +119,9 @@ def _accessory_only_title(value: str) -> bool:
     if not marker:
         return False
     leading = re.match(r"^(?:\d+\s*(?:ชิ้น|pcs?)\s*)?", normalized).end()
-    return marker.start() <= leading + 18 or _ACCESSORY_COMPATIBILITY_RE.search(normalized) is not None
+    return (marker.start() <= leading + 18
+            or _ACCESSORY_COMPATIBILITY_RE.search(normalized) is not None
+            or _ACCESSORY_STRONG_TERM_RE.search(normalized) is not None)
 
 
 def _ranking_state(broker):

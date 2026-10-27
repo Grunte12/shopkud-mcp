@@ -12,9 +12,11 @@ async function run(){
     page.on("pageerror",e=>errors.push(e.message));await page.route('**/*',route=>route.abort());
     await page.clock.install();
     await page.setContent('<!doctype html><html lang="th"><body style="margin:24px;font:16px system-ui;background:#f1f3f5"><h1>ชุดทดสอบหน้าตา ShopKud</h1><p>สินค้าเป็นข้อมูลตัวอย่าง ไม่ใช้บัญชีจริงและไม่ดำเนินการกับสินค้า</p><div id="shopkud-panel"></div></body></html>');
+    await page.evaluate(()=>{globalThis.chrome={runtime:{getManifest:()=>({version:"9.8.7"})}};});
     await page.addScriptTag({path:path.join(ROOT,'extension/review.js')});
     await page.evaluate(()=>{window.applies=0;window.exports=[];window.kept=[];window.ui=ShopKudReview.create({root:document.querySelector('#shopkud-panel').attachShadow({mode:'open'}),onApply:()=>window.applies++,onKeep:ids=>{window.kept=ids;return true;},onExport:format=>window.exports.push(format)});});
     const panel=page.locator('#shopkud-panel');
+    assert.equal(await panel.locator('.version').innerText(),'9.8.7');results.push('panel version follows the extension manifest');
     await panel.getByRole('button',{name:'ดูแผนคัดสินค้า',exact:true}).click();
     assert.equal(await panel.getByText('ให้เอเจนต์ค้นคว้าสินค้าและเตรียมแผนพร้อมเหตุผลก่อน ไม่มีการเลือกสินค้าให้อัตโนมัติ',{exact:true}).isVisible(),true);
     assert.equal(await panel.getByRole('button',{name:'เลือกสินค้าตามแผน',exact:true}).isEnabled(),false);results.push('empty review teaches next action; no empty Apply');
