@@ -2,6 +2,13 @@
 
 Historical release notes moved from the README so installation and current use stay easy to find.
 
+### 0.13.2 — detail fingerprint correction (release candidate)
+
+- Exclude tab-allocation receipts and lazy-loaded image dimensions from the
+  product-detail fingerprint; keep original response evidence intact.
+- Version the corrected detail fingerprint; prices, commission and image URLs
+  remain part of the comparison.
+
 ### 0.13.1 — reproducible retrieval (release candidate)
 
 - Stable tie handling before bounded finalist selection.

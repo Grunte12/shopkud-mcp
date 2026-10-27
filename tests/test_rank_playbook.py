@@ -298,6 +298,31 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(changed_detail["trace"]["retrieval"]["result_fingerprint"],
                             changed_source["trace"]["retrieval"]["result_fingerprint"])
 
+    async def test_detail_fingerprint_ignores_tab_allocation_but_not_product_evidence(self):
+        original_call = self.broker.call
+        async def with_transport(page_id, operation, arguments, timeout=20):
+            result = await original_call(page_id, operation, arguments, timeout)
+            if operation == "detail":
+                result["entry"] = {"tab_id": len(self.broker.calls), "created_tab": True}
+                result["images"][0].update(width=len(self.broker.calls), height=None)
+            return result
+        self.broker.call = with_transport
+        first = await self.tool("ทีวี", freshness="live")
+        second = await self.tool("ทีวี", freshness="live")
+        self.assertEqual(first["retrieval"]["detail_fingerprint"], second["retrieval"]["detail_fingerprint"])
+        self.broker.call = original_call
+        no_entry = await self.tool("ทีวี", freshness="live")
+        self.assertEqual(second["retrieval"]["detail_fingerprint"], no_entry["retrieval"]["detail_fingerprint"])
+        self.assertEqual(no_entry["retrieval"]["detail_fingerprint_version"], "product-evidence-v1")
+        async def changed_image(page_id, operation, arguments, timeout=20):
+            result = await original_call(page_id, operation, arguments, timeout)
+            if operation == "detail":
+                result["images"][0]["url"] += "-changed"
+            return result
+        self.broker.call = changed_image
+        changed = await self.tool("ทีวี", freshness="live")
+        self.assertNotEqual(no_entry["retrieval"]["detail_fingerprint"], changed["retrieval"]["detail_fingerprint"])
+
     async def test_shuffled_tied_records_keep_the_same_bounded_finalists(self):
         records = [product(str(100 + index), "Samsung TV Model", 1000, 1000, commission=5)
                    for index in range(20)]

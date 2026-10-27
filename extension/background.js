@@ -181,6 +181,7 @@ function sanitizeTelemetry(value) {
   const raw=value.retrieval;
   if(raw && typeof raw==="object") {
     if(raw.contract_version==="retrieval-v2")retrieval.contract_version=raw.contract_version;
+    if(raw.detail_fingerprint_version==="product-evidence-v1")retrieval.detail_fingerprint_version=raw.detail_fingerprint_version;
     for(const key of ["input_fingerprint","source_fingerprint","detail_fingerprint","result_fingerprint"])
       if(/^[0-9a-f]{64}$/u.test(raw[key] || ""))retrieval[key]=raw[key];
     for(const key of ["finalist_ids","result_ids"])

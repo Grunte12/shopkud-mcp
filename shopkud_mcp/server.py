@@ -1152,7 +1152,17 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 await emit("detail_check", candidate_index=index, candidate_count=len(candidates),
                            product_id=row.get("product_id"), product_name=row.get("name"))
                 detail = await _get_product_detail(offer_url=row["product_url"], open_if_missing=True, view="full")
-                detail_fingerprints.append({"product_id": row.get("product_id"), "fingerprint": fingerprint(detail)})
+                # Tab allocation/reuse is transport evidence, not a change to
+                # the observed product. Keep it in the response, not this hash.
+                detail_evidence = {k: v for k, v in detail.items() if k != "entry"}
+                if isinstance(detail_evidence.get("images"), list):
+                    # Lazy-loaded image dimensions are presentation readiness;
+                    # URLs and image roles remain evidence and are still hashed.
+                    detail_evidence["images"] = [
+                        {k: v for k, v in image.items() if k not in {"width", "height"}}
+                        if isinstance(image, dict) else image for image in detail_evidence["images"]]
+                detail_fingerprints.append({"product_id": row.get("product_id"),
+                    "fingerprint": fingerprint(detail_evidence)})
                 if detail.get("ok") is not True:
                     detail_errors.append({"product_id": row.get("product_id"), "error": detail.get("error", "detail_failed")})
                     continue
@@ -1347,6 +1357,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
             }
             retrieval_evidence.update(result_fingerprint=fingerprint(result["results"]),
                 detail_fingerprint=fingerprint(detail_fingerprints),
+                detail_fingerprint_version="product-evidence-v1",
                 exclusions=exclusions.copy(), finalist_ids=[row.get("product_id") for row in candidates],
                 result_ids=[row.get("product_id") for row in result["results"]])
             result["retrieval"] = retrieval_evidence.copy()

@@ -28,6 +28,12 @@ inputs, source-card, detail and result SHA-256 fingerprints, finalist/result IDs
 and exclusion counts. Fingerprints exclude observation timestamps and ephemeral
 page/scan/snapshot handles. They do not contain credentials. The existing trace
 adds per-stage timing, queue wait, browser call counts, cache use and failures.
+From 0.13.2, `detail_fingerprint_version=product-evidence-v1` also excludes the
+top-level `entry` transport receipt and image width/height (lazy-load readiness).
+Image URLs/roles and all other observed detail fields still participate. Raw
+detail responses retain those fields; this does not discard evidence from MCP.
+Do not compare detail hashes across these two fingerprint versions as changes
+to product facts.
 The extension's bounded telemetry retains fingerprint summaries for export.
 
 Compare repeated fixture runs by fingerprints and results, not trace IDs or
