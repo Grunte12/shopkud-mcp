@@ -116,6 +116,18 @@ async function main() {
     assert.equal(conflicting.variant_info.model, null, "multiple identity candidates never fall back to one variant");
 
     await page.setContent(modelFixture({ title: "Generic Gadget A1695" }));
+    await page.setContent(`<main><section class="SQguX_"><div><h1>Sony รุ่น K-65S20M2 | Processor X1™</h1></div><div><span>ขายแล้ว 24 ชิ้น</span></div></section><section><h2>สินค้าแนะนำ</h2><span>ขายแล้ว 999 ชิ้น</span></section></main>`);
+    const sony=await read();
+    assert.equal(sony.variant_info.model,"K-65S20M2");
+    assert.ok(!sony.model_evidence.some(item=>item.model==="X1TM"));
+    assert.equal(sony.product_metrics.sold.display,"24 ชิ้น");
+    await page.setContent('<main><div class="xvTkTc"><div><h1>Sony รุ่น K-65S20M2</h1></div><div class="Ocv3B8">ขายแล้ว <span>24</span> ชิ้น</div></div><aside>ขายแล้ว 999 ชิ้น</aside></main>');
+    assert.equal((await read()).product_metrics.sold.display,"24 ชิ้น");
+    await page.setContent(modelFixture({title:"Phone รุ่น ABC123 | Chipset A15"}));
+    const chip=await read();
+    assert.equal(chip.variant_info.model,"ABC123");
+    assert.equal(chip.model_evidence.find(item=>item.model==="A15").role,"mention");
+    await page.setContent(modelFixture({ title: "Generic Gadget A1695" }));
     const titleOnly = await read();
     assert.ok(titleOnly.model_evidence.some(item => item.model === "A1695" && item.source === "visible_product_title" && item.role === "identity"));
 

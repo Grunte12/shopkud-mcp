@@ -134,7 +134,7 @@
   const brands=specEvidence.filter(item=>/^(?:สินค้า|แบรนด์|brand)$/iu.test(item.label)).map(item=>/[a-z][a-z ]{1,40}/iu.exec(item.value)?.[0].trim().toLowerCase()).filter(Boolean);
   const models=(value,origin,explicit=false)=>{
     if(typeof value!=="string")return;
-    value=value.normalize("NFKC").slice(0,12000);
+    value=value.replace(/[™®]/gu,"").normalize("NFKC").slice(0,12000);
     for(const token of value.matchAll(/(?<![a-z0-9_])([a-z]{1,8}-?[0-9][a-z0-9-]{1,23})(?![a-z0-9_-])/giu)) {
       if(modelEvidence.length>=12)break;
       const start=token.index,code=token[1].toUpperCase();
@@ -143,7 +143,8 @@
       const labeled=/(?:รุ่น|model(?:\s+number)?)\s*[:：]?\s*$/iu.test(before);
       const parenthesized=value[start-1]==="(" && value[start+token[1].length]===")" && /[a-zก-๙]/iu.test(before);
       const branded=brands.some(brand=>before.toLowerCase().includes(brand));
-      const role=compatible?"compatible":explicit || labeled || parenthesized || branded?"identity":"mention";
+      const component=/(?:processor|chipset|chip|cpu|gpu|ชิป|ชิปเซ็ต|หน่วยประมวลผล)\s*[:：]?\s*$/iu.test(before);
+      const role=compatible?"compatible":component?"mention":explicit || labeled || parenthesized || branded?"identity":"mention";
       const snippet=text(value.slice(Math.max(0,start-80),start+token[1].length+80),180);
       if(!modelEvidence.some(item=>item.model===code && item.source===origin && item.role===role))modelEvidence.push({model:code,source:origin,snippet,role});
     }
@@ -165,7 +166,7 @@
     return panels.length===1?panels[0]:null;
   };
   const sellerPanel=uniquePanel('.page-product__shop,section[aria-label="ข้อมูลร้านค้า"],[role="region"][aria-label="ข้อมูลร้านค้า"],section[aria-label="Shop information"],[role="region"][aria-label="Shop information"]');
-  const summaryPanel=heading?.closest('.product-briefing,section[aria-label="ข้อมูลสินค้า"],[role="region"][aria-label="ข้อมูลสินค้า"],section[aria-label="Product details"],[role="region"][aria-label="Product details"]') || null;
+  const summaryPanel=heading?.closest('.product-briefing,div.xvTkTc,section.SQguX_,section[aria-label="ข้อมูลสินค้า"],[role="region"][aria-label="ข้อมูลสินค้า"],section[aria-label="Product details"],[role="region"][aria-label="Product details"]') || null;
   const observation=(display,origin)=>({display:text(display,120),source:origin});
   const count=/^[0-9][0-9.,\s]*(?:พัน|หมื่น|แสน|ล้าน|[km])?\s*\+?\s*(?:ชิ้น|คะแนน|รีวิว|ratings?|reviews?|sold)?$/iu;
   const field=(panel,labels,origin,valid=()=>true)=>{
@@ -211,7 +212,7 @@
     sold:field(summaryPanel,/^(?:ขายแล้ว|ขายได้|sold)$/iu,"visible_product_summary",value=>count.test(value))
   };
   if(summaryPanel && !product_metrics.sold){
-    const sold=[...summaryPanel.querySelectorAll("span,div")].slice(0,150).filter(node=>visible(node) && node.children.length===0)
+    const sold=[...summaryPanel.querySelectorAll("span,div")].slice(0,150).filter(node=>visible(node) && (node.children.length===0 || node.matches('.Ocv3B8') && [...node.children].every(child=>child.tagName==='SPAN' && child.children.length===0)))
       .map(node=>/^(?:ขายแล้ว|ขายได้|sold)\s*[:：]?\s*(.+)$/iu.exec(text(node.innerText,140))?.[1]).filter(value=>value && count.test(value));
     if(new Set(sold).size===1)product_metrics.sold=observation(sold[0],"visible_product_summary");
   }

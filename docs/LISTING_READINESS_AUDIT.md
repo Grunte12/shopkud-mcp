@@ -19,3 +19,21 @@ contains model K-65S20M2 and processor X1; model evidence currently also include
 X1TM, leaving the single model field ambiguous. Product sold 24 is visible but
 the current summary selector did not extract it. These remain follow-up gaps.
 The prior live offer-terms read passed all three modal sections. No release.
+
+## Sold/model follow-up
+
+Observed live summary containers `div.xvTkTc` / `section.SQguX_` and the sold
+element `.Ocv3B8` containing a nested span for the number. The reader now supports
+these bounded product-only nodes instead of requiring a leaf text node. Tests
+exclude unrelated recommendation counts. Remove trademark symbols before Unicode
+normalization so X1™ cannot become X1TM; explicitly labeled processor/chip tokens
+remain mentions rather than product identity candidates. Existing bundle and
+conflicting-model tests remain passing.
+
+After extension reload, two sequential live MCP reads returned sold `24 ชิ้น`,
+model `K-65S20M2`, six gallery images, stock 7 and ships-from สมุทรปราการ.
+The 11 listing parser scenarios passed with new nested-sold and chip regressions.
+The fully hydrated owner tab now visibly shows Sony Official Store, rating 4.9,
+nine reviews and seller metrics; fresh MCP reads still return null for these.
+Thus the earlier placeholder finding was temporal, not permanent absence.
+Hydration/readiness and those selectors remain a separate follow-up; no release.
