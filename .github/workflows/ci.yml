@@ -153,10 +153,12 @@ jobs:
           from pathlib import Path
           from zipfile import ZipFile
           import glob
+          import tomllib
           import shopkud_mcp
 
           root = Path(shopkud_mcp.__file__).parent
-          assert version("shopkud-mcp") == "0.12.0"
+          project = tomllib.loads(Path("pyproject.toml").read_text())
+          assert version("shopkud-mcp") == project["project"]["version"]
           assert (root / "workflows/affiliate.json").is_file()
           assert (root / "skills/shopkud-affiliate/SKILL.md").is_file()
           assert (root / "skills/shopkud-affiliate/references/workflow.md").is_file()
@@ -164,7 +166,8 @@ jobs:
           assert len(wheel) == 1, wheel
           with ZipFile(wheel[0]) as archive:
               extension = [name for name in archive.namelist() if "/share/shopkud-mcp/extension/" in name]
-          assert len(extension) == 24, len(extension)
+          expected = project["tool"]["setuptools"]["data-files"]["share/shopkud-mcp/extension"]
+          assert {Path(name).name for name in extension} == {Path(name).name for name in expected}
           PY
       - name: Audit Python runtime dependencies
         run: |
