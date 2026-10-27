@@ -2,12 +2,12 @@
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const {pathToFileURL} = require("node:url");
 const {chromium} = require("playwright");
 
 const HISTORY_KEY = "shopkudResearchHistory";
 const HISTORY_LIMIT = 20;
-const DASHBOARD_URL = pathToFileURL(path.join(__dirname, "../extension/dashboard.html")).href;
+const EXTENSION_ROOT = path.resolve(__dirname, "../extension");
+const DASHBOARD_URL = "http://shopkud.test/dashboard.html";
 const SAVED_PRODUCT = {
   product_id: "90001", name: "สินค้าที่บันทึกไว้ก่อนเปิด Workspace", shop_name: "ร้านเดิม",
   price_min_thb: 1290, price_max_thb: 1290, sold: 45, commission_pct: 5,
@@ -151,6 +151,12 @@ async function run() {
       sub_ids: ["workspace", "saved-product"], status: "confirmed", created_at: "2026-10-24T10:01:00.000Z"
     }]});
     await page.route("https://**/*", route => route.abort());
+    // Give the storage mock a stable origin; file:// localStorage is browser-dependent.
+    await page.route("http://shopkud.test/**", route => {
+      const file = path.resolve(EXTENSION_ROOT, "." + new URL(route.request().url()).pathname);
+      if (!file.startsWith(EXTENSION_ROOT + path.sep) || !fs.existsSync(file)) return route.abort();
+      return route.fulfill({path: file});
+    });
     await page.goto(DASHBOARD_URL);
     await page.waitForSelector("#saved-count");
 
@@ -300,7 +306,16 @@ async function run() {
 
     await page.evaluate(key => __storageSet(key, "{not valid JSON"), HISTORY_KEY);
     await page.reload();
-    await page.waitForFunction(() => globalThis.__chromeStorage && document.querySelector("#saved-count")?.textContent === "2", null, {timeout:60000});
+    try {
+      await page.waitForFunction(() => globalThis.__chromeStorage && document.querySelector("#saved-count")?.textContent === "2", null, {timeout:60000});
+    } catch (error) {
+      console.error("Workspace reload diagnostics", await page.evaluate(() => ({
+        origin: location.origin, storageReady: Boolean(globalThis.__chromeStorage),
+        storedProductCount: globalThis.__chromeStorage?.shopkudSavedProducts?.length,
+        renderedCount: document.querySelector("#saved-count")?.textContent
+      })), pageErrors);
+      throw error;
+    }
     await page.locator("#tab-saved").click();
     await page.waitForSelector("#workspace-history-empty");
     assert.equal(await page.locator("#workspace-history-empty").isVisible(), true, "malformed storage fails closed to an empty history");
