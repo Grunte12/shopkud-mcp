@@ -40,7 +40,14 @@
       if(images.length>=30)break;
     }
     const money=text=>{const m=/^(?:[0-9]+(?:\.[0-9]+)?%\s*\(\s*)?฿\s*([0-9,]+(?:\.[0-9]{1,2})?)\s*\)?$/u.exec(Core.normalizeDigits(text).trim());return m?Core.parsePriceValue(m[1])?.min ?? null:null;};
-    const commission=text=>({pct:Core.parseCommissionPct(text,true),amount_thb:money(text)});
+    const commission=text=>{
+      const normalized=Core.normalizeDigits(text).trim();
+      const capped=/^([0-9]+(?:\.[0-9]+)?)%\s*\(\s*฿\s*([0-9,]+(?:\.[0-9]{1,2})?)\s*,\s*สูงสุด\s*\)$/u.exec(normalized);
+      const amount=capped?Core.parsePriceValue(capped[2])?.min ?? null:money(normalized);
+      // This cap belongs to this column, never to the combined commission.
+      return {pct:Core.parseCommissionPct(text,true),amount_thb:amount,
+        cap_thb:capped?amount:null,cap_source:capped && amount!==null?"visible_component_maximum":null};
+    };
     const clip=node=>(node?.textContent || "").replace(/\s+/gu," ").trim().slice(0,240);
     const eligible=node=>node.getClientRects().length && !node.closest('nav,aside,.reviews,.review,.customer-review,[data-testid="review"]');
     const date=text=>{
@@ -96,7 +103,9 @@
       attribution_duration_days:null,attribution_duration_source:null,
       affiliate_url:candidates.length===1?candidates[0]:null,link_source:linkSource,
       observed_at:new Date().toISOString(),observations_only:true,link_attribution_verified:false,
-      missing_fields:[...(!channels.length?["channels"]:[]),...(!images.length?["images"]:[]),...(!images.some(i=>i.role==="gallery")?["gallery"]:[]),...(!offer_end_date?["offer_end_date"]:[]),"variant_model","variant_color","commission_caps","extra_commission_period","attribution_duration"]};
+      missing_fields:[...(!channels.length?["channels"]:[]),...(!images.length?["images"]:[]),...(!images.some(i=>i.role==="gallery")?["gallery"]:[]),...(!offer_end_date?["offer_end_date"]:[]),"variant_model","variant_color","commission_caps","extra_commission_period","attribution_duration"],
+      missing_fields_scope:"not_observed_on_affiliate_offer; not_proof_of_absence_on_public_product",
+      commission_caps_status:channels.some(c=>c.extra_commission.cap_thb!=null || c.shopee_commission.cap_thb!=null)?"partial_component_caps_observed":"not_observed"};
   }
   const attempted=new Set();
   async function openLink(doc,value,Core,stillCurrent) {

@@ -80,7 +80,7 @@ class PlaybookBroker:
                     "channels": [
                         {"channel": "social", "label": "Social", "total_pct": float("nan"),
                          "estimated_commission_thb": -1,
-                         "extra_commission": {"pct": "unknown"}, "shopee_commission": {"pct": 1.25}},
+                         "extra_commission": {"pct": "unknown", "cap_thb": -1}, "shopee_commission": {"pct": 1.25, "cap_thb": 225}},
                         {"channel": "shopee_live", "label": "Shopee Live", "total_pct": 4,
                          "estimated_commission_thb": float("inf"),
                          "extra_commission": {"pct": -1}, "shopee_commission": {"pct": True}},
@@ -152,6 +152,9 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
              "commission_thb_per_order": 2904.5, "extra_commission_pct": 5, "shopee_commission_pct": 0},
         ]
         first = result["results"][0]
+        for row in expected_channels:
+            row.update(extra_commission_cap_thb=None, shopee_commission_cap_thb=None)
+        expected_channels[0]["shopee_commission_cap_thb"] = 225
         self.assertEqual(first["commission_channels"], expected_channels)
         self.assertEqual([row["channel"] for row in first["commission_channels"]],
                          ["social", "shopee_live", "shopee_video"])
@@ -161,6 +164,7 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(all(set(row) == {
             "channel", "label", "commission_pct", "commission_thb_per_order",
             "extra_commission_pct", "shopee_commission_pct",
+            "extra_commission_cap_thb", "shopee_commission_cap_thb",
         } for row in first["commission_channels"]))
         self.assertEqual(first["commission_pct"], 5)
         self.assertEqual(first["commission_thb_per_order"], 2904.5)

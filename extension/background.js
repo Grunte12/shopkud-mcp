@@ -122,7 +122,7 @@ function sanitizeDashboard(value) {
       seen_channels.add(observed.channel);
       const channel={channel:observed.channel};
       if(typeof observed.label==="string" && observed.label.trim())channel.label=observed.label.trim().slice(0,80);
-      for(const key of ["commission_pct","commission_thb_per_order","extra_commission_pct","shopee_commission_pct"]){
+      for(const key of ["commission_pct","commission_thb_per_order","extra_commission_pct","shopee_commission_pct","extra_commission_cap_thb","shopee_commission_cap_thb"]){
         if(observed[key]===null || observed[key]===undefined)continue;
         if(finite(observed[key]) && observed[key]>=0)channel[key]=observed[key];
       }

@@ -159,6 +159,23 @@ async function main() {
     await page.addScriptTag({ path: path.join(ROOT, "extension/core.js") });
     await page.addScriptTag({ path: path.join(ROOT, "extension/detail.js") });
 
+    const caps = await page.evaluate(url => {
+      const cell=document.querySelector('tbody tr').cells[2];
+      const original=cell.textContent;
+      const cases=['2% (฿225.00,สูงสุด)','0% (฿0.00,สูงสุด)','2% (฿9.96)','2% (฿225-500,สูงสุด)','2% (฿225.00,ไม่ระบุ)'];
+      const results=cases.map(value=>{cell.textContent=value;return window.ShopKudDetail.read(document,url,window.ShopeePickerCore);});
+      cell.textContent=original;
+      return results;
+    }, URL);
+    assert.deepEqual(caps.map(r=>r.channels[0].shopee_commission.cap_thb),[225,0,null,null,null]);
+    assert.deepEqual(caps.map(r=>r.channels[0].shopee_commission.amount_thb),[225,0,9.96,null,null]);
+    assert.equal(caps[0].channels[0].shopee_commission.cap_source,'visible_component_maximum');
+    assert.equal(caps[0].channels[0].cap_thb,null,'component cap must not become total cap');
+    assert.equal(caps[0].commission_caps_status,'partial_component_caps_observed');
+    assert.ok(caps[0].missing_fields.includes('commission_caps'),'total/all-channel caps are still unverified');
+    assert.match(caps[0].missing_fields_scope,/not_proof_of_absence/);
+    results.push('observed Thai maximum suffix preserves amount and scoped component cap, including zero; ambiguous caps remain unknown');
+
     const imageCases = await page.evaluate(url => {
       const read = () => window.ShopKudDetail.read(document, url, window.ShopeePickerCore);
       const before = read().images;

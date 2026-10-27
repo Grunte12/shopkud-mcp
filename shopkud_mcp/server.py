@@ -782,7 +782,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 fields=("ok","kind","page_id","product_id","item_id","shop_id","name","offer_url","product_url",
                         "price_min_thb","price_max_thb","observed_at","variant_info","offer_end_date","offer_end_date_source",
                         "extra_commission_start_date","extra_commission_end_date","attribution_duration_days","attribution_duration_source","affiliate_url","link_source",
-                        "link_action","observations_only","link_attribution_verified","missing_fields","retry_automatically",
+                        "link_action","observations_only","link_attribution_verified","missing_fields","missing_fields_scope","commission_caps_status","retry_automatically",
                         "history_saved","history_receipt","entry")
                 channel_fields=("channel","label","extra_commission","shopee_commission","extra_commission_displayed",
                                 "commission_layout","total_pct_source","total_pct","estimated_commission_thb","cap_thb","cap_source")
@@ -1227,6 +1227,8 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                         "commission_thb_per_order": nonnegative_finite_number(item.get("estimated_commission_thb")),
                         "extra_commission_pct": nonnegative_finite_number(extra_channel.get("pct")),
                         "shopee_commission_pct": nonnegative_finite_number(shopee_channel.get("pct")),
+                        "extra_commission_cap_thb": nonnegative_finite_number(extra_channel.get("cap_thb")),
+                        "shopee_commission_cap_thb": nonnegative_finite_number(shopee_channel.get("cap_thb")),
                     })
                 verified.append({
                     "product_id": row.get("product_id"), "name": detail_name,
