@@ -10,6 +10,12 @@ updates:
       python-dependencies:
         patterns:
           - "*"
+    ignore:
+      # ShopKud currently uses FastMCP from MCP 1.x. MCP 2.x renamed that API;
+      # upgrade it deliberately with a compatibility change, not automatically.
+      - dependency-name: mcp
+        update-types:
+          - version-update:semver-major
 
   - package-ecosystem: npm
     directory: /

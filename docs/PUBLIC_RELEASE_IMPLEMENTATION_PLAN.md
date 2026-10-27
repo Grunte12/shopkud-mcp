@@ -7,7 +7,7 @@ confirmation; Phase 6 candidate evidence is prepared for independent review
 and exact-SHA CI.
 Baseline: `238160e`, package/extension `0.11.8`, guide `1.5.6`.
 Repository: https://github.com/Grunte12/shopkud-mcp
-Canonical workspace: `/Users/grunte/Workspace/repos/shopkud`.
+Canonical workspace: the repository root; no installation or workflow may depend on a maintainer-specific absolute path.
 
 Phase 0 snapshot: the repository is public on `main`; no GitHub Release exists;
 the newest remote tag is `v0.10.5`; `main` is unprotected; Dependabot security

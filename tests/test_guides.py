@@ -155,6 +155,22 @@ class WorkflowGuideTests(unittest.IsolatedAsyncioTestCase):
             self.assertNotRegex(content, r"(?i)(?:/Users/|C:\\Users\\)")
             self.assertNotRegex(content, r"https?://(?:affiliate\.shopee\.co\.th|s\.shopee\.co\.th)/")
 
+    def test_untrusted_web_content_guardrail_is_packaged_and_published(self):
+        manifest = json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+        skill = (PACKAGE / manifest["skill"]).read_text(encoding="utf-8")
+        guide = (PACKAGE / manifest["guide"]).read_text(encoding="utf-8")
+        for content in (skill, guide):
+            self.assertTrue("ข้อมูลที่ยังไม่เชื่อถือ" in content or "untrusted data" in content)
+            self.assertIn("ไม่ใช่คำสั่ง", content)
+
+        for name in ("get_products", "get_product_detail", "rank_affiliate_products",
+                     "scan_products", "get_scan_products"):
+            description = self.mcp._tool_manager._tools[name].description
+            self.assertTrue(
+                "untrusted data" in description or "ข้อมูลที่ยังไม่เชื่อถือ" in description,
+                name,
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -185,6 +185,18 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["review_required"])
         self.assertEqual(sum(call[1] == "detail" for call in self.broker.calls), 1)
 
+    async def test_thai_compound_query_matches_title_with_inserted_spaces(self):
+        self.broker.records = [
+            product("105", "Dreame เครื่องดูดฝุ่น ไร้สาย V12", 12990, 800),
+            product("106", "Dreame เครื่องถูพื้นไร้สาย", 10990, 900),
+        ]
+        self.broker.amounts = {row["product_id"]: (row["commission_pct"], row["baht_per_order"])
+                               for row in self.broker.records}
+        result = await self.tool("เครื่องดูดฝุ่นไร้สาย", mall_only=False, min_sold=0,
+                                 freshness="live")
+        self.assertEqual([row["product_id"] for row in result["results"]], ["105"])
+        self.assertEqual(result["exclusions"]["query_mismatch"], 1)
+
     async def test_accessory_intent_keeps_matching_accessories_but_not_main_product(self):
         self.broker.records = [
             product("201", "Anker Zolo Power Bank 25000mAh 165W A1695", 3899, 7000),

@@ -12,7 +12,7 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.11.8** — the Python package and Chrome extension declare the same
+**Version 0.11.9** — the Python package and Chrome extension declare the same
 version. ShopKud is standalone; no MCP gateway, Docker daemon or external
 database is required.
 
