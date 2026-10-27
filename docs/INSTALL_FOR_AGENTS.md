@@ -4,6 +4,13 @@ This document is written for the user's coding agent. The owner must approve the
 Chrome extension, optional host permissions and Shopee login/challenge steps.
 Do not automate those decisions.
 
+## Portable connection (new)
+
+Use [the portable installation contract](PORTABLE_INSTALL.md) for the new
+WebSocket route. It avoids native manifests/registry and lets the MCP client
+start a shared worker on demand. Preserve an existing native install until the
+portable route is verified. The remaining sections document the native fallback.
+
 ## Handoff prompt for the owner
 
 The owner can send only the repository URL plus this instruction to any coding

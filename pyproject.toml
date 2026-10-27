@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shopkud-mcp"
-version = "0.12.0"
+version = "0.13.0"
 description = "Agent-neutral MCP tools for an owner's open Shopee Affiliate Chrome page"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 requires-python = ">=3.11"
-dependencies = ["mcp>=1.30,<2", "uvicorn>=0.34,<1"]
+dependencies = ["mcp>=1.30,<2", "uvicorn>=0.34,<1", "websockets>=15,<17"]
 
 [project.optional-dependencies]
 dev = ["build>=1.2,<2"]
@@ -26,4 +26,4 @@ include = ["shopkud_mcp*"]
 shopkud_mcp = ["workflows/affiliate.json", "skills/shopkud-affiliate/SKILL.md", "skills/shopkud-affiliate/references/workflow.md"]
 
 [tool.setuptools.data-files]
-"share/shopkud-mcp/extension" = ["extension/manifest.json", "extension/core.js", "extension/linkcapture.js", "extension/detail.js", "extension/pagination.js", "extension/search.js", "extension/review-data.js", "extension/review.js", "extension/content.js", "extension/background.js", "extension/listing.js", "extension/listing-access.html", "extension/listing-access.js", "extension/sidepanel.html", "extension/sidepanel.css", "extension/sidepanel.js", "extension/dashboard.html", "extension/dashboard.css", "extension/dashboard.js", "extension/subid.js", "extension/verify.js", "extension/surfaces.js", "extension/selectors.js", "extension/diagnose.js"]
+"share/shopkud-mcp/extension" = ["extension/transport.js", "extension/pair.html", "extension/pair.js", "extension/manifest.json", "extension/core.js", "extension/linkcapture.js", "extension/detail.js", "extension/pagination.js", "extension/search.js", "extension/review-data.js", "extension/review.js", "extension/content.js", "extension/background.js", "extension/listing.js", "extension/listing-access.html", "extension/listing-access.js", "extension/sidepanel.html", "extension/sidepanel.css", "extension/sidepanel.js", "extension/dashboard.html", "extension/dashboard.css", "extension/dashboard.js", "extension/subid.js", "extension/verify.js", "extension/surfaces.js", "extension/selectors.js", "extension/diagnose.js"]

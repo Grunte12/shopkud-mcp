@@ -167,6 +167,7 @@ class Broker:
         self.native_port = native_port
         self._native_token = native_token
         self._server: asyncio.AbstractServer | None = None
+        self.websocket_active = False
         self._socket_identity: tuple[int, int] | None = None
         self._peers: set[_Peer] = set()
         self._busy_pages: set[str] = set()
@@ -243,6 +244,7 @@ class Broker:
         self._socket_identity = identity
 
     async def stop(self) -> None:
+        self.websocket_active = False
         server, self._server = self._server, None
         if server is not None:
             server.close()
@@ -300,7 +302,7 @@ class Broker:
         arguments: dict[str, Any],
         timeout: float = 20,
     ) -> dict[str, Any]:
-        if self._server is None:
+        if self._server is None and not self.websocket_active:
             raise BrokerError("not_started")
         extension_target = operation in {"open_offer", "entry_info", "read_listing", "playbook_event", "developer_event", "research_report", "reload_extension"}
         if type(page_id) is not str or (page_id != "extension" if extension_target else not _PAGE_ID_RE.fullmatch(page_id)):

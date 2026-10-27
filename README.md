@@ -12,7 +12,7 @@ ShopKud connects an MCP agent to a scoped Chrome extension for Shopee Affiliate
 Thailand. The calling agent performs analysis; the extension returns structured
 page observations and executes only supported, explicitly requested operations.
 
-**Version 0.12.0** — the Python package and Chrome extension declare the same
+**Version 0.13.0 (release candidate)** — the Python package and Chrome extension declare the same
 version. ShopKud is standalone; no MCP gateway, Docker daemon or external
 database is required.
 
@@ -28,6 +28,13 @@ Linux native-host installation is not yet validated. Installing
 the code does not bypass Chrome approval, Shopee login or a challenge page.
 
 ## Quick start
+
+**New portable connection:** [Agent installation guide](docs/PORTABLE_INSTALL.md).
+The agent installs the package and client configuration; you approve the Chrome
+extension and click Pair. The MCP client starts one shared local worker on
+demand—no native host registry or OS service. Cross-platform validation status
+and limitations are listed in that guide. The commands below remain the native
+fallback for existing installations.
 
 macOS:
 

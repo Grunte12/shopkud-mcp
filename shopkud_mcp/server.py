@@ -240,11 +240,11 @@ def read_config(path):
             or not stat.S_ISDIR(parent.st_mode) or not has_private_mode(parent,0o700)
             or not owned_by_current_user(parent)):
         raise ValueError("unsafe_config")
-    if is_windows() and not same_existing_file(path,windows_config_path()):
-        raise ValueError("unsafe_config")
     config = json.loads(path.read_text())
+    if is_windows() and config.get("transport") != "websocket" and not same_existing_file(path,windows_config_path()):
+        raise ValueError("unsafe_config")
     allowed={"token","allowed_origins","socket_path","port","workspace_enabled","tool_profile",
-             "native_port","native_token"}
+             "native_port","native_token","transport","extension_token"}
     if set(config)-allowed or not {"token", "allowed_origins", "socket_path", "port"}<=set(config):
         raise ValueError("invalid_config")
     if "workspace_enabled" in config and type(config["workspace_enabled"]) is not bool:
@@ -270,7 +270,14 @@ def read_config(path):
             or type(config["native_token"]) is not str
             or not re.fullmatch(r"[0-9a-f]{64}",config["native_token"])):
         raise ValueError("invalid_config")
-    if is_windows() and "native_port" not in config:
+    if config.get("transport", "native") not in {"native", "websocket"}:
+        raise ValueError("invalid_config")
+    if config.get("transport") == "websocket" and (
+            type(config.get("extension_token")) is not str
+            or not re.fullmatch(r"[0-9a-f]{64}", config["extension_token"])
+            or "native_port" in config):
+        raise ValueError("invalid_config")
+    if is_windows() and "native_port" not in config and config.get("transport") != "websocket":
         raise ValueError("invalid_config")
     return config
 
@@ -2391,11 +2398,27 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
     server._tool_manager.call_tool = traced_call_tool
 
     app = server.streamable_http_app()
+    if config.get("transport") == "websocket":
+        from starlette.routing import WebSocketRoute
+        from .websocket_bridge import ExtensionSocket
+        bridge = ExtensionSocket(broker, config)
+        broker.extension_socket = bridge
+        app.router.routes.append(WebSocketRoute("/extension", bridge))
+        from starlette.routing import Route
+        from starlette.responses import JSONResponse
+        async def open_pairing(request):
+            if broker._peers:
+                return JSONResponse({"error":"already_connected"},status_code=409)
+            return JSONResponse({"pairing_open_seconds":120,"nonce":bridge.begin_pairing()},headers={"Cache-Control":"no-store"})
+        app.router.routes.append(Route("/setup/pair",open_pairing,methods=["POST"]))
     original_lifespan = app.router.lifespan_context
 
     @asynccontextmanager
     async def lifespan(application):
-        await broker.start()
+        if config.get("transport") != "websocket":
+            await broker.start()
+        else:
+            broker.websocket_active = True
         try:
             async with original_lifespan(application) as state:
                 yield state
@@ -2411,6 +2434,13 @@ def main():
     commands=parser.add_subparsers(dest="command",required=True)
     serve=commands.add_parser("serve")
     serve.add_argument("--config",type=Path,required=True)
+    install=commands.add_parser("install",help="Create portable WebSocket configuration; no OS service or native registration")
+    install.add_argument("--extension-id",required=True)
+    install.add_argument("--state-dir",type=Path)
+    install.add_argument("--port",type=int,default=8176)
+    for command in ("connect", "pair", "client-config"):
+        sub=commands.add_parser(command)
+        sub.add_argument("--config",type=Path)
     workspace=commands.add_parser("enable-workspace",help="Operator opt-in: persist bounded local analysis/link/report data, no key changes")
     workspace.add_argument("--config",type=Path,required=True)
     service=commands.add_parser("install-macos-service",help="Install and start the per-user ShopKud worker with launchd")
@@ -2429,6 +2459,29 @@ def main():
     prepare.add_argument("--manifest-dir",type=Path,required=True)
     prepare.add_argument("--port",type=int,default=8176)
     args=parser.parse_args()
+    if args.command in {"connect","pair","client-config"} and args.config is None:
+        from .portable import default_state_dir
+        args.config=default_state_dir()/"config.json"
+    if args.command in {"connect","pair","client-config"}:
+        try:
+            config=read_config(args.config)
+            if config.get("transport") != "websocket":raise ValueError("portable_config_required")
+            if args.command=="client-config":
+                import sys
+                print(json.dumps({"mcpServers":{"shopkud":{"command":sys.executable,"args":["-m","shopkud_mcp.server","connect","--config",str(args.config.absolute())]}}},indent=2))
+            else:
+                from .client import connect,pair
+                result=asyncio.run((connect if args.command=="connect" else pair)(args.config.absolute()))
+                if result:print(json.dumps(result))
+        except Exception:
+            parser.exit(2,"ShopKud connection/setup failed. Check worker availability and private config; credentials were not printed.\n")
+        return
+    if args.command=="install":
+        from .portable import install,default_state_dir
+        try:path=install(args.extension_id,args.state_dir or default_state_dir(),args.port)
+        except (ValueError,OSError,TypeError,KeyError):parser.exit(2,"Portable setup refused; existing configuration was not replaced.\n")
+        print(json.dumps({"ok":True,"config":str(path),"next":"Run pair with this config, then client-config. Never print private config contents."}))
+        return
     if args.command=="setup":
         from .setup import setup
         try:setup(args.extension_id,args.state_dir,args.manifest_dir,args.port)
@@ -2470,8 +2523,8 @@ def main():
     except (ValueError,OSError,TypeError,KeyError):
         parser.exit(2,"ShopKud configuration invalid or unsafe.\n")
     import uvicorn
-    app,_,_=create_service(config)
-    uvicorn.run(app,host="127.0.0.1",port=config["port"],access_log=False,log_level="warning")
+    app,_,broker=create_service(config)
+    uvicorn.run(app,host="127.0.0.1",port=config["port"],access_log=False,log_level="warning",ws_max_size=512000)
 
 
 if __name__=="__main__": main()

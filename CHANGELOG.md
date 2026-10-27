@@ -2,6 +2,15 @@
 
 Historical release notes moved from the README so installation and current use stay easy to find.
 
+### 0.13.0 — portable connection (release candidate)
+
+- Authenticated loopback WebSocket reuses the existing broker, queue and 19 tools.
+- Explicit single-use, short-lived pairing from the Chrome extension; no copied keys.
+- Stdio MCP entry point starts/reuses one shared worker without OS registration.
+- Native Messaging remains available for existing installs and rollback.
+- Same browser fixture suite now runs through both transports; portability is
+  validated separately from live Shopee behavior.
+
 ### What's New in 0.12.0
 
 - Windows 10/11 now has a per-user installer path: Chrome Native Messaging is

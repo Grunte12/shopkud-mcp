@@ -1,4 +1,7 @@
 "use strict";
+if(typeof importScripts==="function")importScripts("transport.js");
+let socketConfig = null;
+let connectionReady = typeof importScripts!=="function";
 const HOST = "org.shopkud.mcp";
 const EXTENSION_ROOT = typeof chrome.runtime.getURL==="function" ? chrome.runtime.getURL("") : `chrome-extension://${chrome.runtime.id}/`;
 const pages = new Map();
@@ -580,11 +583,12 @@ function scheduleReconnect() {
   reconnectTimer=setTimeout(()=>{reconnectTimer=null;connect(true);},delay);
 }
 function connect(automatic=false) {
+  if(!connectionReady)return;
   if(port) return;
   if(reconnectTimer){clearTimeout(reconnectTimer);reconnectTimer=null;}
   if(!automatic)reconnectAttempts=0;
   try {
-    const channel=chrome.runtime.connectNative(HOST);
+    const channel=socketConfig ? shopkudSocketChannel(socketConfig) : chrome.runtime.connectNative(HOST);
     port=channel;
     channel.onDisconnect.addListener(()=>{
       void chrome.runtime.lastError;
@@ -687,6 +691,14 @@ function connect(automatic=false) {
 }
 chrome.runtime.onMessage.addListener((message,sender,respond)=>{
   const extensionPage=sender.id===chrome.runtime.id && (!sender.tab || typeof sender.url==="string" && sender.url.startsWith(EXTENSION_ROOT));
+  if(extensionPage && message?.type==="shopkud-pairing-updated") {
+    shopkudPairing().then(saved=>{
+      socketConfig=saved || null;
+      if(port)port.disconnect();else connect();
+      respond({ok:true});
+    }).catch(()=>respond({ok:false}));
+    return true;
+  }
   if(extensionPage && message?.type==="shopkud-live-snapshot") {
     hydrateTelemetry().then(()=>respond(telemetrySnapshot()));return true;
   }
@@ -754,5 +766,16 @@ chrome.tabs.onActivated?.addListener?.(({tabId})=>{
 chrome.sidePanel?.setPanelBehavior?.({openPanelOnActionClick:false}).catch(()=>{});
 chrome.action?.onClicked?.addListener?.(tab=>{ensureDashboard({active:true,windowId:tab?.windowId}).catch(()=>{});});
 hydrateTelemetry().catch(()=>{});
-connect();
+if(typeof importScripts==="function") {
+  // MV3 reload can leave the worker dormant until an event wakes it. A Chrome
+  // alarm survives worker suspension; short timers only run while awake.
+  chrome.alarms.onAlarm.addListener(alarm=>{if(alarm.name==="shopkud-reconnect")connect(true);});
+  chrome.alarms.get("shopkud-reconnect").then(alarm=>{
+    if(!alarm)chrome.alarms.create("shopkud-reconnect",{periodInMinutes:1});
+  });
+  chrome.runtime.onStartup.addListener(()=>connect(true));
+  chrome.runtime.onInstalled.addListener(()=>connect(true));
+  shopkudPairing().then(saved=>{socketConfig=saved || null;connectionReady=true;connect();})
+    .catch(()=>{connectionReady=true;connect();});
+} else connect(); // Node fixture harness has no extension service worker.
 recoverPages().catch(()=>{});

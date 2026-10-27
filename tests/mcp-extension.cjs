@@ -4,6 +4,7 @@
 const {chromium}=require("playwright");
 const fs=require("node:fs/promises");
 const path=require("node:path");
+const os=require("node:os");
 const assert=require("node:assert/strict");
 const crypto=require("node:crypto");
 const {spawn}=require("node:child_process");
@@ -13,6 +14,7 @@ const ROOT=path.resolve(__dirname,"..");
 const OUT=path.resolve(process.env.SHOPKUD_TEST_OUTPUT_DIR||path.join(ROOT,"artifacts/tests"));
 const PAGE="https://affiliate.shopee.co.th/offer/product_offer";
 const PYTHON=process.env.SHOPKUD_TEST_PYTHON;
+const websocketMode=process.env.SHOPKUD_TEST_TRANSPORT==="websocket";
 if(!PYTHON)throw new Error("Set SHOPKUD_TEST_PYTHON to Python with MCP SDK1.30/uvicorn installed");
 function fixture() {
   return `<!doctype html><html><body><h1>ShopKud offline fixture</h1><p id="count">1</p>${["101","102","103"].map((id,i)=>`<article id="p${id}" class="AffiliateItemCard"><div class="ItemCard__container"><a target="_blank" href="/offer/product_offer/${id}">Product</a><div class="ItemCard__name">Fixture ${id}</div><div class="ItemCard__price"><div class="ItemCardPrice__wrap"><span class="price">${100+i*100}</span></div></div><div class="ItemCard__custom"><span class="commRate">10%</span></div><div class="ItemCardSold__wrap"><span>ขายได้ 100 ชิ้น</span></div></div><div class="AffiliateItemCard__gelinkSection"><label class="ant-checkbox-wrapper${i===0?" ant-checkbox-wrapper-checked":""}"><span class="ant-checkbox${i===0?" ant-checkbox-checked":""}"><input type="checkbox" class="ant-checkbox-input" ${i===0?"checked":""}></span></label></div></article>`).join("")}<script>for(const input of document.querySelectorAll('input'))input.onclick=event=>{event.preventDefault();const label=input.closest('label');const yes=!label.classList.contains('ant-checkbox-wrapper-checked');label.classList.toggle('ant-checkbox-wrapper-checked',yes);label.querySelector('span').classList.toggle('ant-checkbox-checked',yes);document.getElementById('count').textContent=document.querySelectorAll('.ant-checkbox-wrapper-checked').length;};</script></body></html>`;
@@ -36,7 +38,7 @@ function paginationFixture({stall=false,challenge=false,noTotal=false}={}) {
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function freePort(){return new Promise((resolve,reject)=>{const server=net.createServer();server.on('error',reject);server.listen(0,'127.0.0.1',()=>{const port=server.address().port;server.close(()=>resolve(port));});});}
 async function run(){
-  const root=await fs.realpath(await fs.mkdtemp("/private/tmp/shopkud-qa-"));
+  const root=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),"shopkud-qa-")));
   let context,server;
   let stderr="";
   let phase="setup";
@@ -50,22 +52,35 @@ async function run(){
     const profile=path.join(root,"profile");await fs.mkdir(profile,{mode:0o700});
     const nativeDir=path.join(profile,"NativeMessagingHosts");await fs.mkdir(nativeDir,{mode:0o700});
     const token=crypto.randomBytes(32).toString("hex");const port=await freePort();
-    context=await chromium.launchPersistentContext(profile,{channel:"chromium",headless:true,viewport:{width:1200,height:900},
+    const browserOptions={channel:"chromium",headless:true,viewport:{width:1200,height:900},
       ...(process.env.SHOPEE_TEST_CHROMIUM?{executablePath:process.env.SHOPEE_TEST_CHROMIUM}:{}),
-      args:[`--disable-extensions-except=${path.join(ROOT,"extension")}`,`--load-extension=${path.join(ROOT,"extension")}`,"--disable-background-networking","--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1"]});
+      args:[`--disable-extensions-except=${path.join(ROOT,"extension")}`,`--load-extension=${path.join(ROOT,"extension")}`,"--disable-background-networking","--host-resolver-rules=MAP * ~NOTFOUND, EXCLUDE localhost, EXCLUDE 127.0.0.1"]};
+    context=await chromium.launchPersistentContext(profile,browserOptions);
     context.on("page",p=>p.on("pageerror",e=>errors.push(e.message)));
     const worker=context.serviceWorkers()[0]||await context.waitForEvent("serviceworker");
     const origin=`chrome-extension://${new URL(worker.url()).hostname}/`;
-    const config=path.join(root,"config.json");await fs.writeFile(config,JSON.stringify({token,port,socket_path:path.join(root,"native.sock"),allowed_origins:[origin],workspace_enabled:true}),{mode:0o600});
+    const config=path.join(root,"config.json");await fs.writeFile(config,JSON.stringify({token,port,socket_path:path.join(root,"native.sock"),allowed_origins:[origin],workspace_enabled:true,...(websocketMode?{transport:"websocket",extension_token:crypto.randomBytes(32).toString("hex")}: {})}),{mode:0o600});
     const launcher=path.join(root,"native-launcher");
     assert.ok(![PYTHON,ROOT,config].some(x=>/["\n]/.test(x)),"fixture paths must be safe for fixed launcher");
     await fs.writeFile(launcher,`#!/bin/sh\nexec "${PYTHON}" "${ROOT}/shopkud_mcp/native_host.py" --config "${config}" "$@"\n`,{mode:0o700});
-    await fs.writeFile(path.join(nativeDir,"org.shopkud.mcp.json"),JSON.stringify({name:"org.shopkud.mcp",description:"Isolated ShopKud fixture",path:launcher,type:"stdio",allowed_origins:[origin]}),{mode:0o600});
+    if(!websocketMode)await fs.writeFile(path.join(nativeDir,"org.shopkud.mcp.json"),JSON.stringify({name:"org.shopkud.mcp",description:"Isolated ShopKud fixture",path:launcher,type:"stdio",allowed_origins:[origin]}),{mode:0o600});
     server=spawn(PYTHON,["-m","shopkud_mcp.server","serve","--config",config],{env:{...process.env,PYTHONPATH:ROOT},stdio:["ignore","ignore","pipe"]});
     server.stderr.on("data",data=>{stderr+=data.toString();});
-    for(let i=0;i<100;i++){if(server.exitCode!==null)throw new Error("test server exited");try{await fs.stat(path.join(root,"native.sock"));break;}catch{}await pause(50);}
+    if(!websocketMode)for(let i=0;i<100;i++){if(server.exitCode!==null)throw new Error("test server exited");try{await fs.stat(path.join(root,"native.sock"));break;}catch{}await pause(50);}
     const endpoint=`http://127.0.0.1:${port}/mcp`;
     for(let i=0;i<100;i++){try{const res=await fetch(endpoint);if(res.status===401)break;}catch{}await pause(50);}
+    if(websocketMode){
+      const pairing=await context.newPage();
+      const bootstrap=await fetch(`http://127.0.0.1:${port}/setup/pair`,{method:"POST",headers:{Authorization:`Bearer ${token}`}});
+      assert.equal(bootstrap.status,200);
+      const {nonce}=await bootstrap.json();
+      await pairing.goto(`${origin}pair.html?port=${port}#${nonce}`);
+      assert.equal(new URL(pairing.url()).hash,"");
+      await pairing.locator("#approve").click();
+      await pairing.waitForFunction(()=>document.getElementById("status").textContent.startsWith("เชื่อมต่อแล้ว"));
+      await pairing.close();
+      assert.equal((await fetch(`http://127.0.0.1:${port}/setup/pair`,{method:"POST"})).status,401);
+    }
     let sequence=0;
     async function rpc(method,params={}){
       const response=await fetch(endpoint,{method:"POST",headers:{Authorization:`Bearer ${token}`,"Content-Type":"application/json",Accept:"application/json, text/event-stream","MCP-Protocol-Version":"2025-11-25"},body:JSON.stringify({jsonrpc:"2.0",id:++sequence,method,params})});
@@ -90,7 +105,7 @@ async function run(){
     ];
     const catalog=await rpc("tools/list");assert.deepEqual(catalog.tools.map(t=>t.name).sort(),expectedTools.sort());
     results.push({name:phase,status:"pass"});
-    await context.route("**/*",route=>{const u=new URL(route.request().url());if(u.origin==="https://affiliate.shopee.co.th")fixtureRouteHits.push({url:u.href,path:u.pathname});return u.origin==="https://affiliate.shopee.co.th" && (u.pathname==="/" || /^\/offer\/product_offer(?:\/(?:123)?)?$/.test(u.pathname))?route.fulfill({contentType:"text/html; charset=utf-8",body:u.pathname.endsWith('/123')?detailFixture():fixture()}):route.abort();});
+    await context.route("**/*",route=>{const u=new URL(route.request().url());if(u.protocol==="chrome-extension:" && u.hostname===new URL(origin).hostname)return route.continue();if(u.origin==="https://affiliate.shopee.co.th")fixtureRouteHits.push({url:u.href,path:u.pathname});return u.origin==="https://affiliate.shopee.co.th" && (u.pathname==="/" || /^\/offer\/product_offer(?:\/(?:123)?)?$/.test(u.pathname))?route.fulfill({contentType:"text/html; charset=utf-8",body:u.pathname.endsWith('/123')?detailFixture():fixture()}):route.abort();});
     const page=await context.newPage();await page.goto(PAGE);
     await page.waitForFunction(()=>document.querySelector('#shopkud-panel')?.shadowRoot?.getElementById('status')?.textContent.includes('เชื่อมต่อแล้ว'));
     const list=await tool("list_pages");assert.equal(list.pages.length,1);const page_id=list.pages[0].page_id;
@@ -461,6 +476,17 @@ async function run(){
     const interruptedPanel=interrupted.target.locator('#shopkud-panel');assert.ok((await interruptedPanel.locator('#status').textContent()).includes('การเชื่อมต่อหลุด'));
     await interruptedPanel.getByRole('button',{name:'ดูแผนคัดสินค้า (2)',exact:true}).click();assert.ok((await interruptedPanel.locator('#outcome').textContent()).includes('ยังไม่ได้ลองเลือก 1'));assert.ok((await interruptedPanel.locator('#outcome').textContent()).includes('ยกเลิกแล้ว'));
     assert.equal(await interruptedPanel.getByRole('button',{name:'เลือกสินค้าตามแผน',exact:true}).isEnabled(),false);await interrupted.target.screenshot({path:path.join(OUT,'review-disconnected.png')});await interrupted.target.close();results.push({name:phase,status:'pass'});
+    if(websocketMode){
+      phase="WebSocket disconnect reconnects without new tabs or command replay";
+      const tabCount=context.pages().length;
+      await worker.evaluate(()=>port.disconnect());
+      await pause(150);
+      for(let i=0;i<100;i++){if(await worker.evaluate(()=>connected))break;await pause(100);}
+      assert.equal(await worker.evaluate(()=>connected),true);
+      assert.equal(context.pages().length,tabCount);
+      assert.ok((await tool("list_pages")).pages.length>0);
+      results.push({name:phase,status:"pass"});
+    }
     phase="extension reload makes old-page reconnect report refresh without an uncaught error";
     const stopped=new Promise(resolve=>worker.once('close',()=>resolve(true)));
     await worker.evaluate(()=>chrome.runtime.reload()).catch(error=>{if(!/closed|destroyed/i.test(error.message))throw error;});
@@ -469,9 +495,24 @@ async function run(){
     await page.locator('#shopkud-panel').getByRole('button',{name:'เชื่อมต่อ'}).click();
     await page.waitForFunction(()=>document.querySelector('#shopkud-panel')?.shadowRoot?.getElementById('status')?.textContent.includes('รีเฟรชหน้าเว็บ'),null,{timeout:3000});
     assert.equal(await page.locator('#count').textContent(),beforeReloadCount);
+    if(websocketMode){
+      await page.screenshot({path:path.join(OUT,"mcp-extension.png")});
+      // Headless Chromium can unload a command-line extension on runtime.reload.
+      // Restart the same isolated profile to prove persisted pairing, not hot reload.
+      await context.close();
+      context=await chromium.launchPersistentContext(profile,browserOptions);
+      const restarted=context.serviceWorkers()[0]||await context.waitForEvent('serviceworker');
+      for(let i=0;i<100;i++){
+        if(await restarted.evaluate(()=>connected))break;
+        await pause(100);
+      }
+      assert.equal(await restarted.evaluate(()=>connected),true,"persisted pairing reconnects after browser restart");
+      assert.equal((await restarted.evaluate(()=>chrome.storage.local.get("shopkudSocket"))).shopkudSocket,undefined,"content-script storage must not contain credentials");
+      results.push({name:"WebSocket pairing survives browser restart without another approval",status:"pass"});
+    }
     assert.deepEqual(errors,[]);results.push({name:phase,status:"pass"});
-    await page.screenshot({path:path.join(OUT,"mcp-extension.png")});
-    await fs.writeFile(path.join(OUT,"results.json"),JSON.stringify({lane:"real HTTP MCP/native messaging/MV3, synthetic blocked-network page",results,efficiency,toolLatencies:latencies,pageErrors:errors,productionProfileTouched:false,realModelCalls:0,realTincanCalls:0,browserVersion:context.browser().version()},null,2));
+    if(!websocketMode)await page.screenshot({path:path.join(OUT,"mcp-extension.png")});
+    await fs.writeFile(path.join(OUT,"results.json"),JSON.stringify({lane:`real HTTP MCP/${websocketMode?"WebSocket":"native messaging"}/MV3, synthetic blocked-network page`,results,efficiency,toolLatencies:latencies,pageErrors:errors,productionProfileTouched:false,realModelCalls:0,realTincanCalls:0,browserVersion:context.browser().version()},null,2));
     for(const r of results)console.log(`PASS ${r.name}`);
   } catch(error){
     const fixturePageStates=context?await Promise.all(context.pages().map(p=>p.evaluate(()=>({url:location.href,panel:!!document.querySelector('#shopkud-panel'),status:document.querySelector('#shopkud-panel')?.shadowRoot?.getElementById('status')?.textContent})).catch(()=>({closed:true})))):[];

@@ -10,6 +10,12 @@ Purpose: install and verify the standalone ShopKud MCP on the owner's machine. D
 
 ## Installation route
 
+For the portable WebSocket route, follow [`docs/PORTABLE_INSTALL.md`](docs/PORTABLE_INSTALL.md).
+It uses MCP-client-triggered startup, no native host registration or OS service.
+Preserve existing native installs; the native completion checks below apply only
+to the legacy route. Do not claim all-platform verification until portable CI
+and actual owner-profile pairing are evidenced.
+
 Read and follow [`docs/INSTALL_FOR_AGENTS.md`](docs/INSTALL_FOR_AGENTS.md). Use the repository commands rather than reimplementing setup. The only unavoidable human-visible step is loading/approving the unpacked Chrome extension; request confirmation at that step.
 
 The target topology is one local ShopKud worker per OS user. The worker owns the browser queue, bounded result cache, trace stream, and optional embedded SQLite file. Do not start one worker per agent.
