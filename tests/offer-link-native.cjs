@@ -51,7 +51,7 @@ function delayedOfferPage() {
     <p id="offer-clicks">0</p><p id="copy-clicks">0</p>
     <script>
       window.__fixtureClicks = 0; window.__copyClicks = 0;
-      setTimeout(() => {
+      window.__hydrateFixture = () => {
         const shell = document.getElementById("fixture-shell");
         shell.innerHTML = ${JSON.stringify(detail)};
         document.getElementById("fixture-phase").textContent = "ready";
@@ -64,7 +64,7 @@ function delayedOfferPage() {
             document.body.append(dialog);
           }, 450);
         });
-      }, 1600);
+      };
     </script>
   </body></html>`;
 }
@@ -224,6 +224,8 @@ async function run() {
     }
     assert.ok(earlyPage, "the delayed detail tab must register before product details appear");
     assert.equal(await target.locator("#fixture-phase").textContent(), "loading", "early registration must precede fixture hydration");
+    await target.evaluate(() => window.__hydrateFixture());
+    await target.waitForFunction(() => document.querySelector("#fixture-phase")?.textContent === "ready");
 
     const result = await pending;
     assert.equal(result.ok, true, JSON.stringify(result));
