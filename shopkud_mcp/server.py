@@ -63,14 +63,16 @@ _RANKING_CACHE_MAX_ENTRIES = 64
 _RANKING_CACHE_MAX_AGE_SECONDS = 600
 
 _ACCESSORY_TERM_RE = re.compile(
-    r"\b(?:case|cover|pouch|sleeve|screen[\s-]*protector|film|skin|shell|strap|holder|mount|replacement|accessor(?:y|ies))\b"
-    r"|(?:เคส|ปลอก|ฟิล์ม|กระจกกันรอย|กันรอย|ฝาครอบ|ซอง|สายคล้อง|ขาตั้ง|ที่ยึด|อะไหล่|อุปกรณ์เสริม)",
+    unicodedata.normalize("NFKC",
+        r"\b(?:case|cover|pouch|sleeve|screen[\s-]*protector|film|skin|shell|strap|holder|mount|replacement|accessor(?:y|ies))\b"
+        r"|(?:เคส|ปลอก|ฟิล์ม|กระจกกันรอย|กันรอย|ฝาครอบ|ซอง|สายคล้อง|ขาตั้ง|ที่ยึด|อะไหล่|อุปกรณ์เสริม|น้ำยาทำความสะอาด|แบตเตอรี่|ไส้กรอง|แปรง|ถุงเก็บฝุ่น)"),
     re.I,
 )
 _ACCESSORY_COMPATIBILITY_RE = re.compile(
-    r"\b(?:for|compatible(?:\s+with)?|fits?)\b|(?:สำหรับ|ใช้(?:ได้)?กับ|รองรับรุ่น)", re.I,
+    unicodedata.normalize("NFKC",
+        r"\b(?:for|compatible(?:\s+with)?|fits?)\b|(?:สำหรับ|ใช้(?:ได้)?กับ|รองรับรุ่น)"), re.I,
 )
-_QUERY_STOP_TERMS = frozenset({
+_QUERY_STOP_TERMS = frozenset(unicodedata.normalize("NFKC", term) for term in {
     "and", "for", "from", "the", "with", "ของ", "ที่", "รุ่น", "สำหรับ", "พร้อม", "และ", "หา", "อยาก", "ต้องการ",
 })
 

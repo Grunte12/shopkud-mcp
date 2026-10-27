@@ -197,6 +197,19 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([row["product_id"] for row in result["results"]], ["105"])
         self.assertEqual(result["exclusions"]["query_mismatch"], 1)
 
+    async def test_brand_product_query_rejects_cleaning_supplies_and_replacement_parts(self):
+        self.broker.records = [
+            product("107", "Roborock Q Revo S หุ่นยนต์ดูดฝุ่นและถูพื้น", 19990, 1200),
+            product("108", "น้ำยาทำความสะอาดพื้น Roborock ขนาด 1 ลิตร", 690, 5000),
+            product("109", "แบตเตอรี่สำหรับ Roborock S5 S6", 1290, 3000),
+        ]
+        self.broker.amounts = {row["product_id"]: (row["commission_pct"], row["baht_per_order"])
+                               for row in self.broker.records}
+        result = await self.tool("Roborock", target_kind="product", mall_only=False, min_sold=0,
+                                 freshness="live")
+        self.assertEqual([row["product_id"] for row in result["results"]], ["107"])
+        self.assertEqual(result["exclusions"]["accessory_mismatch"], 2)
+
     async def test_accessory_intent_keeps_matching_accessories_but_not_main_product(self):
         self.broker.records = [
             product("201", "Anker Zolo Power Bank 25000mAh 165W A1695", 3899, 7000),
