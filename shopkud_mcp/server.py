@@ -27,9 +27,11 @@ from .model_match import normalize_model, model_match, brief_listing
 from .guides import workflow_guide
 from .platform_security import (
     has_private_mode,
+    is_unaliased_path,
     is_windows,
     nofollow_flag,
     owned_by_current_user,
+    same_existing_file,
     windows_config_path,
 )
 
@@ -231,13 +233,14 @@ def read_config(path):
     path = Path(path)
     info = path.lstat()
     parent = path.parent.lstat()
-    if (path.resolve() != path or not stat.S_ISREG(info.st_mode)
+    if (not is_unaliased_path(path) or not is_unaliased_path(path.parent)
+            or not stat.S_ISREG(info.st_mode)
             or not owned_by_current_user(info) or not has_private_mode(info,0o600)
             or info.st_nlink != 1 or info.st_size > 8192
             or not stat.S_ISDIR(parent.st_mode) or not has_private_mode(parent,0o700)
             or not owned_by_current_user(parent)):
         raise ValueError("unsafe_config")
-    if is_windows() and path != windows_config_path().resolve(strict=True):
+    if is_windows() and not same_existing_file(path,windows_config_path()):
         raise ValueError("unsafe_config")
     config = json.loads(path.read_text())
     allowed={"token","allowed_origins","socket_path","port","workspace_enabled","tool_profile",

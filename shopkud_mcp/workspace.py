@@ -21,7 +21,13 @@ import secrets
 from typing import Iterator
 from urllib.parse import urlsplit
 
-from .platform_security import fchmod_private, has_private_mode, owned_by_current_user
+from .platform_security import (
+    fchmod_private,
+    has_private_mode,
+    is_unaliased_path,
+    is_windows,
+    owned_by_current_user,
+)
 
 
 _ID_RE = re.compile(r"[0-9a-f]{32}\Z")
@@ -352,7 +358,8 @@ class AnalysisStore:
                 info = self.root.lstat()
             except OSError as error:
                 raise ValueError("unsafe_workspace_store") from error
-        if (not stat.S_ISDIR(info.st_mode) or not owned_by_current_user(info)
+        if ((is_windows() and not is_unaliased_path(self.root))
+                or not stat.S_ISDIR(info.st_mode) or not owned_by_current_user(info)
                 or not has_private_mode(info,0o700)):
             raise ValueError("unsafe_workspace_store")
 

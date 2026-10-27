@@ -19,6 +19,7 @@ from .platform_security import (
     chmod_private,
     fchmod_private,
     has_private_mode,
+    is_unaliased_path,
     nofollow_flag,
     owned_by_current_user,
     windows_config_path,
@@ -215,7 +216,7 @@ def setup_windows(extension_id, port=8176, native_port=8177, *, host_executable=
     state_dir=windows_state_dir()
     state_dir.mkdir(parents=True,exist_ok=True)
     info=state_dir.lstat()
-    if state_dir.resolve()!=state_dir or not stat.S_ISDIR(info.st_mode):
+    if not is_unaliased_path(state_dir) or not stat.S_ISDIR(info.st_mode):
         raise ValueError("unsafe_setup_directory")
     config_path=windows_config_path()
     origin=f"chrome-extension://{extension_id}/"
@@ -239,7 +240,7 @@ def setup_windows(extension_id, port=8176, native_port=8177, *, host_executable=
         if not located:raise ValueError("native_host_executable_unavailable")
         executable=Path(located).absolute()
     executable_info=executable.lstat()
-    if (executable.resolve()!=executable or not stat.S_ISREG(executable_info.st_mode)
+    if (not is_unaliased_path(executable) or not stat.S_ISREG(executable_info.st_mode)
             or executable_info.st_nlink!=1):
         raise ValueError("native_host_executable_unavailable")
     manifest_path=state_dir/f"{_NATIVE_HOST}.json"
@@ -247,7 +248,7 @@ def setup_windows(extension_id, port=8176, native_port=8177, *, host_executable=
               "path":str(executable),"type":"stdio","allowed_origins":[origin]}
     if manifest_path.exists():
         existing=manifest_path.lstat()
-        if (manifest_path.resolve()!=manifest_path or not stat.S_ISREG(existing.st_mode)
+        if (not is_unaliased_path(manifest_path) or not stat.S_ISREG(existing.st_mode)
                 or existing.st_nlink!=1 or json.loads(manifest_path.read_text())!=manifest):
             raise ValueError("existing_manifest_mismatch")
     registry=registry_module

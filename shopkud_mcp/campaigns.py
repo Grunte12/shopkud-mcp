@@ -26,7 +26,13 @@ from pathlib import Path
 from typing import Any, Iterator
 from urllib.parse import urlsplit
 
-from .platform_security import fchmod_private, has_private_mode, owned_by_current_user
+from .platform_security import (
+    fchmod_private,
+    has_private_mode,
+    is_unaliased_path,
+    is_windows,
+    owned_by_current_user,
+)
 
 
 DB_FILENAME = "campaigns.sqlite3"
@@ -251,7 +257,9 @@ class CampaignStore:
             info = os.lstat(supplied)
         except OSError:
             _fail("unsafe_directory")
-        if canonical != supplied or not stat.S_ISDIR(info.st_mode):
+        if ((is_windows() and not is_unaliased_path(supplied))
+                or (not is_windows() and canonical != supplied)
+                or not stat.S_ISDIR(info.st_mode)):
             _fail("unsafe_directory")
         if not owned_by_current_user(info) or not has_private_mode(info,0o700):
             _fail("unsafe_directory")
@@ -625,7 +633,9 @@ class CampaignStore:
             canonical = self.root.resolve(strict=True)
         except OSError:
             _fail("unsafe_directory")
-        if (canonical != self.root or not stat.S_ISDIR(info.st_mode) or not owned_by_current_user(info)
+        if (((is_windows() and not is_unaliased_path(self.root))
+                or (not is_windows() and canonical != self.root))
+                or not stat.S_ISDIR(info.st_mode) or not owned_by_current_user(info)
                 or not has_private_mode(info,0o700)):
             _fail("unsafe_directory")
 

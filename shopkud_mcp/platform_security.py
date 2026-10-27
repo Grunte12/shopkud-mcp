@@ -35,6 +35,27 @@ def nofollow_flag() -> int:
     return getattr(os, "O_NOFOLLOW", 0)
 
 
+def is_unaliased_path(path: str | os.PathLike[str]) -> bool:
+    """Reject symlinks/junctions without rejecting Windows short/case aliases."""
+    candidate = Path(path)
+    try:
+        info = candidate.lstat()
+    except OSError:
+        return False
+    if is_windows():
+        attributes = getattr(info, "st_file_attributes", 0)
+        reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        return attributes & reparse == 0
+    return candidate.resolve() == candidate
+
+
+def same_existing_file(left: str | os.PathLike[str], right: str | os.PathLike[str]) -> bool:
+    try:
+        return os.path.samefile(left, right)
+    except OSError:
+        return False
+
+
 def windows_state_dir() -> Path:
     value = os.environ.get("LOCALAPPDATA")
     if not value:

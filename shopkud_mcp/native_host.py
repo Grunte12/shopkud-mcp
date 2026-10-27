@@ -28,6 +28,12 @@ def _private_mode(info,mode):
     return os.name=="nt" or stat.S_IMODE(info.st_mode)==mode
 
 
+def _unaliased(path,info):
+    if os.name=="nt":
+        return getattr(info,"st_file_attributes",0)&getattr(stat,"FILE_ATTRIBUTE_REPARSE_POINT",0x400)==0
+    return path.resolve()==path
+
+
 def read_frame(stream):
     header=stream.read(4)
     if not header: return None
@@ -61,7 +67,8 @@ def write_frame(stream,value):
 def run(config_path,origin):
     path=Path(config_path)
     info=path.lstat(); directory=path.parent.lstat()
-    if (path.resolve()!=path or not stat.S_ISREG(info.st_mode) or not _private_mode(info,0o600)
+    if (not _unaliased(path,info) or not _unaliased(path.parent,directory)
+            or not stat.S_ISREG(info.st_mode) or not _private_mode(info,0o600)
             or not _owned(info) or info.st_nlink!=1 or info.st_size>8192
             or not stat.S_ISDIR(directory.st_mode) or not _private_mode(directory,0o700)
             or not _owned(directory)):
