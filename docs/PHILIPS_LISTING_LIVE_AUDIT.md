@@ -112,3 +112,30 @@ Remaining gates before describing this as broadly ready:
 Limited pilot use is reasonable with these limits disclosed. Do not claim every
 seller layout, selected SKU or warranty has been verified; missing evidence must
 remain unknown. No push, tag or release is part of this review.
+
+## Readiness repair and repeat verification
+
+Follow-up repair requires a 200 ms stable complete observation, rechecks the
+same tab if loading resumes before injection (bounded to 3 seconds), and polls
+tab state every 250 ms while waiting so a missed update event cannot leave the
+reader asleep. The main wait remains bounded to 30 seconds; no navigation is
+replayed. Cancellation, changed URLs and user-owned tabs still fail closed.
+
+An event-only initial repair failed live with `listing_unconfirmed` although the
+final tab snapshot was complete. After adding bounded polling, five consecutive
+fresh reads passed with `ok=true` and `focus_restored=true`:
+
+| UTC, 2026-10-27 | Product | Result |
+|---|---|---|
+| 14:42:07.063 | Philips BHD837 | 4.9 / 338 reviews / 919 sold |
+| 14:42:23.749 | Philips BHD837 | same |
+| 14:42:46.377 | Philips BHD837 | same |
+| 14:43:10.780 | Sony K-65S20M2 | Sony Official Store / 4.9 / 9 reviews / 24 sold |
+| 14:43:29.260 | Philips BHD837 | same |
+
+Regression fixtures explicitly cover complete-to-loading flaps and completion
+without an onUpdated event, with exactly one navigation/injection. Full local
+suite passed (4 Python checks, 29 JavaScript suites); final polling assertions
+also passed in the focused listing suite. This bounds the observed improvement,
+not a guarantee against all future Shopee load failures. Owner authorized commit
+and push for cross-platform CI after these passes, but no release.

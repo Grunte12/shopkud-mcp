@@ -437,15 +437,28 @@ const listingFailure = error => ({ok:false,error,outcome:"not_completed",retry_a
 async function waitForListingTab(tabId,url,task,timeoutMs=30000) {
   const ready=tab=>Boolean(tab && tab.url===url && tab.active===false && tab.status==="complete");
   const waiting=tab=>Boolean(tab && tab.active===false && (tab.url===url || tab.status==="loading" && tab.pendingUrl===url && (!tab.url || tab.url==="about:blank")));
-  const initial=await tabInfo(tabId);if(ready(initial))return true;
+  const initial=await tabInfo(tabId);
   if(!waiting(initial) || task.cancelled)return false;
   return await new Promise(resolve=>{
-    let done=false;
-    const finish=value=>{if(done)return;done=true;clearTimeout(timer);chrome.tabs.onUpdated.removeListener(update);if(task.finishWait===cancel)task.finishWait=null;resolve(value);};
-    const check=async()=>{if(task.cancelled)return finish(false);const tab=await tabInfo(tabId);if(ready(tab))finish(true);else if(!waiting(tab))finish(false);};
-    const update=(id)=>{if(id===tabId)void check();};
+    let done=false,stable=null,poll=null;
+    const finish=value=>{if(done)return;done=true;clearTimeout(timer);clearTimeout(stable);clearTimeout(poll);chrome.tabs.onUpdated.removeListener(update);if(task.finishWait===cancel)task.finishWait=null;resolve(value);};
+    const check=async()=>{
+      if(done)return;if(task.cancelled)return finish(false);
+      const tab=await tabInfo(tabId);if(done)return;
+      if(!waiting(tab))return finish(false);
+      if(!ready(tab)){clearTimeout(stable);stable=null;return;}
+      if(stable===null)stable=setTimeout(async()=>{
+        stable=null;const latest=await tabInfo(tabId);
+        if(task.cancelled)return finish(false);
+        if(ready(latest))finish(true);else void check();
+      },200);
+    };
+    const update=(id,change)=>{if(id===tabId){if(change?.status==="loading"){clearTimeout(stable);stable=null;}void check();}};
     const cancel=()=>finish(false),timer=setTimeout(cancel,timeoutMs);
     task.finishWait=cancel;chrome.tabs.onUpdated.addListener(update);
+    // Chrome can finish without delivering the update to this worker listener.
+    const pollState=async()=>{await check();if(!done)poll=setTimeout(pollState,250);};
+    poll=setTimeout(pollState,250);
     void check();
   });
 }
@@ -493,11 +506,7 @@ async function readListing(args,task) {
       await rememberWorkTab(listingEntry.tab,url);
     }
     if(task.cancelled)return listingFailure("cancelled");
-    let loaded=await waitForListingTab(listingEntry.tab,url,task);
-    if(!loaded && !task.cancelled){
-      const latest=await tabInfo(listingEntry.tab);
-      loaded=latest?.url===url && latest.active===false && latest.status==="complete";
-    }
+    const loaded=await waitForListingTab(listingEntry.tab,url,task);
     if(task.cancelled)return listingFailure("cancelled");
     if(!loaded){
       const tab=await tabInfo(listingEntry.tab);
@@ -506,6 +515,11 @@ async function readListing(args,task) {
     }
   }
   current=await tabInfo(listingEntry.tab);
+  if(current?.url===url && current.active===false && current.status==="loading"){
+    // Same navigation may briefly resume loading after its first complete event.
+    await waitForListingTab(current.id,url,task,3000);
+    current=await tabInfo(current.id);
+  }
   if(task.cancelled)return listingFailure("cancelled");
   if(!current || current.url!==url)return listingFailure("listing_context_changed");
   if(current.active!==false || current.status!=="complete")return {...listingFailure("listing_tab_not_idle"),readiness:{phase:"before_read",active:current.active,status:current.status}};

@@ -53,7 +53,7 @@ function harness(options={}){
   };
   const timers=new Map();let timerId=0;
   const context=vm.createContext({chrome,URL,Map,Set,Promise,Object,Array,Number,String,RegExp,
-    setTimeout(fn,delay){const id=++timerId;timers.set(id,{fn,delay});return id;},clearTimeout(id){timers.delete(id);}});
+    setTimeout(fn,delay){const id=++timerId;timers.set(id,{fn,delay});if(delay===200 && !options.holdStability)setImmediate(()=>{if(timers.has(id)){timers.delete(id);fn();}});return id;},clearTimeout(id){timers.delete(id);}});
   vm.runInContext(source,context,{filename:"background.js"});
   ports[0].onMessage.fire({type:"hello-ack"});
   for(const tab of options.tabs||[])tabs.set(tab.id,{active:false,status:"complete",...tab});
@@ -192,6 +192,25 @@ async function main(){
   assert.equal(claimed.creates.length,2);assert.equal(claimed.updates.length,0);assert.equal(claimed.tabs.get(500).url,PRODUCT);
 
   const settles=harness();
+  const flapping=harness({holdStability:true});
+  const flapId=flapping.send("read_listing",{product_url:PRODUCT,open_if_missing:true});
+  for(let i=0;i<20 && !flapping.hasTimer(200);i++)await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(flapping.executions.length,0,"complete alone is not stable readiness");
+  flapping.tabs.get(500).status="loading";
+  await flapping.runTimers(200);
+  assert.equal(flapping.executions.length,0,"a complete-to-loading race does not inject prematurely");
+  flapping.completeTab(500);await new Promise(resolve=>setImmediate(resolve));
+  await flapping.runTimers(200);
+  assert.equal((await flapping.resultFor(flapId)).ok,true);
+  assert.equal(flapping.creates.length,1,"readiness waits never replay navigation");
+  assert.equal(flapping.executions.length,1);
+  const missedEvent=harness({initialTab:{url:PRODUCT,status:"loading"}});
+  const missedId=missedEvent.send("read_listing",{product_url:PRODUCT,open_if_missing:true});
+  for(let i=0;i<20 && !missedEvent.hasTimer(250);i++)await new Promise(resolve=>setImmediate(resolve));
+  missedEvent.tabs.get(500).status="complete"; // Deliberately no onUpdated event.
+  await missedEvent.runTimers(250);
+  assert.equal((await missedEvent.resultFor(missedId)).ok,true,"polling recovers a missing Chrome update event");
+  assert.equal(missedEvent.creates.length,1);
   const pendingCreate=harness({initialTab:{url:"",pendingUrl:PRODUCT,status:"loading"}});
   const pendingCreateId=pendingCreate.send("read_listing",{product_url:PRODUCT,open_if_missing:true});
   for(let i=0;i<20 && !pendingCreate.hasTimer(30000);i++)await new Promise(resolve=>setImmediate(resolve));
