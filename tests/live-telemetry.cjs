@@ -58,12 +58,16 @@ async function run(){
       {product_id:"26570814201",name:"Philips NA331 Air Fryer",offer_url:"https://affiliate.shopee.co.th/offer/product_offer/26570814201",image_url:"https://down-th.img.susercontent.com/file/result.jpg",mall:true,channel:"shopee_video",price_min_thb:3899,sold:1200,commission_pct:6.5,commission_thb_per_order:236.02,trust_basis:["mall"]},
       {product_id:"2",name:"Unsafe image is dropped",offer_url:"https://affiliate.shopee.co.th/offer/product_offer/2",image_url:"https://evil.example/private.jpg",mall:false,channel:"shopee_video",price_min_thb:100,sold:2,commission_pct:10,commission_thb_per_order:10,trust_basis:[]},
     ]};
-  ports[0].onMessage.fire({type:"command",id:"d".repeat(32),page_id:"extension",operation:"playbook_event",arguments:{...base,sequence:2,stage:"completed",status:"completed",elapsed_ms:12,success:true,effective:true,response_tokens_estimate:42,latency_ms:{total:12},browser_operations:{scan:1},dashboard}});
+  ports[0].onMessage.fire({type:"command",id:"d".repeat(32),page_id:"extension",operation:"playbook_event",arguments:{...base,sequence:2,stage:"completed",status:"completed",elapsed_ms:12,success:true,effective:true,response_tokens_estimate:42,latency_ms:{total:12},browser_operations:{scan:1},dashboard,retrieval:{contract_version:"retrieval-v2",input_fingerprint:"a".repeat(64),source_fingerprint:"b".repeat(64),detail_fingerprint:"not-a-hash",finalist_ids:["123","bad"],records_received:20,token:"must-not-retain"}}});
   await new Promise(resolve=>setTimeout(resolve,0));
   runtimeMessage.fire({type:"shopkud-live-snapshot"},{id:"extension-id"},value=>{snapshot=value;});
   await new Promise(resolve=>setTimeout(resolve,0));
   assert.equal(snapshot.runs[0].status,"completed");
   assert.equal(snapshot.runs[0].response_tokens_estimate,42);
+  assert.equal(snapshot.runs[0].retrieval.input_fingerprint,"a".repeat(64));
+  assert.equal(snapshot.runs[0].retrieval.detail_fingerprint,undefined);
+  assert.equal(snapshot.runs[0].retrieval.token,undefined);
+  assert.deepEqual(snapshot.runs[0].retrieval.finalist_ids,["123"]);
   assert.equal(snapshot.runs[0].dashboard.results.length,2);
   assert.equal(snapshot.runs[0].dashboard.results[0].image_url,"https://down-th.img.susercontent.com/file/result.jpg");
   assert.equal(snapshot.runs[0].dashboard.results[1].image_url,null);

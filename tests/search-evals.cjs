@@ -61,6 +61,23 @@ async function main() {
     assert.equal(success.observed.scanAfterChanged, true, "bounded scan starts only after changed stable rows");
     results.push("native setter + Enter/13, changed stable results, and bounded scan forwarding");
 
+    await reset(page);
+    const duringLoading = await page.evaluate(async query => {
+      const input=document.querySelector("input"), rows=document.querySelector("#rows");
+      input.addEventListener("keydown", e=>{
+        if(e.key!=="Enter")return;
+        const spinner=document.createElement("div");spinner.className="ant-spin-spinning";spinner.textContent="Loading";document.body.append(spinner);
+        rows.innerHTML='<div data-id="intermediate">ผลเก่าระหว่างโหลด</div>';
+        setTimeout(()=>{rows.innerHTML='<div data-id="final">ผลสุดท้าย</div>';spinner.remove();},700);
+      });
+      return ShopKudSearch.run({args:{query,start_page:1,max_pages:1,max_products:5},
+        records:()=>[...rows.children].map(r=>({product_id:r.dataset.id,name:r.textContent})),
+        selectionStates:()=>[],active:()=>true,cancelled:()=>false,
+        scan:async()=>({ok:true,scanned_id:rows.firstElementChild.dataset.id})});
+    },QUERY);
+    assert.equal(duringLoading.scanned_id,"final");
+    results.push("intermediate stable rows are not scanned while Shopee loading indicator is visible");
+
     await page.setContent(`<main><span class="ant-input-search">${inputHTML}<button class="ant-input-search-button">ค้นหา</button></span><section id="rows">${initialRows}</section></main>`);
     await page.addScriptTag({ path: SEARCH_JS });
     const buttonSubmit = await page.evaluate(async query => {

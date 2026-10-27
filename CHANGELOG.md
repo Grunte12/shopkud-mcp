@@ -2,6 +2,16 @@
 
 Historical release notes moved from the README so installation and current use stay easy to find.
 
+### 0.13.1 — reproducible retrieval (release candidate)
+
+- Stable tie handling before bounded finalist selection.
+- Search waits for the observed site loading indicator to clear before accepting rows.
+- Explicit query token matching, minimum price and scan product budget.
+- Recheck query, preorder and price constraints against detail evidence.
+- Reject nonfinite/negative commission values; preserve unknowns.
+- Retrieval input/source/detail/result fingerprints and bounded extension telemetry.
+- Agent still selects inputs and reviews recommendations; no hidden query expansion.
+
 ### 0.13.0 — portable connection (release candidate)
 
 - Authenticated loopback WebSocket reuses the existing broker, queue and 19 tools.

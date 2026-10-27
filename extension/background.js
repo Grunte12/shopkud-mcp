@@ -177,6 +177,18 @@ function sanitizeTelemetry(value) {
   const scalar = key => ["string","number","boolean"].includes(typeof value[key]) || value[key]===null ? value[key] : undefined;
   const latency = value.latency_ms && typeof value.latency_ms==="object" ? Object.fromEntries(Object.entries(value.latency_ms).filter(([,v])=>finite(v) && v>=0).slice(0,8)) : undefined;
   const browser = value.browser_operations && typeof value.browser_operations==="object" ? Object.fromEntries(Object.entries(value.browser_operations).filter(([,v])=>Number.isInteger(v) && v>=0).slice(0,8)) : undefined;
+  const retrieval={};
+  const raw=value.retrieval;
+  if(raw && typeof raw==="object") {
+    if(raw.contract_version==="retrieval-v2")retrieval.contract_version=raw.contract_version;
+    for(const key of ["input_fingerprint","source_fingerprint","detail_fingerprint","result_fingerprint"])
+      if(/^[0-9a-f]{64}$/u.test(raw[key] || ""))retrieval[key]=raw[key];
+    for(const key of ["finalist_ids","result_ids"])
+      if(Array.isArray(raw[key]))retrieval[key]=raw[key].filter(id=>typeof id==="string" && /^[1-9][0-9]{0,19}$/u.test(id)).slice(0,16);
+    if(Number.isInteger(raw.records_received) && raw.records_received>=0 && raw.records_received<=1000)retrieval.records_received=raw.records_received;
+    if(["live","recent","fast"].includes(raw.freshness))retrieval.freshness=raw.freshness;
+    if(Array.isArray(raw.excluded_examples))retrieval.excluded_examples=raw.excluded_examples.slice(0,5).filter(item=>item && typeof item.name==="string" && typeof item.reason==="string").map(item=>({product_id:typeof item.product_id==="string"?item.product_id.slice(0,20):null,name:item.name.slice(0,240),reason:item.reason.slice(0,48)}));
+  }
   return {
     schema_version:1,trace_id:value.trace_id,report_id:/^[0-9a-f]{16}$/u.test(value.report_id||"")?value.report_id:null,swarm_id:value.swarm_id,sequence:value.sequence,playbook:value.playbook,
     query:value.query,stage:value.stage,status:value.status,occurred_at_unix_ms:value.occurred_at_unix_ms,
@@ -188,7 +200,7 @@ function sanitizeTelemetry(value) {
     verified_count:scalar("verified_count"),error_count:scalar("error_count"),success:scalar("success"),effective:scalar("effective"),
     response_bytes:scalar("response_bytes"),response_tokens_estimate:scalar("response_tokens_estimate"),
     winner_product_id:scalar("winner_product_id"),dashboard:sanitizeDashboard(value.dashboard),error:typeof value.error==="string"?value.error.slice(0,120):undefined,
-    latency_ms:latency,browser_operations:browser,
+    latency_ms:latency,browser_operations:browser,retrieval,
   };
 }
 function sanitizeDeveloperEvent(value) {

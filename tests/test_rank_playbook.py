@@ -27,6 +27,8 @@ class PlaybookBroker:
         self.calls = []
         self.detail_id = None
         self.scan_failure = None
+        self.detail_overrides = {}
+        self.scan_limit = 0
         self.records = [
             product("1", "TCL ทีวี 85T6C", 58090, 610),
             product("2", "TCL ทีวี 65Q7D PRO", 46590, 944),
@@ -55,21 +57,24 @@ class PlaybookBroker:
             await asyncio.sleep(0.01)
             if self.scan_failure is not None:
                 return copy.deepcopy(self.scan_failure)
+            self.scan_limit = min(arguments["max_products"], len(self.records))
             return {"ok": True, "scan_id": "c" * 32, "pages_scanned": 1,
-                    "unique_products": len(self.records), "reached_end": True,
+                    "unique_products": self.scan_limit, "reached_end": True,
                     "stop_reason": "end_of_results", "next_page": None, "outcome": "completed"}
         if operation == "scan_read":
             offset, limit = arguments["offset"], arguments["limit"]
-            rows = self.records[offset:offset + limit]
+            rows = self.records[offset:min(offset + limit, self.scan_limit)]
             return {"ok": True, "scan_id": "c" * 32, "records": copy.deepcopy(rows),
-                    "offset": offset, "next_offset": offset + len(rows) if offset + len(rows) < len(self.records) else None}
+                    "offset": offset, "next_offset": offset + len(rows) if offset + len(rows) < self.scan_limit else None}
         if operation == "detail":
             pct, amount = self.amounts[self.detail_id]
             row = next(item for item in self.records if item["product_id"] == self.detail_id)
+            override = self.detail_overrides.get(self.detail_id, {})
             return {"ok": True, "kind": "product_detail", "product_id": self.detail_id,
-                    "name": row["name"], "offer_url": row["product_url"], "shop_id": "12345",
+                    "name": override.get("name", row["name"]), "offer_url": row["product_url"], "shop_id": "12345",
                     "product_url": f"https://shopee.co.th/product/12345/{self.detail_id}",
-                    "price_min_thb": row["price_min_thb"], "price_max_thb": row["price_max_thb"],
+                    "price_min_thb": override.get("price_min_thb", row["price_min_thb"]),
+                    "price_max_thb": override.get("price_max_thb", row["price_max_thb"]),
                     "observed_at": "2026-10-24T00:00:00Z",
                     "images": [{"url": f"https://down-th.img.susercontent.com/file/{self.detail_id}"}],
                     "channels": [
@@ -263,6 +268,130 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sum(call[1] == "search_scan" for call in self.broker.calls), 1)
         self.assertTrue(any(call[1] == "playbook_event" and call[2]["stage"] == "cache_hit" for call in self.broker.calls))
 
+    async def test_identical_live_inputs_have_same_source_and_result_fingerprints(self):
+        first = await self.tool("ทีวี", freshness="live")
+        second = await self.tool("ทีวี", freshness="live")
+        self.assertFalse(first["cache_hit"])
+        self.assertFalse(second["cache_hit"])
+        self.assertEqual(first["results"], second["results"])
+        for key in ("input_fingerprint", "source_fingerprint", "result_fingerprint"):
+            self.assertEqual(first["trace"]["retrieval"][key], second["trace"]["retrieval"][key])
+        self.assertEqual(sum(call[1] == "search_scan" for call in self.broker.calls), 2)
+
+    async def test_source_and_detail_fingerprints_track_changed_observations(self):
+        first = await self.tool("ทีวี", freshness="live")
+        self.broker.amounts["1"] = (5, 2000)
+        changed_detail = await self.tool("ทีวี", freshness="live")
+        self.assertEqual(first["trace"]["retrieval"]["source_fingerprint"],
+                         changed_detail["trace"]["retrieval"]["source_fingerprint"])
+        self.assertNotEqual(first["trace"]["retrieval"]["detail_fingerprint"],
+                            changed_detail["trace"]["retrieval"]["detail_fingerprint"])
+        self.assertNotEqual(first["trace"]["retrieval"]["result_fingerprint"],
+                            changed_detail["trace"]["retrieval"]["result_fingerprint"])
+
+        self.broker.records[0]["sold"] += 1
+        changed_source = await self.tool("ทีวี", freshness="live")
+        self.assertNotEqual(changed_detail["trace"]["retrieval"]["source_fingerprint"],
+                            changed_source["trace"]["retrieval"]["source_fingerprint"])
+        self.assertEqual(changed_detail["trace"]["retrieval"]["detail_fingerprint"],
+                         changed_source["trace"]["retrieval"]["detail_fingerprint"])
+        self.assertNotEqual(changed_detail["trace"]["retrieval"]["result_fingerprint"],
+                            changed_source["trace"]["retrieval"]["result_fingerprint"])
+
+    async def test_shuffled_tied_records_keep_the_same_bounded_finalists(self):
+        records = [product(str(100 + index), "Samsung TV Model", 1000, 1000, commission=5)
+                   for index in range(20)]
+        self.broker.records = records
+        self.broker.amounts = {row["product_id"]: (5, 50) for row in records}
+        first = await self.tool("TV", freshness="live", mall_only=False, min_sold=0)
+
+        shuffled_broker = PlaybookBroker()
+        shuffled_broker.records = list(reversed(records))
+        shuffled_broker.amounts = dict(self.broker.amounts)
+        config = {"token": "a" * 64,
+                  "socket_path": str(Path(tempfile.gettempdir()) / "shopkud-rank-shuffled.sock"),
+                  "allowed_origins": ["chrome-extension://" + "a" * 32 + "/"]}
+        _, shuffled_mcp, _ = create_service(config, shuffled_broker)
+        shuffled_tool = shuffled_mcp._tool_manager._tools["rank_affiliate_products"].fn
+        shuffled = await shuffled_tool("TV", freshness="live", mall_only=False, min_sold=0)
+
+        expected_finalists = [str(index) for index in range(100, 116)]
+        self.assertEqual(first["trace"]["retrieval"]["finalist_ids"], expected_finalists)
+        self.assertEqual(shuffled["trace"]["retrieval"]["finalist_ids"], expected_finalists)
+        self.assertEqual(first["trace"]["retrieval"]["source_fingerprint"],
+                         shuffled["trace"]["retrieval"]["source_fingerprint"])
+        self.assertEqual([row["product_id"] for row in first["results"]],
+                         [row["product_id"] for row in shuffled["results"]])
+
+    async def test_query_match_any_and_all_have_distinct_explicit_semantics(self):
+        self.broker.records = [
+            product("701", "Samsung 55 QLED TV Pro", 1000, 1000),
+            product("702", "Samsung 55 QLED TV", 1000, 1000),
+            product("703", "Sony 55 QLED TV", 1000, 1000),
+        ]
+        self.broker.amounts = {row["product_id"]: (7, 70) for row in self.broker.records}
+        common = {"freshness": "live", "mall_only": False, "min_sold": 0}
+        any_match = await self.tool("Samsung 55 QLED TV Pro", query_match="any", **common)
+        all_match = await self.tool("Samsung 55 QLED TV Pro", query_match="all", **common)
+        self.assertEqual({row["product_id"] for row in any_match["results"]}, {"701", "702", "703"})
+        self.assertEqual([row["product_id"] for row in all_match["results"]], ["701"])
+        self.assertEqual(any_match["exclusions"]["query_mismatch"], 0)
+        self.assertEqual(all_match["exclusions"]["query_mismatch"], 2)
+        self.assertEqual(any_match["criteria"]["query_match"], "any")
+        self.assertEqual(all_match["criteria"]["query_match"], "all")
+
+    async def test_price_range_and_max_products_are_enforced_and_forwarded(self):
+        self.broker.records = [
+            product("801", "TV low price", 199, 1000),
+            product("802", "TV in range", 450, 1000),
+            product("803", "TV high price", 800, 1000),
+            product("804", "TV beyond scan limit", 450, 1000),
+        ]
+        self.broker.amounts = {row["product_id"]: (7, 70) for row in self.broker.records}
+        result = await self.tool("TV", freshness="live", mall_only=False, min_sold=0,
+                                 min_price_thb=300, max_price_thb=600, max_products=3)
+        self.assertEqual([row["product_id"] for row in result["results"]], ["802"])
+        self.assertEqual(result["exclusions"]["price_below_minimum"], 1)
+        self.assertEqual(result["exclusions"]["price_above_maximum"], 1)
+        self.assertEqual(result["criteria"]["min_price_thb"], 300)
+        self.assertEqual(result["criteria"]["max_products"], 3)
+        self.assertEqual(result["scan"]["unique_products"], 3)
+        self.assertNotIn("804", [row["product_id"] for row in result["results"]])
+        scan_call = next(call for call in self.broker.calls if call[1] == "search_scan")
+        self.assertEqual(scan_call[2]["max_products"], 3)
+
+    async def test_negative_or_nonfinite_detail_commissions_are_not_ranked(self):
+        self.broker.records = [
+            product("851", "TV invalid commission", 1000, 1000),
+            product("852", "TV valid commission", 1000, 900),
+        ]
+        self.broker.amounts = {"851": (5, -1), "852": (4, 40)}
+        for invalid_amount in (-1, float("nan"), float("inf")):
+            self.broker.amounts["851"] = (5, invalid_amount)
+            result = await self.tool("TV", freshness="live", mall_only=False, min_sold=0)
+            self.assertEqual([row["product_id"] for row in result["results"]], ["852"])
+            self.assertIn({"product_id": "851", "error": "channel_commission_unavailable"},
+                          result["detail_errors"])
+
+    async def test_detail_evidence_rechecks_query_preorder_and_max_price(self):
+        self.broker.records = [
+            product("901", "Samsung 55 QLED TV Pro", 500, 1000),
+            product("902", "Samsung 55 QLED TV Pro preorder", 500, 1000),
+            product("903", "Samsung 55 QLED TV Pro", 500, 1000),
+        ]
+        self.broker.amounts = {row["product_id"]: (7, 70) for row in self.broker.records}
+        self.broker.detail_overrides = {
+            "901": {"name": "BAAM Soy Protein Chocolate"},
+            "902": {"name": "Samsung 55 QLED TV Pro PRE-ORDER"},
+            "903": {"price_min_thb": 1500, "price_max_thb": 1500},
+        }
+        result = await self.tool("Samsung 55 QLED TV Pro", query_match="all", freshness="live",
+                                 mall_only=False, min_sold=0, max_price_thb=1000)
+        self.assertEqual(result["results"], [])
+        self.assertEqual(result["exclusions"]["query_mismatch"], 1)
+        self.assertEqual(result["exclusions"]["preorder"], 1)
+        self.assertEqual(result["exclusions"]["price_above_maximum"], 1)
+
     async def test_standalone_detail_waits_for_the_whole_rank_browser_lane(self):
         rank=asyncio.create_task(self.tool("ทีวี",freshness="live"))
         await asyncio.sleep(0.001)
@@ -423,7 +552,11 @@ class RankAffiliateProductsTests(unittest.IsolatedAsyncioTestCase):
             {"query": "ทีวี", "ranking_goal": "magic"}, {"query": "ทีวี", "freshness": "stale"},
             {"query": "ทีวี", "min_commission_thb": True},
             {"query": "ทีวี", "min_commission_pct": 101}, {"query": "ทีวี", "max_price_thb": -1},
+            {"query": "ทีวี", "min_price_thb": True}, {"query": "ทีวี", "min_price_thb": -1},
+            {"query": "ทีวี", "min_price_thb": 100, "max_price_thb": 50},
+            {"query": "ทีวี", "max_products": 0}, {"query": "ทีวี", "max_products": 1001},
             {"query": "ทีวี", "target_kind": "mystery"},
+            {"query": "ทีวี", "query_match": "sometimes"},
             {"query": "ทีวี", "required_terms": "Sony"},
             {"query": "ทีวี", "required_terms": [""]},
             {"query": "ทีวี", "excluded_terms": ["x"] * 13},

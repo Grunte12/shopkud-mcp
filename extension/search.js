@@ -3,6 +3,9 @@
   const selector='input.ant-input[type="text"][placeholder="ค้นหาสินค้าช้อปปี้ทั้งหมด"]';
   const visible=e=>Boolean(e.getClientRects().length) && !e.disabled;
   const controls=()=>[...document.querySelectorAll(selector)].filter(visible);
+  // Same observed Ant Design loading signal used by pagination. Intermediate
+  // rows are not search evidence while the site is still loading.
+  const loading=()=>[...document.querySelectorAll(".ant-spin-spinning")].some(visible);
   const fail=(error,outcome="not_applied")=>({ok:false,error,outcome,retry_automatically:false});
   // The selector is the observed Thai affiliate-page contract, not a guessed API.
   async function run({args,records,selectionStates,active,cancelled,scan}) {
@@ -31,7 +34,7 @@
         const stop=stopped();if(stop)return fail(stop);
         const matches=controls();
         if(matches.length>1)return fail("search_controls_ambiguous");
-        if(matches.length===1){input=matches[0];break;}
+        if(matches.length===1 && !loading()){input=matches[0];break;}
         await new Promise(resolve=>setTimeout(resolve,100));
       }
       if(!input)return fail("search_controls_unavailable");
@@ -72,7 +75,7 @@
         while(performance.now()<resetDeadline){
           const stop=stopped();if(stop)return fail(stop,"unconfirmed");
           const reset=signature();
-          if(reset!==before){before=reset;resetConfirmed=true;break;}
+          if(reset!==before && !loading()){before=reset;resetConfirmed=true;break;}
           await new Promise(resolve=>setTimeout(resolve,100));
         }
         const matches=controls();
@@ -91,7 +94,7 @@
           if(input.value.trim() && input.value.trim()!==query)return fail("search_context_changed","unconfirmed");
         }
         const after=signature();
-        if(records().length && after!==before){stable=after===last?stable+1:1;last=after;}else stable=0;
+        if(records().length && after!==before && !loading()){stable=after===last?stable+1:1;last=after;}else stable=0;
         if(stable>=3) {
           const result=await scan({start_page:args.start_page,max_pages:args.max_pages,max_products:args.max_products},()=>Boolean(stopped()));
           const stop=stopped();

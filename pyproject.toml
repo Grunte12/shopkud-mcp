@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "shopkud-mcp"
-version = "0.13.0"
+version = "0.13.1"
 description = "Agent-neutral MCP tools for an owner's open Shopee Affiliate Chrome page"
 readme = "README.md"
 license = "MIT"
