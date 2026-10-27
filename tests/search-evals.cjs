@@ -245,6 +245,28 @@ async function main() {
     results.push("repeated live query resets visible results before searching again");
 
     await reset(page);
+    const lostDuringScan = await page.evaluate(async query => {
+      const input=document.querySelector("input"),rows=document.querySelector("#rows");
+      input.addEventListener("keydown",event=>{if(event.key==="Enter")setTimeout(()=>{
+        rows.innerHTML='<div class="product-row" data-id="filtered">ผลค้นที่ถูกต้อง</div>';
+      },50);});
+      let scans=0;
+      const result=await ShopKudSearch.run({args:{query,start_page:1,max_pages:3,max_products:50},
+        records:()=>[...rows.children].map(row=>({product_id:row.dataset.id,name:row.textContent})),
+        selectionStates:()=>[],active:()=>true,cancelled:()=>false,
+        scan:async(_args,interrupted)=>{
+          scans++;
+          Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"");
+          return {ok:!interrupted(),outcome:"partial",products:[{product_id:"wrong"}]};
+        }});
+      return {result,scans};
+    },QUERY);
+    assert.equal(lostDuringScan.result.error,"search_context_changed");
+    assert.equal(lostDuringScan.result.outcome,"unconfirmed");
+    assert.equal(lostDuringScan.scans,1);
+    results.push("lost search context during pagination fails closed instead of returning unrelated products");
+
+    await reset(page);
     const stopped = await page.evaluate(async query => {
       window.cancelSearch = false;
       const p = ShopKudSearch.run({ args: { query, start_page: 1, max_pages: 1, max_products: 1 },

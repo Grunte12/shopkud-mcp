@@ -12,11 +12,17 @@
       || !Number.isInteger(args.max_pages) || args.max_pages<1 || args.max_pages>20
       || !Number.isInteger(args.max_products) || args.max_products<1 || args.max_products>1000)return fail("invalid_input");
     const query=args.query.trim(),route=location.pathname;
-    let changed=false,userChanged=false;
-    const onUserChange=e=>{if(e.isTrusted)userChanged=true;};
+    let changed=false,userChanged=false,expectedQuery=null,agentEditing=false;
+    const onUserChange=e=>{if(e.isTrusted && !agentEditing)userChanged=true;};
     for(const type of ["pointerdown","input"])document.addEventListener(type,onUserChange,true);
-    const stopped=()=>cancelled()?"cancelled":!active() || location.pathname!==route?"page_changed":userChanged?"search_context_changed":
-      [...document.querySelectorAll('iframe[src*="captcha"],.captcha,#captcha,[data-testid="captcha"]')].some(visible)?"challenge_detected":null;
+    const stopped=()=>{
+      if(cancelled())return "cancelled";
+      if(!active() || location.pathname!==route)return "page_changed";
+      if(userChanged)return "search_context_changed";
+      const matches=controls();
+      if(expectedQuery!==null && matches.length===1 && matches[0].value.trim()!==expectedQuery)return "search_context_changed";
+      return [...document.querySelectorAll('iframe[src*="captcha"],.captcha,#captcha,[data-testid="captcha"]')].some(visible)?"challenge_detected":null;
+    };
     const signature=()=>JSON.stringify(records().map(r=>[r.product_id,r.name]));
     try {
       const deadline=performance.now()+30000;
@@ -39,10 +45,18 @@
       if(submitControls.length>1)return fail("search_controls_ambiguous");
       const searchSource=submitButtons.length?"native_affiliate_search_button":groupAddons.length?"native_affiliate_search_addon":"native_affiliate_input_enter";
       const setValue=value=>{
-        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,value);
-        changed=true;
-        input.dispatchEvent(new Event("input",{bubbles:true}));
-        input.dispatchEvent(new Event("change",{bubbles:true}));
+        agentEditing=true;
+        try{
+          input.focus({preventScroll:true});input.select();
+          let applied=false;
+          try{applied=document.execCommand("insertText",false,value) && input.value===value;}catch{}
+          if(!applied){
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,value);
+            input.dispatchEvent(new InputEvent("input",{bubbles:true,composed:true,inputType:"insertText",data:value}));
+          }
+          changed=true;
+          input.dispatchEvent(new Event("change",{bubbles:true}));
+        }finally{agentEditing=false;}
       };
       const submit=()=>{
         if(submitControls.length)(submitControls[0].firstElementChild || submitControls[0]).click();
@@ -65,7 +79,7 @@
         if(matches.length!==1 || matches[0].value!=="" || !resetConfirmed)return fail("search_reset_unconfirmed","unconfirmed");
         input=matches[0];
       }
-      setValue(query);submit();
+      setValue(query);expectedQuery=query;submit();
       const resultDeadline=performance.now()+30000;
       let stable=0,last=null;
       while(performance.now()<resultDeadline) {
@@ -80,6 +94,10 @@
         if(records().length && after!==before){stable=after===last?stable+1:1;last=after;}else stable=0;
         if(stable>=3) {
           const result=await scan({start_page:args.start_page,max_pages:args.max_pages,max_products:args.max_products},()=>Boolean(stopped()));
+          const stop=stopped();
+          if(stop)return fail(stop,result?.outcome==="not_navigated"?"not_applied":"unconfirmed");
+          const finalControls=controls();
+          if(finalControls.length!==1 || finalControls[0].value.trim()!==query)return fail("search_context_changed","unconfirmed");
           return {...result,query,search_source:searchSource,search_confirmed:true};
         }
         await new Promise(resolve=>setTimeout(resolve,100));
