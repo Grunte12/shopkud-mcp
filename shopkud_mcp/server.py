@@ -719,7 +719,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
             if not match or page_id is not None or offer_url is not None or save or open_link_dialog:
                 return {"ok":False,"error":"invalid_input"}
             try:
-                result=await broker.call("extension","read_listing",{"product_url":product_url,"open_if_missing":open_if_missing},timeout=25)
+                result=await broker.call("extension","read_listing",{"product_url":product_url,"open_if_missing":open_if_missing},timeout=45)
             except BrokerError as error:
                 outcome="not_completed" if error.code in {"busy","disconnected"} else "unconfirmed"
                 return {"ok":False,"error":error.code,"outcome":outcome,

@@ -25,6 +25,7 @@ function harness(options={}){
   let nextCommand=0;
   const chrome={runtime:{id:"fixture-extension",lastError:null,getManifest:()=>({version:manifest.version,optional_permissions:manifest.optional_permissions||[],optional_host_permissions:manifest.optional_host_permissions||[]}),getURL:file=>`chrome-extension://fixture/${file}`,onMessage:runtimeMessage,
     connectNative(host){const p={host,messages:[],onDisconnect:event(),onMessage:event(),postMessage(value){this.messages.push(value);}};ports.push(p);return p;}},
+    storage:{session:{async get(){return {shopkudListingForegroundOnce:options.foregroundOnce===true};},async remove(){options.foregroundOnce=false;}}},
     permissions:{contains(permission,callback){permissionChecks.push(permission);
       const hasScripting=options.scriptingGranted??options.permissionsGranted!==false;
       const hasHost=options.hostGranted??options.permissionsGranted!==false;
@@ -41,11 +42,12 @@ function harness(options={}){
       callback?.([result]);return options.scriptGate?options.scriptGate.then(()=>[result]):Promise.resolve([result]);
     }},
     tabs:{onRemoved:tabsRemoved,onUpdated:tabsUpdated,
-      query(_query,callback){const result=[...tabs.values()].map(t=>({...t}));if(callback)callback(result);return Promise.resolve(result);},
+      query(_query,callback){const result=[...tabs.values()].filter(t=>_query.active===undefined || t.active===_query.active).map(t=>({...t}));if(callback)callback(result);return Promise.resolve(result);},
       get(id,callback){const tab=tabs.get(id);if(options.deferGet)return options.deferGet.then(()=>{callback?.(tab);return tab;});if(callback)callback(tab);return Promise.resolve(tab);},
       create(info,callback){const id=500+creates.length;creates.push({id,...info});if(options.createFails)return Promise.reject(new Error("synthetic create failure"));const tab={id,url:info.url,active:info.active,status:"complete",...options.initialTab};tabs.set(id,tab);if(callback)callback(tab);return Promise.resolve(tab);},
       update(id,info,callback){updates.push({id,info});if(options.updateFails){chrome.runtime.lastError={message:"synthetic update failure"};callback?.();chrome.runtime.lastError=null;return Promise.reject(new Error("synthetic update failure"));}
         const tab=tabs.get(id);if(!tab){callback?.();return Promise.reject(new Error("missing tab"));}
+        if(info.active===true)for(const other of tabs.values())other.active=false;
         Object.assign(tab,info,{status:"complete"});tabsUpdated.fire(id,{status:"complete"},tab);if(callback)callback(tab);return Promise.resolve(tab);
       },remove(id){removals.push(id);tabs.delete(id);tabsRemoved.fire(id);return Promise.resolve();}}
   };
@@ -131,6 +133,16 @@ async function main(){
   jsonEqual(created,{...PRODUCT_RESULT,entry:{tab_id:500,entry_url:PRODUCT,created_tab:true,reused_tab:false,owner_tab_changed:false,extension_version:manifest.version},retry_automatically:false});
   jsonEqual(create.creates,[{id:500,url:PRODUCT,active:false}]);
   assert.equal(create.updates.length,0);
+  const foreground=harness({foregroundOnce:true,tabs:[{id:42,url:"https://example.com",active:true}]});
+  const focused=await foreground.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
+  assert.equal(focused.ok,true);assert.equal(focused.entry.focus_restored,true);
+  assert.equal(foreground.tabs.get(42).active,true);assert.equal(foreground.options.foregroundOnce,false);
+  const focusFailure=harness({foregroundOnce:true,scriptFails:true,tabs:[{id:42,url:"https://example.com",active:true}]});
+  await focusFailure.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
+  assert.equal(focusFailure.tabs.get(42).active,true,"restore focus even when injection fails");
+  const userSwitch=harness({foregroundOnce:true,tabs:[{id:42,url:"https://example.com",active:true}],scriptCallback:({tab})=>{tab.active=false;}});
+  const userSwitched=await userSwitch.command("read_listing",{product_url:PRODUCT,open_if_missing:true});
+  assert.equal(userSwitched.entry.focus_restored,false,"do not override a user switch");
   assert.equal(create.executions.length,1);
   jsonEqual(create.executions[0],{target:{tabId:500,frameIds:[0]},files:["listing.js"],world:"ISOLATED"},"only the fixed listing script runs in isolated top frame");
 

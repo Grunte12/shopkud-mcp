@@ -89,7 +89,7 @@ class ListingToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["ok"])
         self.assertEqual(self.broker.calls, [("extension", "read_listing", {
             "product_url": PRODUCT_URL, "open_if_missing": False,
-        }, 25)])
+        }, 45)])
         self.assertEqual(self.campaign.calls, [])
 
     async def test_explicit_open_is_forwarded_and_success_is_bound_to_requested_url(self):
@@ -101,7 +101,7 @@ class ListingToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["product_id"], "67890")
         self.assertEqual(self.broker.calls[0], ("extension", "read_listing", {
             "product_url": PRODUCT_URL, "open_if_missing": True,
-        }, 25))
+        }, 45))
 
     async def test_strict_url_validation_rejects_noncanonical_inputs_before_call(self):
         for unsafe in (
@@ -218,7 +218,7 @@ class ListingToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["variant_info"]["available_options"][0]["options"], ["AB-123", "CD-456"])
         self.assertEqual(self.broker.calls, [("extension", "read_listing", {
             "product_url": PRODUCT_URL, "open_if_missing": False,
-        }, 25)])
+        }, 45)])
 
     async def test_brief_ignores_malformed_provenance_and_missing_old_reader_fields(self):
         self.broker.response.update({
@@ -236,7 +236,7 @@ class ListingToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["variant_info"]["available_options"][0]["option_evidence"], [])
         self.assertEqual(self.broker.calls, [("extension", "read_listing", {
             "product_url": PRODUCT_URL, "open_if_missing": False,
-        }, 25)])
+        }, 45)])
         self.assertEqual(self.campaign.calls, [])
 
     async def test_invalid_match_options_and_affiliate_branch_options_reject_before_call(self):
@@ -270,7 +270,7 @@ class ListingToolTests(unittest.IsolatedAsyncioTestCase):
         await self.tool("get_product_detail")(product_url=PRODUCT_URL, target_model="AB-123", view="brief")
         self.assertEqual(self.broker.calls, [("extension", "read_listing", {
             "product_url": PRODUCT_URL, "open_if_missing": False,
-        }, 25)])
+        }, 45)])
         self.assertEqual(self.campaign.calls, [])
 
 

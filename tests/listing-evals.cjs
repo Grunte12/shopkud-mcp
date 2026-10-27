@@ -121,6 +121,14 @@ async function main() {
     assert.equal(sony.variant_info.model,"K-65S20M2");
     assert.ok(!sony.model_evidence.some(item=>item.model==="X1TM"));
     assert.equal(sony.product_metrics.sold.display,"24 ชิ้น");
+    await page.setContent('<main><section class="SQguX_"><h1>Sony รุ่น K-65S20M2</h1><div class="uLEz5u"><button>4.9</button><button><div>9</div><div>รีวิว</div></button></div></section><section class="page-product__shop"><div class="KBEZs0"></div><label>ผู้ติดตาม</label><span>N/A</span></section><aside><button>1.1</button>ร้านอื่น</aside></main>');
+    await page.evaluate(()=>setTimeout(()=>{document.querySelector('.KBEZs0').textContent='Sony Official Store';document.querySelector('.page-product__shop span').textContent='835.8k';},50));
+    const hydrated=await read();
+    assert.equal(hydrated.layout_evidence.hydration,'seller_observed');
+    assert.equal(hydrated.seller_info.name.display,'Sony Official Store');
+    assert.equal(hydrated.seller_info.followers.display,'835.8k');
+    assert.equal(hydrated.product_metrics.rating.display,'4.9');
+    assert.equal(hydrated.product_metrics.review_count.display,'9');
     await page.setContent('<main><div class="xvTkTc"><div><h1>Sony รุ่น K-65S20M2</h1></div><div class="Ocv3B8">ขายแล้ว <span>24</span> ชิ้น</div></div><aside>ขายแล้ว 999 ชิ้น</aside></main>');
     assert.equal((await read()).product_metrics.sold.display,"24 ชิ้น");
     await page.setContent(modelFixture({title:"Phone รุ่น ABC123 | Chipset A15"}));
@@ -248,21 +256,21 @@ async function main() {
     results.push("observed gallery classes provide deduplicated, role-labeled assets with strict source/location filters and a 20-item cap");
 
     await page.setContent(fixture(unrelated));
-    const variantCases = await page.evaluate(source => {
+    const variantCases = await page.evaluate(async source => {
       const run = () => (0, eval)(source);
       const radios = [...document.querySelectorAll('[role="radio"]')];
       radios[0].setAttribute("aria-checked", "true");
-      const multiple = run().variant_info.color;
+      const multiple = (await run()).variant_info.color;
       radios[0].setAttribute("aria-checked", "false");
       radios[1].setAttribute("aria-checked", "false");
-      const none = run().variant_info.color;
+      const none = (await run()).variant_info.color;
       const group = document.querySelector('[role="radiogroup"]');
       group.style.display = "none";
-      const hidden = run().variant_info.color;
+      const hidden = (await run()).variant_info.color;
       group.style.display = "";
       const hiddenSpec = document.querySelector(".specs section");
       hiddenSpec.style.display = "none";
-      const hiddenEvidence = run().spec_evidence;
+      const hiddenEvidence = (await run()).spec_evidence;
       return { multiple, none, hidden, hiddenEvidence };
     }, SOURCE);
     assert.equal(variantCases.multiple, null);

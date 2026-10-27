@@ -1,6 +1,6 @@
 "use strict";
 // Fixed isolated reader: public product DOM/JSON-LD only, never app state or APIs.
-(() => {
+(async () => {
   const match=/^https:\/\/shopee\.co\.th\/product\/([1-9][0-9]{0,19})\/([1-9][0-9]{0,19})$/u.exec(location.href);
   if(!match || /[\r\n]/u.test(location.href))return {ok:false,error:"unsupported_product_route"};
   const source={source_url:location.href,shop_id:match[1],product_id:match[2]};
@@ -10,6 +10,25 @@
     return style.display!=="none" && style.visibility!=="hidden" && box.width>0 && box.height>0;
   };
   const failure=error=>({ok:false,error,...source,retry_automatically:false});
+  // Chrome's load event precedes Shopee's seller hydration. Observe DOM only.
+  let hydration="not_required";
+  if(document.querySelector('.page-product__shop')){
+    hydration=await new Promise(resolve=>{
+      let stable=null,done=false;
+      const finish=status=>{if(done)return;done=true;observer.disconnect();clearTimeout(limit);clearTimeout(stable);resolve(status);};
+      const check=()=>{
+        if(location.href!==source.source_url)return finish("page_changed");
+        const panel=document.querySelector('.page-product__shop');
+        const identity=panel?.querySelector('.KBEZs0,[itemprop="name"],[aria-label="ชื่อร้านค้า"]');
+        if(identity && visible(identity) && text(identity.innerText) && !/^(?:N\/A|-)$/iu.test(text(identity.innerText))){
+          if(stable===null)stable=setTimeout(()=>finish("seller_observed"),400);
+        }else{clearTimeout(stable);stable=null;}
+      };
+      const observer=new MutationObserver(check),limit=setTimeout(()=>finish("seller_not_ready"),8000);
+      observer.observe(document.documentElement,{subtree:true,childList:true,characterData:true});check();
+    });
+    if(hydration==="page_changed")return failure("listing_context_changed");
+  }
   const headings=[...document.querySelectorAll("h1,h2,h3,[role=dialog]")].slice(0,60).filter(visible);
   if(headings.some(node=>/captcha|verify.*human|ยืนยัน.*(?:ตัวตน|มนุษย์)|security verification/iu.test(text(node.textContent,300))))return failure("challenge_detected");
   if(headings.some(node=>/^(?:เข้าสู่ระบบ|ลงชื่อเข้าใช้|log ?in|sign ?in)$/iu.test(text(node.textContent))))return failure("listing_requires_login");
@@ -198,11 +217,11 @@
   if(sellerPanel){
     if(!seller_info.name){
       // Only explicit seller identity labels inside the unique shop panel.
-      const names=[...sellerPanel.querySelectorAll('[itemprop="name"],[aria-label="ชื่อร้านค้า"],[aria-label="Shop name"]')].filter(visible).map(node=>text(node.innerText,120)).filter(Boolean);
+      const names=[...sellerPanel.querySelectorAll('.KBEZs0,[itemprop="name"],[aria-label="ชื่อร้านค้า"],[aria-label="Shop name"]')].filter(visible).map(node=>text(node.innerText,120)).filter(value=>value && !/^(?:N\/A|-)$/iu.test(value));
       if(new Set(names).size===1)seller_info.name=observation(names[0],"visible_seller_panel");
     }
     const badges=[...sellerPanel.querySelectorAll('img[alt],[aria-label],[class*="badge"]')].slice(0,30).filter(visible)
-      .map(node=>text(node.getAttribute("alt") || node.getAttribute("aria-label") || node.innerText,120)).filter(value=>/^(?:shopee mall|mall)$/iu.test(value));
+      .map(node=>text(node.getAttribute("alt") || node.getAttribute("aria-label") || node.innerText,120)).filter(value=>/^(?:shopee mall|mall|mall shop badge)$/iu.test(value));
     if(new Set(badges).size===1)seller_info.mall_badge=observation(badges[0],"visible_seller_panel");
   }
   const product_metrics={
@@ -211,6 +230,14 @@
     rating_count:field(summaryPanel,/^(?:การให้คะแนน|ratings)$/iu,"visible_product_summary",value=>count.test(value)),
     sold:field(summaryPanel,/^(?:ขายแล้ว|ขายได้|sold)$/iu,"visible_product_summary",value=>count.test(value))
   };
+  if(summaryPanel){
+    const ratings=[...summaryPanel.querySelectorAll('.uLEz5u button')].filter(visible);
+    for(const [key,pattern] of [["rating",/^([0-5](?:\.[0-9]+)?)$/u],["review_count",/^([0-9][0-9.,]*\s*[km]?\+?)\s*(?:รีวิว|reviews?)$/iu]]){
+      if(product_metrics[key])continue;
+      const values=[...new Set(ratings.map(node=>pattern.exec(text(node.innerText))?.[1]).filter(Boolean))];
+      if(values.length===1)product_metrics[key]=observation(values[0],"visible_product_summary");
+    }
+  }
   if(summaryPanel && !product_metrics.sold){
     const sold=[...summaryPanel.querySelectorAll("span,div")].slice(0,150).filter(node=>visible(node) && (node.children.length===0 || node.matches('.Ocv3B8') && [...node.children].every(child=>child.tagName==='SPAN' && child.children.length===0)))
       .map(node=>/^(?:ขายแล้ว|ขายได้|sold)\s*[:：]?\s*(.+)$/iu.exec(text(node.innerText,140))?.[1]).filter(value=>value && count.test(value));
@@ -236,7 +263,7 @@
   return {ok:true,kind:"public_product_detail",...source,observed_at:new Date().toISOString(),name,
     variant_info:variant,spec_evidence:specEvidence,model_evidence:modelEvidence,seller_info,product_metrics,shipping_info,gallery,gallery_complete:false,
     metadata_source:product?"exact_product_json_ld":null,
-    layout_evidence:{main_found:Boolean(main),matched_product_metadata:products.length,
+    layout_evidence:{hydration,main_found:Boolean(main),matched_product_metadata:products.length,
       reader_revision:"0.11.8-seller-variants",seller_panel_found:Boolean(sellerPanel),product_summary_found:Boolean(summaryPanel),
       seller_fields:sellerPanel?[...sellerPanel.querySelectorAll('a,h2,h3,span,div')].filter(node=>visible(node) && (node.children.length===0 || [...node.childNodes].some(child=>child.nodeType===3 && text(child.textContent)))).slice(0,35).map(node=>({tag:node.tagName,class:text(node.className,100),text:text([...node.childNodes].filter(child=>child.nodeType===3).map(child=>child.textContent).join(' '),120),href:node.tagName==='A'?text(node.getAttribute('href'),200):null})):[],
       blocks,identity_signals:identitySignals.map(value=>text(value,2048)),image_candidates:imageCandidates,model_label_contexts:modelContexts,

@@ -13,6 +13,7 @@ const uncertainEntries = new Set();
 let entryBusy = false;
 let listingEntry = null;
 let listingTask = null;
+let listingForegroundTab = null;
 const listingAccess = {permissions:["scripting"],origins:["https://shopee.co.th/*"]};
 let port = null;
 let connected = false;
@@ -464,7 +465,11 @@ async function readListing(args,task) {
       await chrome.tabs.update(listingEntry.tab,{url,active:false});
     }
     if(task.cancelled)return listingFailure("cancelled");
-    const loaded=await waitForListingTab(listingEntry.tab,url,task);
+    let loaded=await waitForListingTab(listingEntry.tab,url,task);
+    if(!loaded && !task.cancelled){
+      const latest=await tabInfo(listingEntry.tab);
+      loaded=latest?.url===url && latest.active===false && latest.status==="complete";
+    }
     if(task.cancelled)return listingFailure("cancelled");
     if(!loaded){
       const tab=await tabInfo(listingEntry.tab);
@@ -478,7 +483,27 @@ async function readListing(args,task) {
   if(current.active!==false || current.status!=="complete")return listingFailure("listing_tab_not_idle");
   if(!await chrome.permissions.contains(listingAccess))return await listingPermissionFailure();
   if(task.cancelled)return listingFailure("cancelled");
-  const injected=await chrome.scripting.executeScript({target:{tabId:listingEntry.tab,frameIds:[0]},files:["listing.js"],world:"ISOLATED"});
+  // One-shot local consent: never steal focus during ordinary background reads.
+  const consent=await chrome.storage?.session?.get?.("shopkudListingForegroundOnce");
+  let previousTab=null,foregroundUsed=false,focusRestored=false,injected;
+  if(consent?.shopkudListingForegroundOnce===true){
+    await chrome.storage.session.remove("shopkudListingForegroundOnce");
+    const active=await chrome.tabs.query({active:true,windowId:current.windowId});
+    previousTab=active.find(tab=>tab.id!==current.id) || null;
+  }
+  try {
+    if(previousTab){
+      listingForegroundTab=current.id;
+      await chrome.tabs.update(current.id,{active:true});foregroundUsed=true;
+    }
+    injected=await chrome.scripting.executeScript({target:{tabId:listingEntry.tab,frameIds:[0]},files:["listing.js"],world:"ISOLATED"});
+  } finally {
+    // Do not override a tab switch the user made while the reader was running.
+    if(foregroundUsed && (await tabInfo(current.id))?.active===true && await tabInfo(previousTab.id)){
+      await chrome.tabs.update(previousTab.id,{active:true});focusRestored=true;
+    }
+    listingForegroundTab=null;
+  }
   if(task.cancelled)return listingFailure("cancelled");
   const finalTab=await tabInfo(listingEntry.tab);
   if(task.cancelled)return listingFailure("cancelled");
@@ -489,7 +514,7 @@ async function readListing(args,task) {
   if(!result || typeof result!=="object" || result.source_url!==url || result.shop_id!==parts[4] || result.product_id!==parts[5])throw new Error("invalid listing evidence");
   if(result.ok===true && result.kind!=="public_product_detail")throw new Error("invalid listing kind");
   listingEntry.uncertain=false;
-  return {...result,entry:{tab_id:listingEntry.tab,entry_url:url,created_tab:created,reused_tab:reused,owner_tab_changed:false,extension_version:chrome.runtime.getManifest().version},retry_automatically:false};
+  return {...result,entry:{tab_id:listingEntry.tab,entry_url:url,created_tab:created,reused_tab:reused,owner_tab_changed:foregroundUsed,...(foregroundUsed?{focus_restored:focusRestored}:{}),extension_version:chrome.runtime.getManifest().version},retry_automatically:false};
 }
 async function entryInfo(args) {
   if(!args || Object.keys(args).length)return {ok:false,error:"invalid_input"};
@@ -777,6 +802,7 @@ chrome.tabs.onRemoved.addListener(tab=>{
   roster();
 });
 chrome.tabs.onActivated?.addListener?.(({tabId})=>{
+  if(tabId===listingForegroundTab)return;
   const owned=[...ownedEntries.values()].includes(tabId) || listingEntry?.tab===tabId;
   if(!owned)return;claimedEntries.add(tabId);
   if(!tabBusy(tabId))closeOwnedTabIfIdle(tabId).catch(()=>{});
