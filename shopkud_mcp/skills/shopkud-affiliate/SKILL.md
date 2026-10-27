@@ -17,7 +17,7 @@ description: ใช้ ShopKud MCP คัดข้อเสนอ Shopee Affilia
 ค่า `legacy` รักษา threshold เดิม ไม่ใช่ semantic search และ `all` อาจพลาดชื่อที่ใช้คำพ้อง
 ใช้ `min_price_thb`/`max_price_thb` จำกัดช่วงราคา และ `max_products`/`max_pages` จำกัดงานค้น
 การขยายคำค้นเป็น call ใหม่ที่มี input ชัดเจน ไม่คลาย hard constraints เพื่อให้ได้ผู้ชนะ
-เทียบการรันซ้ำด้วย `trace.retrieval` fingerprints: input และ observations เดิมต้องให้ผลเดิม
+เทียบการรันซ้ำด้วย fingerprints ในฟิลด์ JSON `retrieval` ภายใน `trace`: input และ observations เดิมต้องให้ผลเดิม
 แต่ข้อมูลสดอาจเปลี่ยน; Agent ยังต้องตรวจหลักฐานและความเหมาะสมก่อนแนะนำทุกครั้ง
 
 - เริ่มจากสินค้าที่เจ้าของกำหนดและประโยชน์ต่อผู้ซื้อ อย่าเปลี่ยนสินค้าหรือกลยุทธ์แบรนด์เอง
