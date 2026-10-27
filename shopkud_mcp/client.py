@@ -30,7 +30,7 @@ async def ensure_worker(path):
                 if "result" not in result or result["result"].get("serverInfo",{}).get("name") != "ShopKud MCP":
                     raise ValueError("unexpected_worker")
                 return config
-            except httpx.ConnectError:
+            except (httpx.ConnectError, httpx.ConnectTimeout):
                 if process is None:
                     options = {"creationflags":subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS} if sys.platform=="win32" else {"start_new_session":True}
                     process = subprocess.Popen([sys.executable,"-m","shopkud_mcp.server","serve","--config",str(path)],

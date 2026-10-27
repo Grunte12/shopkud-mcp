@@ -5,7 +5,9 @@ import subprocess
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import patch, AsyncMock, Mock
+
+import httpx
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
@@ -14,6 +16,18 @@ from shopkud_mcp.portable import install
 
 
 class PortableClientTests(unittest.IsolatedAsyncioTestCase):
+    async def test_windows_closed_port_timeout_still_starts_worker(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path=install("abcdefghijklmnopabcdefghijklmnop",Path(directory).resolve(),18276)
+            response=Mock()
+            response.json.return_value={"result":{"serverInfo":{"name":"ShopKud MCP"}}}
+            client=AsyncMock()
+            client.post.side_effect=[httpx.ConnectTimeout("closed loopback port"),response]
+            with patch("shopkud_mcp.client.httpx.AsyncClient") as factory, patch("shopkud_mcp.client.subprocess.Popen") as spawn:
+                factory.return_value.__aenter__.return_value=client
+                await ensure_worker(path)
+                spawn.assert_called_once()
+
     async def test_autostart_shared_worker_and_stdio_schema(self):
         processes=[]
         popen=subprocess.Popen
