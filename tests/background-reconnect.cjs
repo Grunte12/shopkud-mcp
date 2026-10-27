@@ -87,7 +87,10 @@ async function run() {
   const receipts = helpers.confirmedLinkReceipts("create_link_with_subids", {product_id:"123",sub_ids:["twitter","clip-1"]}, {
     ok:true,status:"confirmed",product_id:"123",affiliate_url:"https://s.shopee.co.th/Abc123",link_receipt:{created_at:"2026-10-25T00:00:00.000Z"}
   });
-  assert.equal(JSON.stringify(receipts),JSON.stringify([{product_id:"123",affiliate_url:"https://s.shopee.co.th/Abc123",sub_ids:["twitter","clip-1"],status:"confirmed",created_at:"2026-10-25T00:00:00.000Z"}]),"confirmed link receipts are safe and dashboard-ready");
+  assert.equal(JSON.stringify(receipts),JSON.stringify([{product_id:"123",affiliate_url:"https://s.shopee.co.th/Abc123",sub_ids:["twitter","clip-1"],sub_id_positions_preserved:true,channel:null,status:"confirmed",created_at:"2026-10-25T00:00:00.000Z"}]),"confirmed link receipts are safe and dashboard-ready");
+  const positioned = helpers.confirmedLinkReceipts("create_link_with_subids", {channel:"youtube"}, {ok:true,status:"confirmed",product_id:"123",affiliate_url:"https://s.shopee.co.th/Slots",sub_ids_used:{sub_id_1:"yt",sub_id_5:"202610"}})[0];
+  assert.equal(JSON.stringify(positioned.sub_ids),JSON.stringify(["yt",null,null,null,"202610"]));
+  assert.equal(positioned.channel,"youtube");
   assert.equal(helpers.confirmedLinkReceipts("create_link_with_subids", {product_id:"123",sub_ids:["x"]}, {ok:true,status:"confirmed",product_id:"123",affiliate_url:"https://evil.example/x"}).length,0,"foreign link receipts are rejected");
   const dashboard = helpers.sanitizeDashboard({schema_version:1,query:"ทีวี",channel:"social",freshness:"live",partial_market_coverage:false,cache_hit:false,cache_age_ms:0,
     criteria:{target_kind:"product",required_terms:["ทีวี"]},winner_product_id:"123",winner_status:"metric_leader_pending_agent_review",review_required:true,candidate_verification_partial:false,scan:{},exclusions:{},results:[{product_id:"123",name:"ทีวี",shop_name:" ร้านทางการ ",shop_id:"456",offer_url:"https://affiliate.shopee.co.th/offer/product_offer/123",

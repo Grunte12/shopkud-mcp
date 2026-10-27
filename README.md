@@ -109,6 +109,8 @@ variant, seller identity or account configuration.
   winner, side-by-side product comparison and clickable evidence
 - ✅ Local Personal Workspace that keeps 20 completed research projects, 50
   explicitly saved products and confirmed Affiliate links/SubIDs in Chrome
+- Social Media link library and read-only click-report Analytics are available
+  in the Dashboard; see [usage and verification limits](docs/SOCIAL-ANALYTICS.md).
 - ✅ Compact Chrome Side Panel for per-invocation stages, queue/cache state,
   latency, success/effectiveness, browser operations and bounded response-token estimates
 - ✅ One `ShopKud` Chrome Tab Group for extension-owned work; finished inactive

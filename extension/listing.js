@@ -171,10 +171,12 @@
   };
   for(const item of specEvidence)if(/^(?:รุ่น|ชื่อรุ่น|model|model number)$/iu.test(item.label))models(item.value,item.source,true);
   models(name,product?"product_json_ld_title":"visible_product_title",true);
+  const descriptionEvidence=[];
   if(main)for(const section of [...main.querySelectorAll("section")].slice(0,50)){
     const title=[...section.children].find(child=>/^H[23]$/u.test(child.tagName));
     if(!title || !visible(title) || !/^(?:รายละเอียดสินค้า|product description)$/iu.test(text(title.innerText)))continue;
     const description=text(section.innerText,12000);
+    if(descriptionEvidence.length<3)descriptionEvidence.push({text:description,source:"visible_product_description",source_url:source.source_url,truncated:text(section.innerText,12001).length>12000});
     models(section.innerText,"visible_product_description");
     for(const match of description.matchAll(/(?:รุ่น|model|sku)\s*[:：]\s*[^\n]{1,120}/giu)){if(modelContexts.length>=4)break;modelContexts.push(text(match[0],160));}
   }
@@ -262,7 +264,7 @@
     if(values.length===1 && (key!=="stock" || count.test(values[0])))shipping_info[key]=observation(values[0],"visible_product_spec");
   }
   return {ok:true,kind:"public_product_detail",...source,observed_at:new Date().toISOString(),name,
-    variant_info:variant,spec_evidence:specEvidence,model_evidence:modelEvidence,seller_info,product_metrics,shipping_info,gallery,gallery_complete:false,
+    variant_info:variant,spec_evidence:specEvidence,description_evidence:descriptionEvidence,model_evidence:modelEvidence,seller_info,product_metrics,shipping_info,gallery,gallery_complete:false,
     metadata_source:product?"exact_product_json_ld":null,
     layout_evidence:{hydration,main_found:Boolean(main),matched_product_metadata:products.length,
       reader_revision:"0.11.8-seller-variants",seller_panel_found:Boolean(sellerPanel),product_summary_found:Boolean(summaryPanel),

@@ -629,7 +629,7 @@
     renderResearch(); renderLive(); recordCompletedProjects(); renderWorkspace();
   }
   function switchView(next, focus = false) {
-    if(!["research","saved","live"].includes(next)) return;
+    if(!["research","saved","live","social","analytics"].includes(next)) return;
     view = next;
     for(const button of $$(".main-nav button")) { const selected = button.dataset.view === next; button.setAttribute("aria-selected",String(selected)); button.tabIndex = selected ? 0 : -1; }
     for(const panel of $$(".view")) panel.hidden = panel.id !== `view-${next}`;
@@ -659,8 +659,8 @@
   for(const button of $$(".main-nav button")) {
     button.addEventListener("click",() => switchView(button.dataset.view));
     button.addEventListener("keydown",event => {
-      const order = ["research","saved","live"], index = order.indexOf(view);
-      const target = event.key === "ArrowRight" ? order[(index+1)%3] : event.key === "ArrowLeft" ? order[(index+2)%3] : event.key === "Home" ? order[0] : event.key === "End" ? order[2] : null;
+      const order = $$(".main-nav button").map(item=>item.dataset.view), index = order.indexOf(view);
+      const target = event.key === "ArrowRight" ? order[(index+1)%order.length] : event.key === "ArrowLeft" ? order[(index+order.length-1)%order.length] : event.key === "Home" ? order[0] : event.key === "End" ? order.at(-1) : null;
       if(target) { event.preventDefault(); switchView(target,true); }
     });
   }

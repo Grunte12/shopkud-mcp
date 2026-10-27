@@ -36,6 +36,8 @@
       <button id="tab-research" role="tab" aria-selected="true" aria-controls="view-research" data-view="research"><svg class="icon" aria-hidden="true"><use href="#search"/></svg>คัดสินค้า</button>
       <button id="tab-saved" role="tab" aria-selected="false" aria-controls="view-saved" tabindex="-1" data-view="saved"><svg class="icon" aria-hidden="true"><use href="#panel"/></svg>Workspace<span id="saved-count" class="count">0</span></button>
       <button id="tab-live" role="tab" aria-selected="false" aria-controls="view-live" tabindex="-1" data-view="live"><svg class="icon" aria-hidden="true"><use href="#pulse"/></svg>Agent Live<span id="active-dot" class="status-dot" hidden></span></button>
+      <button id="tab-social" role="tab" aria-selected="false" aria-controls="view-social" tabindex="-1" data-view="social">Social Media</button>
+      <button id="tab-analytics" role="tab" aria-selected="false" aria-controls="view-analytics" tabindex="-1" data-view="analytics">Analytics</button>
     </nav>
     <div class="toolbar-actions"><span id="connection" class="connection" role="status"><i></i><span>กำลังเชื่อมต่อ</span></span><button id="open-tracker" class="button quiet"><svg class="icon" aria-hidden="true"><use href="#panel"/></svg>เปิดตัวติดตาม</button></div>
   </header>
@@ -139,10 +141,25 @@
       <dl id="live-metrics" class="live-metrics panel"></dl>
       <div class="live-layout"><section class="logs-panel panel"><div class="panel-heading"><h2>Working log</h2><div class="log-actions"><button id="follow-logs" class="button small" aria-pressed="true">ตามสด</button><button id="clear-logs" class="button small quiet" disabled>ล้าง Log</button></div></div><p class="subtle">คำสั่งและผลลัพธ์ที่ระบบตัดข้อมูลลับแล้ว</p><div id="log-shell" class="log-shell" tabindex="0" role="region" aria-label="บันทึกการทำงาน"><ol id="log-list"></ol><p id="logs-empty">รอ MCP tool call แรก…</p></div><div class="log-footer"><span><i class="agent-key"></i>Agent request</span><span><i class="code-key"></i>Code execution</span><strong id="log-count">0 รายการ</strong></div></section><section class="runs-panel panel"><div class="panel-heading"><h2>งานในเซสชันนี้</h2><span id="run-count" class="count">0</span></div><ol id="run-list" class="run-list"></ol><p id="runs-empty" class="subtle">ยังไม่มีงานในเซสชันนี้</p></section></div>
     </section>
+    <section id="view-social" class="view" role="tabpanel" aria-labelledby="tab-social" hidden>
+      <div class="page-heading"><div><h1>ลิงก์ของคุณ ทุกแพลตฟอร์ม</h1><p>กลับมาใช้ลิงก์เดิมได้ ไม่ต้องสร้างซ้ำ · เก็บใน Chrome เครื่องนี้</p></div></div>
+      <div id="social-platforms" class="platform-strip" aria-label="กรองแพลตฟอร์ม"></div>
+      <div class="link-toolbar"><label>ค้นหาสินค้าหรือลิงก์<input id="social-search" type="search" placeholder="ชื่อสินค้า รหัสสินค้า หรือ SubID"></label><label>การใช้งาน<select id="social-status"><option value="all">ทั้งหมด</option><option value="unused">ยังไม่ใช้</option><option value="used">บันทึกว่าใช้แล้ว</option></select></label><span id="social-count" role="status"></span></div>
+      <p id="social-message" class="notice" role="status" hidden></p>
+      <div id="social-links" class="link-library"></div>
+      <details class="panel link-add"><summary>เพิ่มลิงก์เดิมด้วยตัวเอง</summary><form id="social-add"><label>ชื่อสินค้า<input name="name" maxlength="180" required></label><label>รหัสสินค้า Shopee<input name="product_id" inputmode="numeric" pattern="[1-9][0-9]{0,19}" required></label><label>ลิงก์ Affiliate<input name="url" type="url" placeholder="https://s.shopee.co.th/…" required></label><label>แพลตฟอร์ม<select name="platform" id="social-add-platform"></select></label><button class="button" type="submit">บันทึกลิงก์เดิม</button><p class="subtle">บันทึกเท่านั้น ไม่สร้างลิงก์หรือโพสต์แทนคุณ</p></form></details>
+    </section>
+    <section id="view-analytics" class="view" role="tabpanel" aria-labelledby="tab-analytics" hidden>
+      <div class="page-heading"><div><h1>Analytics จาก Shopee</h1><p>อ่านรายงานคลิกที่เปิดอยู่ในบัญชีคุณ ไม่ใช้จำนวนลิงก์แทนยอดคลิก</p></div><button id="analytics-open" class="button quiet">เปิดรายงาน Shopee</button></div>
+      <div class="panel analytics-source"><label>แท็บรายงาน<select id="analytics-tabs"><option value="">ยังไม่ได้ค้นหารายงาน</option></select></label><button id="analytics-refresh" class="button">อ่านรายงานที่เปิดอยู่</button><p id="analytics-message" role="status">เลือกช่วงวันที่ใน Shopee แล้วกลับมาอ่านข้อมูลที่นี่</p></div>
+      <div id="analytics-result" hidden><p id="analytics-provenance" class="source-explainer"></p><div class="panel analytics-table"><h2>คลิกตาม SubID ที่เห็นในหน้านี้</h2><p class="subtle">ไม่รวมหน้าอื่น ไม่ใช่ยอดขายหรือค่าคอมที่อนุมัติแล้ว</p><div id="analytics-groups"></div></div></div>
+      <p class="empty-state panel">ยอดขายและค่าคอม: ยังไม่มีข้อมูลที่ยืนยันในหน้านี้ การมีลิงก์หรือคลิกไม่ได้แปลว่าเกิดคำสั่งซื้อ</p>
+    </section>
     <footer class="workspace-footer"><span>ShopKud · Product Research Workspace</span><span id="version">ส่วนขยาย —</span><span>ข้อมูลอยู่กับคุณในเครื่องนี้</span></footer>
   </main>
 
   <template id="product-template"><article class="product-card"><div class="product-card-top"><span class="product-position"></span><button class="card-save" aria-label="เก็บสินค้า" aria-pressed="false"><svg class="icon" aria-hidden="true"><use href="#bookmark"/></svg></button></div><div class="product-picture"><img alt="" hidden><span class="image-fallback"><svg class="icon" aria-hidden="true"><use href="#bag"/></svg><small>ไม่มีภาพสินค้า</small></span></div><div class="product-card-body"><span class="trust"></span><h3 class="product-name"></h3><p class="product-shop"></p><dl class="product-metrics"></dl><p class="product-reason"></p><time class="product-observed"></time><a class="product-link" target="_blank" rel="noopener noreferrer">ดูบน Shopee Affiliate<svg class="icon" aria-hidden="true"><use href="#external"/></svg></a></div></article></template>
   <script src="dashboard.js"></script>
+  <script src="social.js"></script>
 </body>
 </html>

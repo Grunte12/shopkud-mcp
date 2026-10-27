@@ -111,7 +111,8 @@ class LinkContractTests(unittest.IsolatedAsyncioTestCase):
         )
         command = await served
         self.assertEqual(command["operation"], "create_link_with_subids")
-        self.assertEqual(set(command["arguments"]), {"product_id", "sub_ids", "dry_run", "intent_key"})
+        self.assertEqual(set(command["arguments"]), {"product_id", "sub_ids", "dry_run", "intent_key", "channel"})
+        self.assertEqual(command["arguments"]["channel"], "tiktok")
         self.assertNotIn("operation", command["arguments"])
         self.assertTrue(created["saved_to_workspace"])
         self.assertEqual(created["link_receipt"]["product_id"], PRODUCT)
@@ -121,7 +122,8 @@ class LinkContractTests(unittest.IsolatedAsyncioTestCase):
 
         def batch_payload(command):
             self.assertEqual(command["operation"], "batch_create_links")
-            self.assertEqual(set(command["arguments"]), {"items", "stop_on_error"})
+            self.assertEqual(set(command["arguments"]), {"items", "stop_on_error", "channel"})
+            self.assertEqual(command["arguments"]["channel"], "tiktok")
             self.assertNotIn("operation", command["arguments"])
             item = command["arguments"]["items"][0]
             body = confirmed(item["product_id"], "https://s.shopee.co.th/BatchItem1")

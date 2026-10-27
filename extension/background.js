@@ -252,9 +252,10 @@ function confirmedLinkReceipts(operation,args,result) {
     const affiliate_url=safeAffiliateUrl(row?.affiliate_url);
     if(row?.ok!==true || row?.status!=="confirmed" || !productId(product) || !affiliate_url)return [];
     const requested=Array.isArray(args?.sub_ids)?args.sub_ids:Array.isArray(args?.items?.[index]?.sub_ids)?args.items[index].sub_ids:[];
-    const used=row.sub_ids_used && typeof row.sub_ids_used==="object"?Object.values(row.sub_ids_used):requested;
-    const sub_ids=used.filter(value=>typeof value==="string" && value.length>0 && value.length<=120).slice(0,5);
-    return [{product_id:product,affiliate_url,sub_ids,status:"confirmed",created_at:typeof row?.link_receipt?.created_at==="string"?row.link_receipt.created_at:new Date().toISOString()}];
+    const used=row.sub_ids_used && typeof row.sub_ids_used==="object"?Array.from({length:5},(_,i)=>row.sub_ids_used[`sub_id_${i+1}`] || null):requested;
+    const sub_ids=used.slice(0,5).map(value=>typeof value==="string" && value.length<=128?value:null);
+    const channel=typeof args?.channel==="string"?args.channel.slice(0,80):null;
+    return [{product_id:product,affiliate_url,sub_ids,sub_id_positions_preserved:true,channel,status:"confirmed",created_at:typeof row?.link_receipt?.created_at==="string"?row.link_receipt.created_at:new Date().toISOString()}];
   });
 }
 async function rememberConfirmedLinks(operation,args,result) {
@@ -265,6 +266,13 @@ async function rememberConfirmedLinks(operation,args,result) {
     const prior=Array.isArray(saved?.[linkReceiptKey])?saved[linkReceiptKey]:[];
     const next=[...receipts,...prior].filter((item,index,all)=>item && index===all.findIndex(candidate=>candidate?.product_id===item.product_id && candidate?.affiliate_url===item.affiliate_url)).slice(0,linkReceiptLimit);
     await chrome.storage.local.set({[linkReceiptKey]:next});
+    const library=await chrome.storage.local.get("shopkudSocialLinks");
+    const links=library.shopkudSocialLinks && typeof library.shopkudSocialLinks==="object" && !Array.isArray(library.shopkudSocialLinks)?library.shopkudSocialLinks:{};
+    for(const receipt of receipts){
+      if(links[receipt.affiliate_url] || Object.keys(links).length>=500)continue;
+      links[receipt.affiliate_url]=receipt;
+    }
+    await chrome.storage.local.set({shopkudSocialLinks:links});
   } catch {}
 }
 async function hydrateTelemetry() {

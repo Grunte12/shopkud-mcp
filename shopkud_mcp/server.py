@@ -731,7 +731,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
             if result.get("ok") is True and (result.get("kind")!="public_product_detail"
                     or result.get("source_url")!=product_url or result.get("shop_id")!=match[1]
                     or result.get("product_id")!=match[2]
-                    or set(result)-{"ok","kind","source_url","shop_id","product_id","observed_at","name","variant_info","spec_evidence","model_evidence","seller_info","product_metrics","shipping_info","gallery","gallery_complete","layout_evidence","metadata_source","entry","retry_automatically"}):
+                    or set(result)-{"ok","kind","source_url","shop_id","product_id","observed_at","name","variant_info","spec_evidence","description_evidence","model_evidence","seller_info","product_metrics","shipping_info","gallery","gallery_complete","layout_evidence","metadata_source","entry","retry_automatically"}):
                 return {"ok":False,"error":"invalid_extension_result","outcome":"not_completed"}
             if result.get("ok") is True and (target_model is not None or view=="brief"):
                 if "model_evidence" not in result:return {"ok":False,"error":"extension_upgrade_required","retry_automatically":False}
@@ -1731,6 +1731,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
                 }
         result = await call(page_id, "create_link_with_subids", {
             "product_id": product_id,
+            "channel": channel,
             "sub_ids": sub_ids,
             "dry_run": dry_run,
             "intent_key": intent,
@@ -1835,6 +1836,7 @@ def create_service(config, broker=None, workspace_store=None, campaign_store=Non
         if not dispatch:
             return {"ok": True, "results": blocked, "dispatched": False, "retry_automatically": False}
         result = await call(page_id, "batch_create_links", {
+            "channel": channel,
             "items": [
                 {"product_id": item["product_id"], "sub_ids": item["sub_ids"], "intent_key": item["intent_key"]}
                 for item in dispatch

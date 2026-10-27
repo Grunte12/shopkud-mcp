@@ -68,6 +68,16 @@ async function main() {
     assert.ok(!JSON.stringify(result).includes("Review SECRET"));
     assert.ok(!JSON.stringify(result).includes("Navbar ACCOUNT SECRET"));
     results.push("canonical product data, exact JSON-LD, explicit variant sources, and isolated gallery sources");
+    assert.deepEqual(result.description_evidence, []);
+    await page.setContent(modelFixture({title:"Philips BHD837/00",description:"รับประกัน 2 ปี "+"x".repeat(12500)}));
+    const descriptionResult=await read();
+    assert.equal(descriptionResult.description_evidence.length,1);
+    assert.equal(descriptionResult.description_evidence[0].source_url,URL);
+    assert.equal(descriptionResult.description_evidence[0].truncated,true);
+    assert.equal(descriptionResult.description_evidence[0].text.length,12000);
+    assert.ok(descriptionResult.description_evidence[0].text.includes("รับประกัน 2 ปี"));
+    assert.ok(!JSON.stringify(descriptionResult.description_evidence).includes("SECRET"));
+    await page.setContent(fixture(exact));
 
     const identicalSources = await page.evaluate(async source => {
       const rows = document.querySelectorAll(".specs td");
@@ -102,8 +112,9 @@ async function main() {
     assert.equal(descriptionFixture.variant_info.model, "A1695", "a single unambiguous identity may supply model information");
     assert.ok(descriptionFixture.model_evidence.length <= 12);
     assert.ok(descriptionFixture.model_evidence.every(item => item.model.length <= 40 && item.snippet.length <= 180));
-    assert.ok(!JSON.stringify(descriptionFixture).includes("DESCRIPTION_TAIL_SECRET"), "full product descriptions must not be emitted");
-    results.push("535-style description identifies parenthesized model with bounded evidence and no full description leak");
+    assert.ok(!JSON.stringify(descriptionFixture.model_evidence).includes("DESCRIPTION_TAIL_SECRET"), "model snippets remain bounded");
+    assert.ok(descriptionFixture.description_evidence[0].text.includes("DESCRIPTION_TAIL_SECRET"), "scoped public description is returned separately");
+    results.push("535-style description identifies parenthesized model with bounded snippets and separate public description evidence");
 
     await page.setContent(modelFixture({ title: "Anker accessory case for A1695" }));
     const accessory = await read();
